@@ -181,8 +181,9 @@ class Handler(SimpleHTTPRequestHandler):
                 module_id=re.sub(r'[^a-z0-9_-]+','-',full_name.split('/')[-1].lower()).strip('-')[:60] or uuid.uuid4().hex[:8]
                 if len(module_id)<2: module_id='m-'+module_id
                 if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'ID модуля уже занят другим источником'})
-                module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
-                current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); write_json(MODULES/module['id']/'module.json',module); log_event('module.register',full_name)
+                manifest={'id':module_id,'name':full_name.split('/')[-1],'version':'0.0.0','description':repo_data.get('description') or 'Модуль из GitHub','author':full_name.split('/')[0],'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','repository':repo_data.get('html_url',''),'api_version':'1.0','inputs':[],'outputs':[],'capabilities':[],'permissions':[],'dependencies':[]}
+                module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'manifest':manifest,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
+                current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); write_json(MODULES/module['id']/'module.json',manifest); log_event('module.register',full_name)
                 return self.send_json(201, {'ok':True,'module':module,'message':'Репозиторий добавлен в каталог. Перед установкой кода проверьте содержимое, лицензию и зависимости.'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/modules/download':
@@ -220,7 +221,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if not target.is_relative_to(folder): continue
                     target.parent.mkdir(parents=True,exist_ok=True); target.write_text(text_content,encoding='utf-8'); saved.append(entry['path'])
                 module['status']='downloaded_unverified'; module['downloaded_files']=len(saved); module['note']='Исходники скачаны в папку source и не запускаются. Проверьте код, зависимости, лицензию и разрешения.'
-                write_json(DATA/'modules.json',current); write_json(MODULES/module_id/'module.json',module); log_event('module.download',source)
+                write_json(DATA/'modules.json',current); log_event('module.download',source)
                 return self.send_json(200, {'ok':True,'module':module,'files':saved,'total_bytes':total,'message':'Исходники загружены и оставлены неисполняемыми для проверки.'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/modules/connections':
