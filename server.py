@@ -153,7 +153,7 @@ class Handler(SimpleHTTPRequestHandler):
             folder=MODULES/module_id
             folder.mkdir(parents=True,exist_ok=False)
             write_json(folder/'module.json',manifest)
-            (folder/'README.md').write_text('# '+name+'\\n\\n'+description+'\\n\\nЛокальный каркас модуля PQlocalAgentOSv3. Добавьте реализацию после определения входов, выходов и разрешений. Код не запускается автоматически.\\n',encoding='utf-8')
+            (folder/'README.md').write_text('# '+name+'\n\n'+description+'\n\nЛокальный каркас модуля PQlocalAgentOSv3. Добавьте реализацию после определения входов, выходов и разрешений. Код не запускается автоматически.\n',encoding='utf-8')
             module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
             current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.create',module_id)
             return self.send_json(201, {'ok':True,'module':module})
