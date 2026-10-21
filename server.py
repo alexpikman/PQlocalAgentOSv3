@@ -12,8 +12,8 @@ PORT = int(os.environ.get('PQ_PORT', '8765'))
 HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
 for p in (FRONTEND, DATA, PAGES): p.mkdir(parents=True, exist_ok=True)
-DEFAULT_SETTINGS = {'appearance': {'theme':'dark','accent':'#8b7cff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none'}, 'navigation': {'compact':False}}
-DEFAULT_PAGES = [{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True}]
+DEFAULT_SETTINGS = {'appearance': {'theme':'dark','accent':'#8b7cff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}}
+DEFAULT_PAGES = [{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True}]
 def read_json(path, fallback):
     try: return json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError): return fallback
@@ -62,6 +62,16 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/settings': return self.send_json(200, settings())
         if path=='/api/pages': return self.send_json(200, pages())
         if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
+        if path=='/api/modules':
+            return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
+        if path=='/api/github/search':
+            q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
+            if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
+            try:
+                result=github_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
+                items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
+                return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/github': return self.send_json(200, {'repository':REPO,'configured':bool(os.environ.get('GITHUB_TOKEN')),'connected':False,'message':'Токен не задан' if not os.environ.get('GITHUB_TOKEN') else 'Токен задан; нажмите «Проверить подключение»'})
         if path=='/api/github/check':
             token=os.environ.get('GITHUB_TOKEN')
@@ -96,7 +106,16 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/settings':
             allowed={'appearance','header','navigation'}; current=settings()
             for k,v in data.items():
-                if k in allowed and isinstance(v,dict): current[k]={**current.get(k,{}),**v}
+                if k in allowed and isinstance(v,dict):
+                    if k=='navigation' and isinstance(v.get('menu'),list):
+                        menu=[]
+                        for item in v['menu'][:100]:
+                            if not isinstance(item,dict): continue
+                            pid=str(item.get('page_id','')).strip()[:80]
+                            if pid and not re.fullmatch(r'[a-zA-Z0-9_-]+',pid): continue
+                            menu.append({'id':str(item.get('id') or uuid.uuid4().hex[:10])[:40],'label':str(item.get('label') or '')[:100],'icon':str(item.get('icon') or 'file-text')[:40],'page_id':pid,'visible':item.get('visible') is not False,'parent_id':str(item.get('parent_id') or '')[:40]})
+                        v={**v,'menu':menu}
+                    current[k]={**current.get(k,{}),**v}
             write_json(DATA/'settings.json',current); log_event('settings.save','Настройки интерфейса сохранены'); return self.send_json(200,current)
         if path=='/api/pages':
             title=str(data.get('title','')).strip()[:100]; desc=str(data.get('description','')).strip()[:300]; content=str(data.get('content','')).strip()[:20000]
@@ -111,6 +130,26 @@ class Handler(SimpleHTTPRequestHandler):
             for k,limit in [('title',100),('description',300),('content',20000)]:
                 if k in data: item[k]=str(data[k]).strip()[:limit]
             write_json(PAGES/'index.json',current); log_event('page.update',item['title']); return self.send_json(200,item)
+        if path=='/api/modules/install':
+            full_name=str(data.get('full_name','')).strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full_name): return self.send_json(400, {'error':'Некорректное имя репозитория'})
+            try:
+                repo_data=github_request('/repos/'+full_name)
+                if repo_data.get('archived') or repo_data.get('disabled'): return self.send_json(400, {'error':'Архивный или отключённый репозиторий нельзя добавить'})
+                current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+                if any(m.get('source')==full_name for m in current.get('modules',[])): return self.send_json(409, {'error':'Этот репозиторий уже добавлен'})
+                module={'id':re.sub(r'[^a-z0-9_-]+','-',full_name.split('/')[-1].lower()).strip('-')[:60] or uuid.uuid4().hex[:8],'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
+                current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.register',full_name)
+                return self.send_json(201, {'ok':True,'module':module,'message':'Репозиторий добавлен в каталог. Перед установкой кода проверьте содержимое, лицензию и зависимости.'})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/modules/connections':
+            connections=data.get('connections',[])
+            if not isinstance(connections,list) or len(connections)>300: return self.send_json(400, {'error':'Некорректный список связей'})
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            ids={m.get('id') for m in current.get('modules',[])}
+            for link in connections:
+                if not isinstance(link,dict) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
+            current['connections']=connections; write_json(DATA/'modules.json',current); log_event('module.connections','Связи модулей обновлены'); return self.send_json(200, current)
         if path=='/api/github/file':
             file_path=str(data.get('path','')).strip(); content=str(data.get('content','')); message=str(data.get('message','').strip() or 'Update '+file_path)[:200]
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
