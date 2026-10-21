@@ -1,0 +1,17 @@
+import json, os, tempfile, unittest
+from pathlib import Path
+import server
+
+class StorageTests(unittest.TestCase):
+    def test_default_settings_have_header_and_appearance(self):
+        self.assertIn('appearance', server.DEFAULT_SETTINGS)
+        self.assertIn('header', server.DEFAULT_SETTINGS)
+    def test_default_pages_include_core_sections(self):
+        ids={p['id'] for p in server.DEFAULT_PAGES}
+        self.assertTrue({'dashboard','interface-settings','pages','github','system-log'}.issubset(ids))
+    def test_slug_is_safe(self):
+        import re
+        slug=re.sub(r'[^a-z0-9-]+','-','my page / hello').strip('-')
+        self.assertEqual(slug,'my-page-hello')
+
+if __name__=='__main__': unittest.main()
