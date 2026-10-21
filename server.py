@@ -26,8 +26,14 @@ def settings():
     return read_json(p, DEFAULT_SETTINGS)
 def pages():
     p=PAGES/'index.json'
-    if not p.exists(): write_json(p, DEFAULT_PAGES)
-    return read_json(p, DEFAULT_PAGES)
+    current=read_json(p, DEFAULT_PAGES)
+    known={item.get('id') for item in current if isinstance(item,dict)}
+    changed=False
+    for item in DEFAULT_PAGES:
+        if item.get('system') and item.get('id') not in known:
+            current.append(item.copy()); known.add(item.get('id')); changed=True
+    if changed or not p.exists(): write_json(p, current)
+    return current
 def log_event(action, detail=''):
     path=DATA/'events.json'; events=read_json(path, [])
     events.insert(0, {'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'action':action,'detail':str(detail)[:300]})
