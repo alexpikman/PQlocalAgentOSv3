@@ -35,3 +35,10 @@
 .connection-row span{color:var(--accent)}
 .connection-row small{margin-left:auto;color:var(--muted)}
 @media(max-width:760px){.menu-editor-row{align-items:flex-start;flex-wrap:wrap}.menu-edit-fields{grid-template-columns:1fr;width:calc(100% - 50px);flex:1 1 70%}.menu-visible{margin-left:44px}.menu-row-actions{margin-left:auto}.module-search{flex-direction:column}.module-card-actions{align-items:flex-start}.connection-row small{margin-left:0;width:100%}}
+
+.module-create-panel{margin-bottom:16px}
+.module-create-panel summary{cursor:pointer;list-style:none;font-size:12px;font-weight:650;color:var(--text)}
+.module-create-panel summary::-webkit-details-marker{display:none}
+.module-create-panel[open] summary{margin-bottom:12px}
+.module-create-panel .panel-subtitle{margin:8px 0 14px}
+.module-create-panel .field-grid{align-items:end}
