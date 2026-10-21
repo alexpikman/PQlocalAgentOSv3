@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
@@ -184,6 +184,44 @@ class Handler(SimpleHTTPRequestHandler):
                 module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
                 current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); write_json(MODULES/module['id']/'module.json',module); log_event('module.register',full_name)
                 return self.send_json(201, {'ok':True,'module':module,'message':'Репозиторий добавлен в каталог. Перед установкой кода проверьте содержимое, лицензию и зависимости.'})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/modules/download':
+            module_id=str(data.get('id','')).strip()
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            module=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not module: return self.send_json(404, {'error':'Модуль не найден'})
+            source=str(module.get('source',''))
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',source): return self.send_json(400, {'error':'Для этого локального модуля исходники из GitHub недоступны'})
+            request_github=github_request if os.environ.get('GITHUB_TOKEN') else github_public_request
+            try:
+                branch=str(module.get('default_branch') or 'main')
+                tree=request_github('/repos/'+source+'/git/trees/'+urllib.parse.quote(branch,safe='')+'?recursive=1')
+                if tree.get('truncated'): return self.send_json(400, {'error':'Репозиторий слишком велик для безопасной загрузки одним запросом'})
+                allowed={'.py','.js','.mjs','.cjs','.ts','.json','.md','.txt','.yaml','.yml','.toml','.html','.css','.sh','.bat','.ps1','.go','.rs','.java','.c','.h','.cpp','.xml','.svg'}
+                blocked={'node_modules','.git','.github','.venv','venv','dist','build','vendor','__pycache__'}
+                candidates=[]
+                for entry in tree.get('tree',[]):
+                    rel=entry.get('path',''); parts=Path(rel).parts
+                    if entry.get('type')!='blob' or not rel or len(parts)>8 or any(part in blocked for part in parts) or '..' in parts or rel.startswith('/'): continue
+                    if Path(rel).suffix.lower() not in allowed or int(entry.get('size',0))>200000: continue
+                    candidates.append(entry)
+                if len(candidates)>100: return self.send_json(400, {'error':'В репозитории больше 100 текстовых файлов-кандидатов; загрузка ограничена'})
+                folder=(MODULES/module_id/'source').resolve(); folder.mkdir(parents=True,exist_ok=True)
+                total=0; saved=[]
+                for entry in candidates:
+                    blob=request_github('/repos/'+source+'/git/blobs/'+entry['sha'])
+                    if blob.get('encoding')!='base64': continue
+                    raw=base64.b64decode(blob.get('content',''))
+                    total+=len(raw)
+                    if total>2_000_000: return self.send_json(400, {'error':'Исходники превышают лимит загрузки 2 МБ'})
+                    try: text_content=raw.decode('utf-8')
+                    except UnicodeDecodeError: continue
+                    target=(folder/entry['path']).resolve()
+                    if not target.is_relative_to(folder): continue
+                    target.parent.mkdir(parents=True,exist_ok=True); target.write_text(text_content,encoding='utf-8'); saved.append(entry['path'])
+                module['status']='downloaded_unverified'; module['downloaded_files']=len(saved); module['note']='Исходники скачаны в папку source и не запускаются. Проверьте код, зависимости, лицензию и разрешения.'
+                write_json(DATA/'modules.json',current); write_json(MODULES/module_id/'module.json',module); log_event('module.download',source)
+                return self.send_json(200, {'ok':True,'module':module,'files':saved,'total_bytes':total,'message':'Исходники загружены и оставлены неисполняемыми для проверки.'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/modules/connections':
             connections=data.get('connections',[])
