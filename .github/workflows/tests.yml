@@ -13,5 +13,9 @@ jobs:
           python-version: '3.12'
       - name: Python syntax check
         run: python -m py_compile server.py tests/test_server.py
+      - name: Frontend JavaScript syntax check
+        run: node --check frontend/app.js
+      - name: Module contract JSON validation
+        run: python -m json.tool module-contract.schema.json > /dev/null
       - name: Unit tests
         run: python -m unittest discover -s tests -v
