@@ -1,6 +1,7 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+import urllib.parse
 import json, os, re, urllib.request, urllib.error, datetime, uuid
 
 ROOT = Path(__file__).resolve().parent
