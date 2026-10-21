@@ -54,6 +54,18 @@ def github_request(path, method='GET', payload=None):
         except Exception: pass
         raise RuntimeError(message)
 
+def github_public_request(path):
+    req=urllib.request.Request('https://api.github.com'+path,headers={'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3','X-GitHub-Api-Version':'2022-11-28'})
+    try:
+        with urllib.request.urlopen(req,timeout=10) as res:
+            body=res.read()
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        message='GitHub API вернул HTTP '+str(e.code)
+        try: message += ': '+json.loads(e.read()).get('message','')
+        except Exception: pass
+        raise RuntimeError(message)
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
@@ -75,7 +87,7 @@ class Handler(SimpleHTTPRequestHandler):
             q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
             if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
             try:
-                result=github_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
+                result=github_public_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
                 items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
                 return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
             except Exception as e: return self.send_json(400, {'error':str(e)})
@@ -162,7 +174,7 @@ class Handler(SimpleHTTPRequestHandler):
             full_name=str(data.get('full_name','')).strip()
             if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full_name): return self.send_json(400, {'error':'Некорректное имя репозитория'})
             try:
-                repo_data=github_request('/repos/'+full_name)
+                repo_data=github_public_request('/repos/'+full_name)
                 if repo_data.get('archived') or repo_data.get('disabled'): return self.send_json(400, {'error':'Архивный или отключённый репозиторий нельзя добавить'})
                 current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
                 if any(m.get('source')==full_name for m in current.get('modules',[])): return self.send_json(409, {'error':'Этот репозиторий уже добавлен'})
