@@ -203,10 +203,11 @@ class Handler(SimpleHTTPRequestHandler):
                 candidates=[]
                 for entry in tree.get('tree',[]):
                     rel=entry.get('path',''); parts=Path(rel).parts
-                    if entry.get('type')!='blob' or not rel or len(parts)>8 or any(part in blocked for part in parts) or '..' in parts or rel.startswith('/'): continue
+                    if entry.get('type')!='blob' or not rel or len(parts)>8 or any(part in blocked for part in parts) or '..' in parts or rel.startswith('/') or any(re.search(r'[<>:"|?*]',part) or part.split('.')[0].upper() in {'CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9'} for part in parts): continue
                     if Path(rel).suffix.lower() not in allowed or int(entry.get('size',0))>200000: continue
                     candidates.append(entry)
                 if len(candidates)>100: return self.send_json(400, {'error':'В репозитории больше 100 текстовых файлов-кандидатов; загрузка ограничена'})
+                if sum(int(entry.get('size',0)) for entry in candidates)>2_000_000: return self.send_json(400, {'error':'Исходники превышают лимит загрузки 2 МБ'})
                 folder=(MODULES/module_id/'source').resolve(); folder.mkdir(parents=True,exist_ok=True)
                 total=0; saved=[]
                 for entry in candidates:
