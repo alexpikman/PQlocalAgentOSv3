@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
@@ -137,6 +137,26 @@ class Handler(SimpleHTTPRequestHandler):
             for k,limit in [('title',100),('description',300),('content',20000)]:
                 if k in data: item[k]=str(data[k]).strip()[:limit]
             write_json(PAGES/'index.json',current); log_event('page.update',item['title']); return self.send_json(200,item)
+        if path=='/api/modules':
+            raw_id=str(data.get('id','')).strip().lower()
+            module_id=re.sub(r'[^a-z0-9._-]+','-',raw_id).strip('-')[:80]
+            name=str(data.get('name','')).strip()[:120]
+            description=str(data.get('description','')).strip()[:1000]
+            version=str(data.get('version','1.0.0')).strip()[:40] or '1.0.0'
+            if not module_id or not re.fullmatch(r'[a-z0-9][a-z0-9._-]{1,79}',module_id): return self.send_json(400, {'error':'ID: 2–80 символов, латиница, цифры, точка, дефис или подчёркивание'})
+            if not name: return self.send_json(400, {'error':'Укажите название модуля'})
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'Модуль с таким ID уже существует'})
+            inputs=[{'name':x.strip(),'type':'text','required':False} for x in str(data.get('inputs','')).split(',') if x.strip()][:30]
+            outputs=[{'name':x.strip(),'type':'text'} for x in str(data.get('outputs','')).split(',') if x.strip()][:30]
+            manifest={'id':module_id,'name':name,'version':version,'description':description,'api_version':'1.0','inputs':inputs,'outputs':outputs,'capabilities':[],'permissions':[],'dependencies':[]}
+            folder=MODULES/module_id
+            folder.mkdir(parents=True,exist_ok=False)
+            write_json(folder/'module.json',manifest)
+            (folder/'README.md').write_text('# '+name+'\\n\\n'+description+'\\n\\nЛокальный каркас модуля PQlocalAgentOSv3. Добавьте реализацию после определения входов, выходов и разрешений. Код не запускается автоматически.\\n',encoding='utf-8')
+            module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
+            current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.create',module_id)
+            return self.send_json(201, {'ok':True,'module':module})
         if path=='/api/modules/install':
             full_name=str(data.get('full_name','')).strip()
             if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full_name): return self.send_json(400, {'error':'Некорректное имя репозитория'})
@@ -176,6 +196,18 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_DELETE(self):
         path=urlparse(self.path).path
+        if path.startswith('/api/modules/'):
+            module_id=path.split('/')[-1]
+            if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{1,79}',module_id): return self.send_json(400, {'error':'Некорректный ID модуля'})
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            item=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not item: return self.send_json(404, {'error':'Модуль не найден'})
+            current['modules']=[m for m in current.get('modules',[]) if m.get('id')!=module_id]
+            current['connections']=[x for x in current.get('connections',[]) if x.get('from')!=module_id and x.get('to')!=module_id]
+            write_json(DATA/'modules.json',current)
+            folder=MODULES/module_id
+            if folder.exists() and folder.resolve().parent==MODULES.resolve(): shutil.rmtree(folder)
+            log_event('module.remove',module_id); return self.send_json(200, {'ok':True})
         if path.startswith('/api/pages/'):
             pid=path.split('/')[-1]; current=pages(); item=next((p for p in current if p['id']==pid),None)
             if not item: return self.send_json(404, {'error':'Страница не найдена'})
