@@ -27,7 +27,7 @@
 
 .nav-item .nav-count{font-size:10px;color:#85839a}
 
-.sidebar-bottom{display:flex;align-items:center;gap:10px;margin-top:auto;padding:14px 10px;border:1px solid #292938;border-radius:10px;background:#171720;background:linear-gradient(145deg,#14232e,#111b24)}
+.sidebar-bottom{display:flex;align-items:center;gap:10px;margin-top:auto;padding:14px 10px;border:1px solid #292938;border-radius:10px;background:var(--panel);background:linear-gradient(145deg,#14232e,#111b24)}
 
 .sidebar-bottom b,.sidebar-bottom small{display:block;font-size:11px}
 
@@ -35,7 +35,7 @@
 
 .main{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column;margin-left:var(--left-panel-width);margin-right:var(--right-sidebar);transition:margin .2s ease}
 
-.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--pad);border-bottom:1px solid var(--line);background:#101018d9;gap:12px;padding-left:24px!important;padding-right:24px!important;position:relative;justify-content:center;padding-left:24px!important;padding-right:24px!important;backdrop-filter:blur(16px)}
+.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--pad);border-bottom:1px solid var(--line);background:var(--bg)d9;gap:12px;padding-left:24px!important;padding-right:24px!important;position:relative;justify-content:center;padding-left:24px!important;padding-right:24px!important;backdrop-filter:blur(16px)}
 
 .topbar-path{display:flex;gap:11px;align-items:center;color:#9695a9;font-size:12px;min-width:0;flex:1;position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;white-space:nowrap}
 
