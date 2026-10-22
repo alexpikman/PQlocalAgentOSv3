@@ -104,6 +104,7 @@ def _github_request(path: str) -> dict[str, Any]:
 def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permission_config: dict[str, Any]) -> dict[str, Any]:
     permissions=agent.get('permissions') if isinstance(agent.get('permissions'),dict) else {}
     required=PERMISSION_FOR_TOOL.get(name)
+    if name=='move_file' and Path(str(args.get('source',''))).is_dir(): required=('directory_moving',)
     if not required: return {'error':'Инструмент не поддерживается.'}
     if not all(permissions.get(key,False) for key in required): return {'error':'У агента нет необходимого разрешения: '+', '.join(required)}
     try:
