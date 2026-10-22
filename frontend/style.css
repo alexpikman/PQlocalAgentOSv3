@@ -69,3 +69,7 @@
  .app-shell.left-hidden #toggle-left-panel{left:6px}
  .app-shell.right-hidden #toggle-right-panel{right:6px}
 }
+
+.panel-toggle-floating{position:fixed!important;top:6px!important;left:auto!important;right:auto!important;z-index:30!important}
+#toggle-left-panel.panel-toggle-floating{left:6px!important;right:auto!important}
+#toggle-right-panel.panel-toggle-floating{right:6px!important;left:auto!important}
