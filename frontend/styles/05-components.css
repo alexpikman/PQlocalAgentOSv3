@@ -19,7 +19,7 @@
 
 .field input,.field select,.field textarea,.modal input,.modal textarea{width:100%;background:#111119;border:1px solid #353548;border-radius:8px;padding:10px 11px;color:#eeeefa;outline:none;min-width:0}
 
-.field input:focus,.field select:focus,.field textarea:focus,.modal input:focus,.modal textarea:focus{border-color:#8375e7;box-shadow:0 0 0 3px #3b9dff18}
+.field input:focus,.field select:focus,.field textarea:focus,.modal input:focus,.modal textarea:focus{border-color:#8375e7;box-shadow:0 0 0 3px var(--accent)18}
 
 .field input[type=color]{height:40px;padding:4px}
 
