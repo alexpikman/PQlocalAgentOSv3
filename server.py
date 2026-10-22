@@ -50,18 +50,38 @@ def ollama_request(path, payload=None, timeout=8):
     req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
     with urllib.request.urlopen(req,timeout=timeout) as response: return json.loads(response.read().decode('utf-8'))
 def run_diagnostics():
-    checks=[
-      {'name':'HTTP API','status':'ok','message':'Сервер обработал диагностический запрос.','detail':'PQlocalAgentOSv3'},
-      {'name':'Хранилище данных','status':'ok' if os.access(DATA,os.R_OK|os.W_OK) else 'error','message':'Проверка чтения и записи каталога данных.','detail':str(DATA)},
-      {'name':'Python','status':'ok','message':'Интерпретатор доступен.','detail':__import__('sys').version.split()[0]},
-      {'name':'Каталог модулей','status':'ok' if MODULES.is_dir() and os.access(MODULES,os.R_OK|os.W_OK) else 'error','message':'Проверка каталога модулей.','detail':str(MODULES)},
-      {'name':'Настройки','status':'ok' if (DATA/'settings.json').exists() else 'warning','message':'Файл настроек существует.' if (DATA/'settings.json').exists() else 'Файл настроек создаётся при первом обращении.','detail':str(DATA/'settings.json')}
-    ]
+    checks=[]
+    def check(name,status,message,detail=''):
+        checks.append({'name':name,'status':status,'message':message,'detail':str(detail)[:240]})
+    check('HTTP API','ok','Сервер обработал диагностический запрос.','PQlocalAgentOSv3')
+    check('Каталог данных','ok' if os.access(DATA,os.R_OK|os.W_OK) else 'error','Проверены права чтения и записи.',DATA)
+    check('Интерпретатор Python','ok','Интерпретатор доступен.',__import__('sys').version.split()[0])
+    check('Каталог модулей','ok' if MODULES.is_dir() and os.access(MODULES,os.R_OK|os.W_OK) else 'error','Проверен каталог модулей.',MODULES)
+    check('Настройки интерфейса','ok' if (DATA/'settings.json').is_file() else 'warning','Файл настроек существует.' if (DATA/'settings.json').is_file() else 'Будет создан при первом сохранении.',DATA/'settings.json')
+    check('Реестр страниц','ok' if (PAGES/'index.json').is_file() else 'warning','Файл страниц существует.' if (PAGES/'index.json').is_file() else 'Используются системные страницы по умолчанию.',PAGES/'index.json')
+    check('Реестр модулей','ok' if (DATA/'modules.json').is_file() else 'warning','Файл реестра существует.' if (DATA/'modules.json').is_file() else 'Будет создан при первом изменении каталога.',DATA/'modules.json')
+    check('Журнал событий','ok' if (DATA/'events.json').is_file() and os.access(DATA/'events.json',os.R_OK|os.W_OK) else 'warning','Журнал доступен.' if (DATA/'events.json').is_file() else 'Файл журнала появится после первого события.',DATA/'events.json')
+    check('Реестр агентов','ok' if (DOMAIN_FILES['agents'].is_file() else 'warning','Файл агентов существует.' if DOMAIN_FILES['agents'].is_file() else 'Будет создан при сохранении первого изменения.',DOMAIN_FILES['agents'])
+    check('Реестр проектов','ok' if DOMAIN_FILES['projects'].is_file() else 'warning','Файл проектов существует.' if DOMAIN_FILES['projects'].is_file() else 'Проекты ещё не сохранялись.',DOMAIN_FILES['projects'])
+    check('Реестр задач','ok' if DOMAIN_FILES['tasks'].is_file() else 'warning','Файл задач существует.' if DOMAIN_FILES['tasks'].is_file() else 'Задачи ещё не сохранялись.',DOMAIN_FILES['tasks'])
+    schema_path=ROOT/'module-contract.schema.json'
+    check('Контракт модулей','ok' if schema_path.is_file() else 'error','JSON-схема контракта доступна.' if schema_path.is_file() else 'Не найдена JSON-схема контракта.',schema_path)
+    frontend_ok=all((FRONTEND/name).is_file() for name in ('index.html','app.js','style.css'))
+    check('Frontend-ресурсы','ok' if frontend_ok else 'error','HTML, JavaScript и CSS доступны.' if frontend_ok else 'Не хватает одного или нескольких файлов frontend.',FRONTEND)
     try:
         models=ollama_request('/api/tags',timeout=3).get('models',[])
-        checks.extend([{'name':'Ollama','status':'ok','message':'Локальный сервис моделей доступен.','detail':OLLAMA_URL},{'name':'Локальные модели','status':'ok' if models else 'warning','message':f'Доступно моделей: {len(models)}.','detail':', '.join(x.get('name','') for x in models[:8]) or 'Модели не установлены'}])
+        check('Сервис Ollama','ok','Локальный сервис моделей отвечает.',OLLAMA_URL)
+        check('Доступность моделей','ok' if models else 'warning',f'Доступно моделей: {len(models)}.' if models else 'В Ollama пока нет установленных моделей.',', '.join(x.get('name','') for x in models[:8]) or 'Нет моделей')
     except Exception as exc:
-        checks.extend([{'name':'Ollama','status':'warning','message':'Локальный сервис моделей недоступен.','detail':str(exc)[:180]},{'name':'Локальные модели','status':'warning','message':'Список моделей недоступен, пока Ollama не запущена.','detail':OLLAMA_URL}])
+        check('Сервис Ollama','warning','Локальный сервис моделей не отвечает.',str(exc)[:180])
+        check('Доступность моделей','warning','Список моделей недоступен без работающей Ollama.',OLLAMA_URL)
+    lm_url=os.environ.get('LM_STUDIO_BASE_URL','http://127.0.0.1:1234/v1').rstrip('/')
+    try:
+        with urllib.request.urlopen(lm_url+'/models',timeout=2.5) as response:
+            status=response.status
+        check('Сервис LM Studio','ok' if 200<=status<300 else 'warning',f'Локальный сервис вернул HTTP {status}.',lm_url)
+    except Exception as exc:
+        check('Сервис LM Studio','warning','LM Studio не запущена или недоступна; это необязательный сервис.',str(exc)[:180])
     return {'checked_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'checks':checks,'summary':{'total':len(checks),'ok':sum(x['status']=='ok' for x in checks),'warning':sum(x['status']=='warning' for x in checks),'error':sum(x['status']=='error' for x in checks)}}
 
 def github_request(path, method='GET', payload=None):
