@@ -138,3 +138,26 @@
 }
 :root[data-theme="light"] dialog::backdrop{background:#17243755;backdrop-filter:blur(3px)}
 :root[data-theme="light"] .mono{color:#35516e}
+
+
+/* Domain pages share the same surface, spacing and status vocabulary. */
+.diagnostic-list{display:grid;gap:0;margin-top:18px}
+.diagnostic-row,.domain-row{display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
+.diagnostic-row:last-child,.domain-row:last-child{border-bottom:0}
+.diagnostic-row>div,.domain-main{flex:1;min-width:0}
+.diagnostic-row p,.domain-row p{margin:5px 0;color:var(--muted);line-height:1.55}
+.diagnostic-row small,.domain-row small{display:block;overflow-wrap:anywhere;color:var(--muted)}
+.badge.success{color:#087d55;background:#d9f8e9;border-color:#a8e8ca}
+.badge.danger{color:#b42335;background:#ffe3e6;border-color:#ffc3cb}
+:root[data-theme="dark"] .badge.success{color:#70e6b3;background:#15372c;border-color:#245f49}
+:root[data-theme="dark"] .badge.danger{color:#ff9ba7;background:#3c2027;border-color:#713440}
+.domain-row{align-items:center;flex-wrap:wrap}
+.domain-main{flex:1 1 320px}
+.domain-row .btn{flex-shrink:0}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap}
+.model-response,.task-result{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin-top:10px}
+.task-row details{margin-top:12px}
+.task-row summary{cursor:pointer;color:var(--accent);font-weight:650}
+.error-text{color:#c43e50!important}
+:root[data-theme="light"] .error-text{color:#b42335!important}
+@media(max-width:700px){.diagnostic-row,.domain-row{align-items:flex-start;flex-direction:column}.domain-main{width:100%;flex-basis:auto}.domain-row .btn{align-self:flex-start}}
