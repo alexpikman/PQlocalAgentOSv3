@@ -45,3 +45,96 @@
 
 /* PQ glass workspace refinements */
 :root{--shell-glow:#31c9ed18}body{background:radial-gradient(ellipse at 80% -15%,#15384a45,transparent 42%),var(--bg)}.topbar{backdrop-filter:blur(16px)}.page-head{background:linear-gradient(110deg,#11233155,transparent 65%)}.brand-mark{background:linear-gradient(140deg,#55d8ed,#267fe8);box-shadow:0 5px 24px #21b8e344}.nav-item.active{background:linear-gradient(100deg,#15384a,#132738);border-color:#2d667e;color:#a4edff}.feature-card{position:relative;overflow:hidden}.feature-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,#2fc6e70a,transparent 55%);pointer-events:none}.feature-card:hover{box-shadow:0 14px 34px #12a8d51b}.stat-icon{background:#143044;border-color:#25546a;color:#7de3ff}.btn.primary{background:linear-gradient(110deg,#238be8,#20b9ce);box-shadow:0 4px 18px #1689bb28}.eyebrow{color:#65d9ef}.sidebar-bottom{background:linear-gradient(145deg,#14232e,#111b24)}.page-card,.panel,.stat-card{transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}.panel:hover{border-color:#2e4b5e}
+
+
+/* Theme tokens: keep shared components visually consistent in both schemes. */
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3f6fa;
+  --panel:#ffffff;
+  --panel2:#edf2f8;
+  --line:#d9e2ec;
+  --muted:#637287;
+  --text:#172437;
+  --accent-soft:#e3f3ff;
+  --shell-glow:#1685c90d;
+}
+:root[data-theme="light"] body{
+  color:var(--text);
+  background:radial-gradient(ellipse at 82% -16%,#d6f0ff99,transparent 44%),var(--bg);
+}
+:root[data-theme="light"] .sidebar{
+  background:rgba(255,255,255,.94);
+  border-right-color:var(--line);
+  box-shadow:8px 0 28px #24364b08;
+}
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .stat-card,
+:root[data-theme="light"] .feature-card,
+:root[data-theme="light"] .page-card,
+:root[data-theme="light"] .module-card,
+:root[data-theme="light"] .settings-section,
+:root[data-theme="light"] .connection-card{
+  background:rgba(255,255,255,.88);
+  border-color:var(--line);
+  box-shadow:0 8px 24px #24364b08;
+}
+:root[data-theme="light"] .page-head{
+  background:linear-gradient(110deg,#e4f4ff99,transparent 68%);
+}
+:root[data-theme="light"] .brand-copy small,
+:root[data-theme="light"] .nav-caption,
+:root[data-theme="light"] .muted,
+:root[data-theme="light"] .panel-subtitle,
+:root[data-theme="light"] .field-help,
+:root[data-theme="light"] .sidebar-bottom small{
+  color:var(--muted);
+}
+:root[data-theme="light"] .nav-item{color:#52647a;border-color:transparent}
+:root[data-theme="light"] .nav-item:hover{background:#eaf3fb;color:#173a58}
+:root[data-theme="light"] .nav-item.active{
+  background:linear-gradient(100deg,#dff2ff,#e8f8fb);
+  border-color:#b8dff1;
+  color:#075b8e;
+}
+:root[data-theme="light"] .sidebar-bottom{
+  background:linear-gradient(145deg,#edf7fc,#f7f9fc);
+  border-color:var(--line);
+}
+:root[data-theme="light"] input,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select{
+  color:var(--text);
+  background:#fff;
+  border-color:#cbd7e4;
+}
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder{color:#8291a4}
+:root[data-theme="light"] .btn.secondary,
+:root[data-theme="light"] .btn.ghost{
+  color:#344b63;
+  background:#f5f8fc;
+  border-color:#d4dfeb;
+}
+:root[data-theme="light"] .btn.secondary:hover,
+:root[data-theme="light"] .btn.ghost:hover{background:#eaf2fa;border-color:#b9cbdc}
+:root[data-theme="light"] .stat-icon{
+  background:#e3f5ff;border-color:#c5e8f7;color:#087aa9;
+}
+:root[data-theme="light"] .eyebrow{color:#087ba5}
+:root[data-theme="light"] .notice{background:#eef6fc;border-color:#d4e6f4;color:#344e66}
+:root[data-theme="light"] .notice.warning{background:#fff7e8;border-color:#f0ddb5;color:#81571b}
+:root[data-theme="light"] .badge{background:#edf3f9;color:#52677d;border-color:#d9e3ed}
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] table{border-color:var(--line)}
+:root[data-theme="light"] th{background:#f1f5fa;color:#52647a}
+:root[data-theme="light"] td{border-color:#e4eaf1}
+:root[data-theme="light"] .page-card:hover,
+:root[data-theme="light"] .panel:hover{border-color:#b7d6e8;box-shadow:0 12px 28px #234a6410}
+:root[data-theme="light"] .dialog,
+:root[data-theme="light"] dialog{
+  color:var(--text);background:#fff;border-color:var(--line);box-shadow:0 24px 70px #17243726;
+}
+:root[data-theme="light"] dialog::backdrop{background:#17243755;backdrop-filter:blur(3px)}
+:root[data-theme="light"] .mono{color:#35516e}
