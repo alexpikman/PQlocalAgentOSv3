@@ -415,7 +415,9 @@ class Handler(SimpleHTTPRequestHandler):
             if action!='add' or not raw_path: return self.send_json(400, {'error':'Укажите путь к папке'})
             try:
                 from agent_tools import _contains_reparse
-                root=Path(raw_path).expanduser().resolve(strict=True)
+                raw_root=Path(raw_path).expanduser()
+                if _contains_reparse(raw_root): return self.send_json(400, {'error':'Символические ссылки и junction нельзя добавлять в разрешённые папки.'})
+                root=raw_root.resolve(strict=True)
                 if not root.is_dir() or root.parent==root or _contains_reparse(root): return self.send_json(400, {'error':'Нужно выбрать существующую папку, не корень диска и без символических ссылок.'})
             except Exception as e: return self.send_json(400, {'error':'Папка недоступна: '+str(e)[:160]})
             normalized=str(root)
@@ -541,8 +543,14 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/modules/run':
             try: return self.send_json(200, execute_module_graph(data))
-            except ValueError as e: return self.send_json(400, {'error':str(e)})
-            except Exception as e: return self.send_json(502, {'error':'Ошибка выполнения схемы: '+str(e)[:240]})
+            except ValueError as e:
+                failed={'ok':False,'start_id':str(data.get('start_id','')),'error':str(e),'finished_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                runs=read_json(DATA/'module-runs.json',[]); runs=runs if isinstance(runs,list) else []; write_json(DATA/'module-runs.json',([failed]+runs)[:100]); log_event('module.graph.failed',str(e))
+                return self.send_json(400, {'error':str(e),'run':failed})
+            except Exception as e:
+                failed={'ok':False,'start_id':str(data.get('start_id','')),'error':str(e)[:240],'finished_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                runs=read_json(DATA/'module-runs.json',[]); runs=runs if isinstance(runs,list) else []; write_json(DATA/'module-runs.json',([failed]+runs)[:100]); log_event('module.graph.failed',str(e))
+                return self.send_json(502, {'error':'Ошибка выполнения схемы: '+str(e)[:240],'run':failed})
         if path=='/api/modules/connections':
             connections=data.get('connections',[])
             if not isinstance(connections,list) or len(connections)>300: return self.send_json(400, {'error':'Некорректный список связей'})
