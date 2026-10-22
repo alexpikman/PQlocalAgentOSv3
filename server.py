@@ -14,7 +14,7 @@ HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
 for p in (FRONTEND, DATA, PAGES, MODULES): p.mkdir(parents=True, exist_ok=True)
 DEFAULT_SETTINGS = {'appearance': {'theme':'dark','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}}
-DEFAULT_PAGES = [{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True}]
+DEFAULT_PAGES = [{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True}]
 def read_json(path, fallback):
     try: return json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError): return fallback
@@ -35,6 +35,12 @@ def pages():
             current.append(item.copy()); known.add(item.get('id')); changed=True
     if changed or not p.exists(): write_json(p, current)
     return current
+def permission_settings():
+    current=read_json(DATA/'permissions.json', {'local_files':False,'roots':[]})
+    if not isinstance(current,dict): current={'local_files':False,'roots':[]}
+    current['local_files']=bool(current.get('local_files',False))
+    current['roots']=current.get('roots',[]) if isinstance(current.get('roots',[]),list) else []
+    return current
 def log_event(action, detail=''):
     path=DATA/'events.json'; events=read_json(path, [])
     events.insert(0, {'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'action':action,'detail':str(detail)[:300]})
@@ -42,6 +48,8 @@ def log_event(action, detail=''):
 OLLAMA_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
 DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 'tasks': DATA/'tasks.json'}
 AGENT_ROLES = ['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS']
+AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','github_access'}
+DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
 AGENT_ROLE_PROMPTS = {
     'MANAGER':'Ты менеджер проекта. Разбей цель на этапы, уточни критерии результата, риски и зависимости. Дай приоритетный план и явно обозначь, что не выполнено.',
     'ARCHITECT':'Ты системный архитектор. Проектируй модульную структуру, контракты, потоки данных, ограничения и точки отказа. Не выдумывай существующие API.',
@@ -231,6 +239,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
         if path=='/api/modules/runs':
             return self.send_json(200, read_json(DATA/'module-runs.json', []))
+        if path=='/api/permissions': return self.send_json(200, permission_settings())
         if path=='/api/github/search':
             q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
             if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
@@ -286,7 +295,7 @@ class Handler(SimpleHTTPRequestHandler):
             if kind=='agents':
                 role=str(data.get('role','ANALYST')).upper()
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
-                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'status':'idle','system':False})
+                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
             else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'status':'pending','result':'','error':''})
             items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
@@ -324,11 +333,38 @@ class Handler(SimpleHTTPRequestHandler):
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
             if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id'}}[kind]
             for key in allowed:
-                if key in data: item[key]=str(data[key]).strip()[:5000]
+                if key not in data: continue
+                if kind=='agents' and key=='permissions':
+                    if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
+                    item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
+                elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
+                else: item[key]=str(data[key]).strip()[:5000]
             save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
             return self.send_json(200,item)
+        if path=='/api/permissions':
+            current=permission_settings()
+            if 'local_files' in data: current['local_files']=bool(data.get('local_files'))
+            if current['local_files'] and not current['roots']: return self.send_json(409, {'error':'Сначала добавьте хотя бы одну разрешённую папку.'})
+            write_json(DATA/'permissions.json',current); log_event('permissions.global',str(current['local_files']))
+            return self.send_json(200,current)
+        if path=='/api/permissions/roots':
+            current=permission_settings(); raw_path=str(data.get('path','')).strip().strip('"'); action=str(data.get('action','add'))
+            if action=='remove':
+                current['roots']=[p for p in current['roots'] if p!=raw_path]
+                if not current['roots']: current['local_files']=False
+                write_json(DATA/'permissions.json',current); log_event('permissions.root.remove',raw_path); return self.send_json(200,current)
+            if action!='add' or not raw_path: return self.send_json(400, {'error':'Укажите путь к папке'})
+            try:
+                from agent_tools import _contains_reparse
+                root=Path(raw_path).expanduser().resolve(strict=True)
+                if not root.is_dir() or root.parent==root or _contains_reparse(root): return self.send_json(400, {'error':'Нужно выбрать существующую папку, не корень диска и без символических ссылок.'})
+            except Exception as e: return self.send_json(400, {'error':'Папка недоступна: '+str(e)[:160]})
+            normalized=str(root)
+            if normalized not in current['roots']: current['roots'].append(normalized)
+            write_json(DATA/'permissions.json',current); log_event('permissions.root.add',normalized)
+            return self.send_json(200,current)
         if path=='/api/settings':
             allowed={'appearance','header','navigation'}; current=settings()
             for k,v in data.items():
