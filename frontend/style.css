@@ -169,3 +169,10 @@
 .module-step summary{cursor:pointer;font-size:11px;font-weight:650}
 .module-step pre{margin-bottom:0}
 .connection-row .btn{padding:5px 8px;margin-left:4px}
+
+.agent-memory-editor{margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.agent-memory-editor summary{cursor:pointer;font-size:11px;font-weight:650}
+.agent-memory-editor form{display:grid;gap:10px;margin-top:12px}
+.agent-memory-editor label{display:grid;gap:6px;font-size:10px;color:var(--muted)}
+.agent-memory-editor textarea{width:100%;resize:vertical;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--text);font:12px/1.5 var(--font)}
+.agent-memory-editor .btn{justify-self:start}
