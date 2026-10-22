@@ -358,7 +358,9 @@ class Handler(SimpleHTTPRequestHandler):
             if runtime_kind=='ollama':
                 runtime['system_prompt']=str(data.get('system_prompt',''))[:4000]
                 runtime['model']=str(data.get('model',''))[:160]
-                runtime['max_tokens']=min(max(int(data.get('max_tokens',1024)),64),4096)
+                try: max_tokens=int(data.get('max_tokens',1024))
+                except (TypeError,ValueError): max_tokens=1024
+                runtime['max_tokens']=min(max(max_tokens,64),4096)
             manifest={'id':module_id,'name':name,'version':version,'description':description,'api_version':'1.0','inputs':inputs,'outputs':outputs,'runtime':runtime,'capabilities':[],'permissions':[],'dependencies':[]}
             folder=MODULES/module_id
             if folder.exists(): return self.send_json(409, {'error':'Папка модуля уже существует; проверьте каталог modules/'})
