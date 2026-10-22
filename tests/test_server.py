@@ -18,6 +18,8 @@ class StorageTests(unittest.TestCase):
         self.assertTrue((server.ROOT / 'module-contract.schema.json').exists())
     def test_module_directory_is_defined(self):
         self.assertEqual(server.MODULES, server.ROOT / 'modules')
+    def test_agent_tool_runtime_is_tracked(self):
+        self.assertTrue((server.ROOT / 'agent_tools.py').exists())
     def test_slug_is_safe(self):
         import re
         slug=re.sub(r'[^a-z0-9-]+','-','my page / hello').strip('-')
