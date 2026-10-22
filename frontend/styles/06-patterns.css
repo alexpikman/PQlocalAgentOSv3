@@ -8,9 +8,15 @@
 
 .entity-row-main{min-width:0}
 
+.entity-row > .entity-row-main{min-width:0;overflow:hidden}
+
+.entity-row-main > *{min-width:0;max-width:100%}
+
+.entity-row[data-search-row="diagnostics"],.entity-row[data-search-row="providers"],.entity-row[data-search-row="provider-models"]{grid-template-columns:minmax(0,1fr) auto}
+
 .entity-row-main > p,.entity-row-main > small{overflow-wrap:anywhere;word-break:break-word}
 
-.entity-row .provider-avatar{width:24px;height:24px;font-size:12px}
+.entity-row .provider-avatar{width:24px;height:24px;font-size:12px;flex:0 0 24px}
 
 .entity-row-heading{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
 
