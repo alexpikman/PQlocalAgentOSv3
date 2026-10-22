@@ -411,7 +411,7 @@ def _cpu_usage():
     try:
         before = _windows_cpu_times()
         import time
-        time.sleep(0.15)
+        time.sleep(0.12)
         after = _windows_cpu_times()
         idle = after[0] - before[0]
         total = (after[1] - before[1]) + (after[2] - before[2])
@@ -419,7 +419,7 @@ def _cpu_usage():
     except Exception:
         try:
             import psutil
-            return round(psutil.cpu_percent(interval=0.15), 1)
+            return round(psutil.cpu_percent(interval=0.12), 1)
         except Exception:
             return None
 
@@ -437,16 +437,26 @@ def _memory_stats():
         if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) and status.ullTotalPhys:
             total = status.ullTotalPhys / (1024 ** 3)
             available = status.ullAvailPhys / (1024 ** 3)
-            used = total - available
-            return {'available': True, 'percent': round(used / total * 100, 1), 'used': round(used, 2), 'total': round(total, 2)}
+            page_total = status.ullTotalPageFile / (1024 ** 3)
+            page_available = status.ullAvailPageFile / (1024 ** 3)
+            return {'available': True, 'percent': round((total - available) / total * 100, 1),
+                    'used': round(total - available, 2), 'total': round(total, 2),
+                    'free': round(available, 2), 'pagefile': {
+                        'total': round(page_total, 2), 'available': round(page_available, 2),
+                        'used': round(max(0, page_total - page_available), 2)}}
     except Exception:
         pass
     try:
         import psutil
         mem = psutil.virtual_memory()
-        return {'available': True, 'percent': mem.percent, 'used': round(mem.used / (1024 ** 3), 2), 'total': round(mem.total / (1024 ** 3), 2)}
+        swap = psutil.swap_memory()
+        return {'available': True, 'percent': mem.percent, 'used': round(mem.used / (1024 ** 3), 2),
+                'total': round(mem.total / (1024 ** 3), 2), 'free': round(mem.available / (1024 ** 3), 2),
+                'pagefile': {'total': round(swap.total / (1024 ** 3), 2),
+                             'available': round((swap.total - swap.used) / (1024 ** 3), 2),
+                             'used': round(swap.used / (1024 ** 3), 2)}}
     except Exception:
-        return {'available': False, 'percent': None, 'used': None, 'total': None}
+        return {'available': False, 'percent': None, 'used': None, 'total': None, 'free': None, 'pagefile': None}
 
 def _cpu_name():
     try:
@@ -456,9 +466,9 @@ def _cpu_name():
     except Exception:
         try:
             import platform
-            return platform.processor() or 'Процессор'
+            return platform.processor() or None
         except Exception:
-            return 'Процессор'
+            return None
 
 def _gpu_stats():
     import subprocess
@@ -466,25 +476,49 @@ def _gpu_stats():
     candidates = ['nvidia-smi']
     program_files = os.environ.get('ProgramFiles', r'C:\Program Files')
     candidates.append(str(Path(program_files) / 'NVIDIA Corporation' / 'NVSMI' / 'nvidia-smi.exe'))
+    fields = ['name', 'utilization.gpu', 'memory.used', 'memory.total', 'temperature.gpu',
+              'power.draw', 'power.limit', 'clocks.gr', 'clocks.mem', 'fan.speed']
+    query = ','.join(fields)
     for command in candidates:
         try:
-            result = subprocess.run([command, '--query-gpu=name,utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'],
-                                    capture_output=True, text=True, timeout=2, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            result = subprocess.run([command, '--query-gpu=' + query, '--format=csv,noheader,nounits'],
+                                    capture_output=True, text=True, timeout=3, check=True,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             line = next((line.strip() for line in result.stdout.splitlines() if line.strip()), '')
-            if not line:
-                continue
             parts = [part.strip() for part in line.split(',')]
-            if len(parts) < 4:
-                continue
-            usage = float(parts[-3])
-            used_mb = float(parts[-2])
-            total_mb = float(parts[-1])
-            return {'available': True, 'name': ','.join(parts[:-3]).strip() or 'NVIDIA GPU',
-                    'percent': round(usage, 1), 'vramUsed': round(used_mb / 1024, 2),
-                    'vramTotal': round(total_mb / 1024, 2)}
+            if len(parts) < len(fields):
+                raise ValueError('Incomplete nvidia-smi output')
+            def number(index):
+                try:
+                    value = parts[index].strip()
+                    return None if not value or value.lower() in ('[n/a]', 'n/a', 'not supported') else float(value)
+                except (ValueError, IndexError):
+                    return None
+            used_mb, total_mb = number(2), number(3)
+            return {'available': True, 'name': parts[0] or None, 'percent': number(1),
+                    'vramUsed': round(used_mb / 1024, 2) if used_mb is not None else None,
+                    'vramTotal': round(total_mb / 1024, 2) if total_mb is not None else None,
+                    'temperatureC': number(4), 'powerW': number(5), 'powerLimitW': number(6),
+                    'coreClockMHz': number(7), 'memoryClockMHz': number(8), 'fanPercent': number(9),
+                    'raw': {'memoryUsedMiB': used_mb, 'memoryTotalMiB': total_mb}}
         except Exception:
-            continue
-    return {'available': False, 'name': None, 'percent': None, 'vramUsed': None, 'vramTotal': None}
+            # Driver versions may not expose every optional field; retry the stable base query.
+            try:
+                result = subprocess.run([command, '--query-gpu=name,utilization.gpu,memory.used,memory.total',
+                                         '--format=csv,noheader,nounits'], capture_output=True, text=True,
+                                        timeout=2, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                parts = [part.strip() for part in next((x.strip() for x in result.stdout.splitlines() if x.strip()), '').split(',')]
+                if len(parts) >= 4:
+                    return {'available': True, 'name': ','.join(parts[:-3]).strip() or None,
+                            'percent': float(parts[-3]), 'vramUsed': round(float(parts[-2]) / 1024, 2),
+                            'vramTotal': round(float(parts[-1]) / 1024, 2), 'temperatureC': None,
+                            'powerW': None, 'powerLimitW': None, 'coreClockMHz': None,
+                            'memoryClockMHz': None, 'fanPercent': None}
+            except Exception:
+                continue
+    return {'available': False, 'name': None, 'percent': None, 'vramUsed': None, 'vramTotal': None,
+            'temperatureC': None, 'powerW': None, 'powerLimitW': None, 'coreClockMHz': None,
+            'memoryClockMHz': None, 'fanPercent': None}
 
 def _disk_stats():
     disks = []
@@ -504,9 +538,17 @@ def _disk_stats():
                 used = (usage.total - usage.free) / (1024 ** 3)
                 if total <= 0:
                     continue
-                disks.append({'mount': mount, 'available': True, 'percent': round(used / total * 100, 1),
-                              'used': round(used, 1), 'free': round(usage.free / (1024 ** 3), 1),
-                              'total': round(total, 1)})
+                label_buffer = ctypes.create_unicode_buffer(261)
+                fs_buffer = ctypes.create_unicode_buffer(261)
+                try:
+                    ctypes.windll.kernel32.GetVolumeInformationW(mount, label_buffer, len(label_buffer), None, None, None, fs_buffer, len(fs_buffer))
+                    label, filesystem = label_buffer.value or None, fs_buffer.value or None
+                except Exception:
+                    label, filesystem = None, None
+                disks.append({'mount': mount, 'available': True, 'driveType': drive_type,
+                              'label': label, 'filesystem': filesystem, 'percent': round(used / total * 100, 1),
+                              'used': round(used, 2), 'free': round(usage.free / (1024 ** 3), 2),
+                              'total': round(total, 2), 'totalBytes': usage.total, 'freeBytes': usage.free})
             except (OSError, PermissionError):
                 continue
     except Exception:
@@ -516,23 +558,166 @@ def _disk_stats():
             used = (usage.total - usage.free) / (1024 ** 3)
             if total:
                 disks.append({'mount': str(ROOT.anchor or ROOT), 'available': True,
-                              'percent': round(used / total * 100, 1), 'used': round(used, 1),
-                              'free': round(usage.free / (1024 ** 3), 1), 'total': round(total, 1)})
+                              'percent': round(used / total * 100, 1), 'used': round(used, 2),
+                              'free': round(usage.free / (1024 ** 3), 2), 'total': round(total, 2),
+                              'totalBytes': usage.total, 'freeBytes': usage.free})
         except Exception:
             pass
     return disks
 
+def _network_stats():
+    try:
+        import psutil
+        counters = psutil.net_io_counters(pernic=True)
+        addresses = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+        adapters = []
+        for name, counter in counters.items():
+            status = stats.get(name)
+            addr_items = addresses.get(name, [])
+            adapters.append({
+                'name': name, 'isUp': bool(status.isup) if status else None,
+                'speedMbps': status.speed if status else None,
+                'mtu': status.mtu if status else None,
+                'bytesSent': counter.bytes_sent, 'bytesReceived': counter.bytes_recv,
+                'packetsSent': counter.packets_sent, 'packetsReceived': counter.packets_recv,
+                'errorsIn': counter.errin, 'errorsOut': counter.errout,
+                'dropsIn': counter.dropin, 'dropsOut': counter.dropout,
+                'addresses': [{'family': str(a.family), 'address': a.address, 'netmask': a.netmask}
+                              for a in addr_items if a.address and not a.address.startswith('fe80::')]
+            })
+        totals = psutil.net_io_counters()
+        return {'available': True, 'bytesSent': totals.bytes_sent, 'bytesReceived': totals.bytes_recv,
+                'packetsSent': totals.packets_sent, 'packetsReceived': totals.packets_recv, 'adapters': adapters,
+                'note': 'Network counters are cumulative since system start or adapter reset.'}
+    except Exception as exc:
+        return {'available': False, 'bytesSent': None, 'bytesReceived': None, 'adapters': [],
+                'reason': 'Install psutil to expose per-adapter counters.'}
+
+def _process_stats():
+    try:
+        import psutil
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'username', 'status', 'memory_info', 'cpu_percent', 'create_time']):
+            try:
+                info = proc.info
+                mem = info.get('memory_info')
+                processes.append({'pid': info.get('pid'), 'name': info.get('name'), 'user': info.get('username'),
+                                  'status': info.get('status'), 'memoryBytes': getattr(mem, 'rss', None),
+                                  'cpuPercent': info.get('cpu_percent'),
+                                  'startedAt': datetime.datetime.fromtimestamp(info['create_time']).astimezone().isoformat(timespec='seconds')
+                                  if info.get('create_time') else None})
+            except (OSError, PermissionError):
+                continue
+        processes.sort(key=lambda p: p.get('memoryBytes') or 0, reverse=True)
+        return {'available': True, 'count': len(processes), 'topMemory': processes[:30],
+                'note': 'Top 30 processes by resident memory; access depends on Windows permissions.'}
+    except Exception:
+        return {'available': False, 'count': None, 'topMemory': [],
+                'reason': 'Install psutil to expose detailed process metrics.'}
+
+def _battery_stats():
+    try:
+        import psutil
+        battery = psutil.sensors_battery()
+        if battery is None:
+            return {'available': False, 'present': False, 'percent': None, 'plugged': None, 'secondsLeft': None}
+        return {'available': True, 'present': True, 'percent': battery.percent, 'plugged': battery.power_plugged,
+                'secondsLeft': battery.secsleft if battery.secsleft >= 0 else None}
+    except Exception:
+        return {'available': False, 'present': None, 'percent': None, 'plugged': None, 'secondsLeft': None}
+
+def _local_services():
+    import urllib.request
+    services = [
+        {'id': 'ollama', 'name': 'Ollama', 'base': 'http://127.0.0.1:11434'},
+        {'id': 'lm-studio', 'name': 'LM Studio', 'base': 'http://127.0.0.1:1234'}
+    ]
+    result = []
+    for service in services:
+        item = {'id': service['id'], 'name': service['name'], 'available': False, 'baseUrl': service['base'],
+                'models': None, 'modelCount': None}
+        endpoints = ['/api/tags'] if service['id'] == 'ollama' else ['/v1/models']
+        for endpoint in endpoints:
+            try:
+                request = urllib.request.Request(service['base'] + endpoint, headers={'Accept': 'application/json'})
+                with urllib.request.urlopen(request, timeout=0.65) as response:
+                    payload = json.loads(response.read(1_000_000).decode('utf-8'))
+                item['available'] = True
+                if service['id'] == 'ollama':
+                    models = payload.get('models', []) if isinstance(payload, dict) else []
+                    item['models'] = [{'name': m.get('name'), 'sizeBytes': m.get('size'),
+                                       'modifiedAt': m.get('modified_at')} for m in models if isinstance(m, dict)]
+                else:
+                    models = payload.get('data', []) if isinstance(payload, dict) else []
+                    item['models'] = [{'id': m.get('id'), 'ownedBy': m.get('owned_by')} for m in models if isinstance(m, dict)]
+                item['modelCount'] = len(item['models'])
+                break
+            except Exception:
+                continue
+        result.append(item)
+    return result
+
 def system_stats():
+    import platform
+    import time
     cpu_percent = _cpu_usage()
     memory = _memory_stats()
     gpu = _gpu_stats()
+    try:
+        import psutil
+        cpu_frequency = psutil.cpu_freq()
+        boot_timestamp = psutil.boot_time()
+        cpu_physical = psutil.cpu_count(logical=False)
+        cpu_logical = psutil.cpu_count(logical=True)
+        cpu_frequency_data = {'currentMHz': round(cpu_frequency.current, 1) if cpu_frequency else None,
+                              'minMHz': round(cpu_frequency.min, 1) if cpu_frequency else None,
+                              'maxMHz': round(cpu_frequency.max, 1) if cpu_frequency else None}
+        uptime_seconds = max(0, int(time.time() - boot_timestamp))
+        process_count = len(psutil.pids())
+        thread_count = None
+        try:
+            thread_count = sum(p.info.get('num_threads') or 0 for p in psutil.process_iter(['num_threads']))
+        except Exception:
+            pass
+    except Exception:
+        cpu_physical = None
+        cpu_logical = os.cpu_count()
+        cpu_frequency_data = {'currentMHz': None, 'minMHz': None, 'maxMHz': None}
+        boot_timestamp = None
+        uptime_seconds = None
+        process_count = None
+        thread_count = None
+    os_data = {'system': platform.system(), 'release': platform.release(), 'version': platform.version(),
+               'edition': platform.win32_edition() if hasattr(platform, 'win32_edition') else None,
+               'architecture': platform.architecture()[0], 'machine': platform.machine(),
+               'hostname': platform.node(), 'pythonVersion': platform.python_version(),
+               'pythonImplementation': platform.python_implementation()}
+    try:
+        import ctypes
+        uptime_ms = ctypes.windll.kernel32.GetTickCount64()
+        if uptime_ms is not None:
+            uptime_seconds = int(uptime_ms / 1000)
+    except Exception:
+        pass
+    try:
+        boot_time = datetime.datetime.now().astimezone() - datetime.timedelta(seconds=uptime_seconds) if uptime_seconds is not None else None
+        boot_iso = boot_time.isoformat(timespec='seconds') if boot_time else None
+    except Exception:
+        boot_iso = None
+    cpu = {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name(),
+           'physicalCores': cpu_physical, 'logicalCores': cpu_logical, 'frequency': cpu_frequency_data,
+           'processCount': process_count, 'threadCount': thread_count}
     return {
         'ok': True,
         'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
-        'cpu': {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name()},
-        'ram': memory,
-        'gpu': gpu,
-        'disks': _disk_stats()
+        'collection': {'source': 'local Windows host', 'optionalDependency': 'psutil enables detailed process, network and CPU frequency metrics',
+                       'refreshHintSeconds': 5},
+        'cpu': cpu, 'ram': memory, 'gpu': gpu, 'disks': _disk_stats(),
+        'system': {'os': os_data, 'uptimeSeconds': uptime_seconds, 'bootTime': boot_iso,
+                   'processCount': process_count, 'threadCount': thread_count},
+        'network': _network_stats(), 'processes': _process_stats(), 'battery': _battery_stats(),
+        'localAiServices': _local_services()
     }
 
 
