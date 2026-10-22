@@ -83,3 +83,22 @@
 #toggle-right-panel.panel-toggle-floating.panel-toggle-collapsed{right:6px!important}
 .app-shell.left-hidden #toggle-left-panel.panel-toggle-floating{left:6px!important}
 .app-shell.right-hidden #toggle-right-panel.panel-toggle-floating{right:6px!important}
+
+
+/* Refined top strip and panel toggle placement. */
+.topbar{position:relative;justify-content:center;padding-left:24px!important;padding-right:24px!important}
+.topbar-path{position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;white-space:nowrap}
+.topbar-right{display:none!important}
+#toggle-left-panel:not(.panel-toggle-floating){position:absolute!important;top:18px!important;right:2px!important;left:auto!important;transform:none!important}
+#toggle-right-panel:not(.panel-toggle-floating){position:absolute!important;top:0!important;left:2px!important;right:auto!important;transform:none!important}
+#toggle-left-panel.panel-toggle-floating{left:6px!important;right:auto!important;top:18px!important}
+#toggle-right-panel.panel-toggle-floating{right:6px!important;left:auto!important;top:18px!important}
+.app-shell:not(.left-hidden) #toggle-left-panel:not(.panel-toggle-floating){right:2px!important}
+.app-shell:not(.right-hidden) #toggle-right-panel:not(.panel-toggle-floating){left:2px!important}
+@media(max-width:720px){
+ .topbar-path{max-width:calc(100% - 48px);font-size:12px}
+ #toggle-left-panel:not(.panel-toggle-floating){position:fixed!important;top:6px!important;left:6px!important;right:auto!important}
+ #toggle-right-panel:not(.panel-toggle-floating){position:fixed!important;top:6px!important;right:6px!important;left:auto!important}
+ .sidebar.open #toggle-left-panel:not(.panel-toggle-floating){position:absolute!important;top:18px!important;right:2px!important;left:auto!important}
+ .right-sidebar.open #toggle-right-panel:not(.panel-toggle-floating){position:absolute!important;top:0!important;left:2px!important;right:auto!important}
+}
