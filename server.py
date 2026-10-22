@@ -149,8 +149,10 @@ def validate_module_connections(current, connections):
         source_manifest=module_runtime_manifest(source); target_manifest=module_runtime_manifest(target)
         source_ports=source_manifest.get('outputs') if isinstance(source_manifest.get('outputs'),list) else []
         target_ports=target_manifest.get('inputs') if isinstance(target_manifest.get('inputs'),list) else []
-        if not isinstance(link.get('from_port'),str) or not link.get('from_port'): link['from_port']=source_ports[0].get('name','output') if source_ports else 'output'
-        if not isinstance(link.get('to_port'),str) or not link.get('to_port'): link['to_port']=target_ports[0].get('name','input') if target_ports else 'input'
+        if not source_ports: link['from_port']='output'
+        elif not isinstance(link.get('from_port'),str) or not link.get('from_port'): link['from_port']=source_ports[0].get('name','output')
+        if not target_ports: link['to_port']='input'
+        elif not isinstance(link.get('to_port'),str) or not link.get('to_port'): link['to_port']=target_ports[0].get('name','input')
         source_port=next((p for p in source_ports if isinstance(p,dict) and p.get('name')==link['from_port']),None)
         target_port=next((p for p in target_ports if isinstance(p,dict) and p.get('name')==link['to_port']),None)
         if source_ports and not source_port: raise ValueError('Выходной порт не найден в модуле '+str(source.get('name',link['from'])))
@@ -178,6 +180,7 @@ def execute_module_graph(data):
     registry=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
     modules={m.get('id'):m for m in registry.get('modules',[]) if isinstance(m,dict) and m.get('id')}
     links=registry.get('connections',[])
+    links=validate_module_connections(registry,links)
     start=str(data.get('start_id','')).strip()
     if start not in modules: raise ValueError('Выберите стартовый модуль')
     outgoing={key:[] for key in modules}; incoming={key:[] for key in modules}
