@@ -252,6 +252,14 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_DELETE(self):
         path=urlparse(self.path).path
+        if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
+            parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
+            if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
+            items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
+            if not item: return self.send_json(404, {'error':'Запись не найдена'})
+            if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системного агента нельзя удалить'})
+            items.remove(item); save_domain(kind,items); log_event(kind[:-1]+'.delete',item.get('name',item.get('title','')))
+            return self.send_json(200, {'ok':True})
         if path.startswith('/api/modules/'):
             module_id=path.split('/')[-1]
             if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{1,79}',module_id): return self.send_json(400, {'error':'Некорректный ID модуля'})
