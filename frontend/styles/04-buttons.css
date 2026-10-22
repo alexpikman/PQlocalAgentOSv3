@@ -1,21 +1,21 @@
 /* Shared button system. */
-.btn{border:1px solid var(--color-transparent);border-radius:9px;padding:10px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:.16s;white-space:nowrap;flex-shrink:0}
+.btn{border:1px solid transparent;border-radius:9px;padding:10px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:.16s;white-space:nowrap;flex-shrink:0}
 
-.btn.primary{color:var(--color-hex-fff);background:linear-gradient(110deg,var(--color-hex-238be8),var(--color-hex-20b9ce));box-shadow:0 4px 18px var(--color-hex-1689bb28)}
+.btn.primary{color:#fff;background:linear-gradient(110deg,#238be8,#20b9ce);box-shadow:0 4px 18px #1689bb28}
 
 .btn.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
 
-.btn.secondary,.btn.ghost{background:var(--button-secondary-bg);border-color:var(--button-secondary-border);color:var(--button-secondary-text)}
+.btn.secondary,.btn.ghost{background:#20202c;border-color:#343447;color:#deddec}
 
-.btn.secondary:hover,.btn.ghost:hover{background:var(--button-secondary-hover)}
+.btn.secondary:hover,.btn.ghost:hover{background:#29293a}
 
-.btn.danger{background:var(--color-hex-351f2a);border-color:var(--color-hex-59303d);color:var(--color-hex-ffb8c6)}
+.btn.danger{background:#351f2a;border-color:#59303d;color:#ffb8c6}
 
-.icon-btn{display:grid;place-items:center;border:1px solid var(--color-hex-343447);background:var(--color-hex-1b1b27);color:var(--color-hex-d7d5e9);border-radius:8px;width:34px;height:34px;cursor:pointer}
+.icon-btn{display:grid;place-items:center;border:1px solid #343447;background:#1b1b27;color:#d7d5e9;border-radius:8px;width:34px;height:34px;cursor:pointer}
 
-.btn.soft-primary{background:linear-gradient(120deg,var(--color-hex-d6eaff),var(--color-hex-a9d0ff));border-color:var(--color-hex-b8d9ff);color:var(--color-hex-17436d)}
+.btn.soft-primary{background:var(--btn-soft-primary-bg);border-color:var(--btn-soft-primary-border);color:var(--btn-soft-primary-fg)}
 
-.btn.soft-secondary{background:var(--color-hex-edf0f4);border-color:var(--color-hex-d9dee7);color:var(--color-hex-475569)}
+.btn.soft-secondary{background:var(--btn-soft-secondary-bg);border-color:var(--btn-soft-secondary-border);color:var(--btn-soft-secondary-fg)}
 
-.btn.soft-danger{background:var(--color-hex-fbe0e0);border-color:var(--color-hex-f3c1c1);color:var(--color-hex-8d3333)}
+.btn.soft-danger{background:var(--btn-soft-danger-bg);border-color:var(--btn-soft-danger-border);color:var(--btn-soft-danger-fg)}
 
