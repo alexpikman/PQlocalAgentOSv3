@@ -72,6 +72,9 @@
 
 .panel-toggle{flex-basis:28px;width:28px;height:28px;min-width:28px;padding:6px;border-radius:7px}
 .panel-toggle svg{width:14px;height:14px;flex-basis:14px}
+/* Top strip keeps consistent 24px internal horizontal spacing. */
+.topbar{padding-left:24px!important;padding-right:24px!important}
+
 /* Panel controls live in the top strip, centered vertically. */
 .panel-toggle-floating{position:fixed!important;top:18px!important;z-index:1000!important;pointer-events:auto!important;visibility:visible!important;opacity:1!important}
 #toggle-left-panel.panel-toggle-floating{left:var(--sidebar)!important;right:auto!important;transform:translateX(0)}
