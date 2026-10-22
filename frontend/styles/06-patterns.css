@@ -33,15 +33,15 @@
 
 .domain-info:hover,.domain-info:focus-visible{border-color:var(--accent);color:var(--accent);outline:none;color:var(--accent);border-color:var(--accent)}
 
-.diagnostic-row{display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
+.read-only-row{display:flex;align-items:flex-start;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
 
-.diagnostic-row:last-child{border-bottom:0}
+.read-only-row:last-child{border-bottom:0}
 
-.diagnostic-row>div{flex:1;min-width:0}
+.read-only-row>div{flex:1;min-width:0}
 
-.diagnostic-row p{margin:5px 0;color:var(--muted);line-height:1.55}
+.read-only-row p{margin:5px 0;color:var(--muted);line-height:1.55}
 
-.diagnostic-row small{display:block;overflow-wrap:anywhere;color:var(--muted)}
+.read-only-row small{display:block;overflow-wrap:anywhere;color:var(--muted)}
 
 .entity-row[data-search-row="tasks"] details{margin-top:12px}
 
