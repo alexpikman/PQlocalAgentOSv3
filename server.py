@@ -734,7 +734,11 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
-        if path=='/api/system/stats': return self.send_json(200, system_stats())
+        if path=='/api/system/stats':
+            try:
+                return self.send_json(200, system_stats())
+            except Exception as exc:
+                return self.send_json(500, {'ok':False,'error':str(exc),'errorType':type(exc).__name__})
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
