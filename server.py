@@ -35,6 +35,46 @@ def pages():
             current.append(item.copy()); known.add(item.get('id')); changed=True
     if changed or not p.exists(): write_json(p, current)
     return current
+PROVIDER_FILE = DATA/'providers.json'
+CLOUD_PROVIDER_CATALOG = [
+ {'id':'openai','name':'OpenAI','kind':'cloud','base_url':'https://api.openai.com/v1','format':'openai','access_format':'OpenAI-compatible REST API','builtin':True},
+ {'id':'anthropic','name':'Anthropic','kind':'cloud','base_url':'https://api.anthropic.com/v1','format':'anthropic','access_format':'Anthropic Messages API','builtin':True},
+ {'id':'google-gemini','name':'Google Gemini','kind':'cloud','base_url':'https://generativelanguage.googleapis.com/v1beta','format':'gemini','access_format':'Google Gemini API','builtin':True},
+ {'id':'openrouter','name':'OpenRouter','kind':'cloud','base_url':'https://openrouter.ai/api/v1','format':'openai','access_format':'OpenAI-compatible API','builtin':True},
+ {'id':'groq','name':'Groq','kind':'cloud','base_url':'https://api.groq.com/openai/v1','format':'openai','access_format':'OpenAI-compatible API','builtin':True}
+]
+def provider_items():
+    defaults=[{'id':'ollama','name':'Ollama','kind':'local','base_url':OLLAMA_URL,'format':'ollama','builtin':True},{'id':'lm-studio','name':'LM Studio','kind':'local','base_url':'http://127.0.0.1:1234/v1','format':'openai','builtin':True}]
+    saved=read_json(PROVIDER_FILE,[]); saved=saved if isinstance(saved,list) else []
+    by_id={x.get('id'):x for x in saved if isinstance(x,dict)}
+    items=[{**p,**by_id.get(p['id'],{}),'builtin':True} for p in defaults+CLOUD_PROVIDER_CATALOG]
+    for p in saved:
+        if isinstance(p,dict) and p.get('id') not in {x['id'] for x in items}: items.append(p)
+    return items
+def provider_models(p):
+    base=str(p.get('base_url','')).rstrip('/'); fmt=p.get('format','openai'); headers={'User-Agent':'PQlocalAgentOSv3'}
+    key=str(p.get('api_key','')).strip()
+    if key: headers['Authorization']='Bearer '+key
+    if fmt=='ollama':
+        req=urllib.request.Request(base+'/api/tags',headers=headers)
+        with urllib.request.urlopen(req,timeout=4) as r: raw=json.loads(r.read())
+        return [{'name':x.get('name',''),'size':x.get('size',0)} for x in raw.get('models',[]) if x.get('name')]
+    if fmt=='anthropic':
+        if not key: return []
+        headers.update({'x-api-key':key,'anthropic-version':'2023-06-01'})
+        req=urllib.request.Request(base+'/models',headers=headers)
+        with urllib.request.urlopen(req,timeout=5) as r: raw=json.loads(r.read())
+        return [{'name':x.get('id','')} for x in raw.get('data',[]) if x.get('id')]
+    if fmt=='gemini':
+        if not key: return []
+        req=urllib.request.Request(base+'/models?key='+urllib.parse.quote(key),headers=headers)
+        with urllib.request.urlopen(req,timeout=5) as r: raw=json.loads(r.read())
+        return [{'name':x.get('name','').removeprefix('models/')} for x in raw.get('models',[]) if x.get('name') and 'generateContent' in x.get('supportedGenerationMethods',[])]
+    req=urllib.request.Request(base+'/models',headers=headers)
+    with urllib.request.urlopen(req,timeout=4) as r: raw=json.loads(r.read())
+    return [{'name':x.get('id','')} for x in raw.get('data',[]) if x.get('id')]
+def public_provider(p):
+    return {k:v for k,v in p.items() if k!='api_key'} | {'api_key_set':bool(p.get('api_key'))}
 def permission_settings():
     current=read_json(DATA/'permissions.json', {'local_files':False,'roots':[]})
     if not isinstance(current,dict): current={'local_files':False,'roots':[]}
@@ -368,6 +408,15 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
+        if path=='/api/providers':
+            items=provider_items(); models=[]
+            for p in items:
+                found=[]; connected=False
+                try: found=provider_models(p); connected=True
+                except Exception: pass
+                p['connected']=connected; p['model_count']=len(found); p['api_key_set']=bool(p.get('api_key'))
+                for m in found: models.append({'provider':p.get('name',''),'provider_id':p.get('id'),'kind':p.get('kind','local'),'name':m.get('name',''),'tokens':'—','size':m.get('size',0),'connected':connected})
+            return self.send_json(200, {'providers':[public_provider(p) for p in items], 'models':models})
         if path=='/api/models':
             try:
                 payload=ollama_request('/api/tags',timeout=4)
@@ -424,6 +473,30 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         try: data=self.body()
         except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/providers':
+            pid=str(data.get('id','')).strip(); name=str(data.get('name','')).strip()[:80]; kind=str(data.get('kind','local')).strip(); base=str(data.get('base_url','')).strip().rstrip('/'); fmt=str(data.get('format','openai')).strip()
+            if not name or not base or kind not in ('local','cloud'): return self.send_json(400, {'error':'Укажите имя, тип и адрес провайдера'})
+            if not re.match(r'^https?://',base): return self.send_json(400, {'error':'Адрес должен начинаться с http:// или https://'})
+            if fmt not in ('ollama','openai','anthropic','gemini'): return self.send_json(400, {'error':'Неподдерживаемый формат доступа'})
+            items=read_json(PROVIDER_FILE,[]); items=items if isinstance(items,list) else []; existing=next((x for x in items if x.get('id')==pid),None) if pid else None
+            if not pid: pid=re.sub(r'[^a-z0-9-]+','-',name.lower()).strip('-')[:48]+'-'+uuid.uuid4().hex[:6]
+            builtin=pid in {'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
+            old=existing or next((x for x in provider_items() if x.get('id')==pid),{})
+            if existing is None and builtin and pid not in {x.get('id') for x in provider_items()}: return self.send_json(400, {'error':'Неизвестный встроенный провайдер'})
+            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin}
+            key=str(data.get('api_key','')).strip()
+            if key: item['api_key']=key
+            elif old.get('api_key'): item['api_key']=old['api_key']
+            if existing: items=[item if x.get('id')==pid else x for x in items]
+            else: items.append(item)
+            write_json(PROVIDER_FILE,items); log_event('provider.save',name)
+            return self.send_json(200, {'ok':True,'provider':public_provider(item)})
+        if path=='/api/providers/assign':
+            aid=str(data.get('agent_id','')); pid=str(data.get('provider_id','')); model=str(data.get('model','')).strip()[:200]
+            agents=domain_items('agents'); agent=next((x for x in agents if x.get('id')==aid),None); prov=next((x for x in provider_items() if x.get('id')==pid),None)
+            if not agent or not prov or not model: return self.send_json(400, {'error':'Не удалось определить агента, провайдера или модель'})
+            agent['model']=model; agent['provider_id']=pid; save_domain('agents',agents); log_event('model.assign',agent.get('name','')+' ← '+prov.get('name','')+'/'+model)
+            return self.send_json(200, {'ok':True})
         if path=='/api/models/test':
             model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Проверь, что модель отвечает.')).strip()[:4000]
             if not model: return self.send_json(400, {'error':'Выберите модель'})
@@ -712,6 +785,13 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_DELETE(self):
         path=urlparse(self.path).path
+        if path.startswith('/api/providers/'):
+            pid=urllib.parse.unquote(path.split('/')[-1]); protected={'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
+            if pid in protected: return self.send_json(403, {'error':'Встроенный провайдер не удаляется; его можно настроить'})
+            items=read_json(PROVIDER_FILE,[]); items=items if isinstance(items,list) else []; updated=[x for x in items if x.get('id')!=pid]
+            if len(updated)==len(items): return self.send_json(404, {'error':'Провайдер не найден'})
+            write_json(PROVIDER_FILE,updated); log_event('provider.delete',pid); return self.send_json(200, {'ok':True})
+
         if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
             parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
