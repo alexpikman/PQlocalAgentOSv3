@@ -84,6 +84,6 @@
 
 :root[data-theme="dark"] .badge.danger{color:var(--color-hex-ff9ba7);background:var(--color-hex-3c2027);border-color:var(--color-hex-713440)}
 
-.provider-row .badge{var(--color-white)-space:nowrap}
+.provider-row .badge{white-space:nowrap}
 
 .modal-card .field{min-width:0}
