@@ -612,6 +612,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if not link.get('to_port'): link['to_port']=target_ports[0].get('name','input') if target_ports else 'input'
                 if source_ports and not any(p.get('name')==link['from_port'] for p in source_ports): return self.send_json(400, {'error':'Выходной порт не найден в модуле '+str(source_module.get('name',link['from']))})
                 if target_ports and not any(p.get('name')==link['to_port'] for p in target_ports): return self.send_json(400, {'error':'Входной порт не найден в модуле '+str(target_module.get('name',link['to']))})
+                if source_ports and target_ports:
+                    source_type=next((p.get('type','text') for p in source_ports if p.get('name')==link['from_port']),'text'); target_type=next((p.get('type','text') for p in target_ports if p.get('name')==link['to_port']),'text')
+                    if source_type!=target_type and 'any' not in {source_type,target_type}: return self.send_json(400, {'error':'Несовместимые типы портов: '+str(source_type)+' → '+str(target_type)})
                 if link.get('from')==link.get('to'): return self.send_json(400, {'error':'Модуль не может быть соединён сам с собой'})
                 pair=(link['from'],link['to'])
                 if pair in seen: return self.send_json(400, {'error':'Повторяющаяся связь: '+pair[0]+' → '+pair[1]})
