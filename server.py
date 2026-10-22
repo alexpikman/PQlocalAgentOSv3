@@ -484,7 +484,7 @@ class Handler(SimpleHTTPRequestHandler):
             builtin=pid in {'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
             old=existing or next((x for x in provider_items() if x.get('id')==pid),{})
             if existing is None and builtin and pid not in {x.get('id') for x in provider_items()}: return self.send_json(400, {'error':'Неизвестный встроенный провайдер'})
-            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin}
+            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(existing or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
             key=str(data.get('api_key','')).strip()
             if key: item['api_key']=key
             elif old.get('api_key'): item['api_key']=old['api_key']
@@ -610,7 +610,7 @@ class Handler(SimpleHTTPRequestHandler):
             slug=re.sub(r'[^a-z0-9-]+','-',str(data.get('id') or title.lower())).strip('-')[:60] or uuid.uuid4().hex[:8]
             current=pages()
             if any(p['id']==slug for p in current): return self.send_json(409, {'error':'Страница с таким идентификатором уже существует'})
-            item={'id':slug,'title':title,'description':desc,'icon':'file-text','content':content,'system':False}; current.append(item); write_json(PAGES/'index.json',current); log_event('page.create',title); return self.send_json(201,item)
+            item={'id':slug,'title':title,'description':desc,'icon':'file-text','content':content,'system':False,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}; current.append(item); write_json(PAGES/'index.json',current); log_event('page.create',title); return self.send_json(201,item)
         if path.startswith('/api/pages/') and path.endswith('/update'):
             pid=path.split('/')[-2]; current=pages(); item=next((p for p in current if p['id']==pid),None)
             if not item: return self.send_json(404, {'error':'Страница не найдена'})
@@ -651,7 +651,7 @@ class Handler(SimpleHTTPRequestHandler):
             folder.mkdir(parents=True,exist_ok=False)
             write_json(folder/'module.json',manifest)
             (folder/'README.md').write_text('# '+name+'\n\n'+description+'\n\nЛокальный каркас модуля PQlocalAgentOSv3. Добавьте реализацию после определения входов, выходов и разрешений. Код не запускается автоматически.\n',encoding='utf-8')
-            module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
+            module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
             current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.create',module_id)
             return self.send_json(201, {'ok':True,'module':module})
         if path=='/api/modules/update':
@@ -709,7 +709,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if len(module_id)<2: module_id='m-'+module_id
                 if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'ID модуля уже занят другим источником'})
                 manifest={'id':module_id,'name':full_name.split('/')[-1],'version':'0.0.0','description':repo_data.get('description') or 'Модуль из GitHub','author':full_name.split('/')[0],'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','repository':repo_data.get('html_url',''),'api_version':'1.0','inputs':[],'outputs':[],'capabilities':[],'permissions':[],'dependencies':[]}
-                module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'manifest':manifest,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
+                module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'manifest':manifest,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
                 current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); write_json(MODULES/module['id']/'module.json',manifest); log_event('module.register',full_name)
                 return self.send_json(201, {'ok':True,'module':module,'message':'Репозиторий добавлен в каталог. Перед установкой кода проверьте содержимое, лицензию и зависимости.'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
