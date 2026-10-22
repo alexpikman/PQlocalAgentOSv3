@@ -208,3 +208,9 @@
 .module-edit-panel textarea{resize:vertical}
 .module-edit-panel label:nth-of-type(7),.module-edit-panel label:nth-of-type(8){grid-column:1/-1}
 .module-edit-panel .btn{justify-self:start}
+
+.module-history{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.module-history summary{cursor:pointer;font-size:11px;font-weight:650}
+.module-history-row{display:grid;grid-template-columns:auto minmax(100px,1fr) auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:10px}
+.module-history-row small,.module-history-row>span:last-child{color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:620px){.module-history-row{grid-template-columns:auto 1fr}.module-history-row small,.module-history-row>span:last-child{grid-column:1/-1}}
