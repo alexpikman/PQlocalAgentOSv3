@@ -189,7 +189,7 @@ def execute_module_graph(data):
             if not model: raise ValueError('Для модуля «'+str(module.get('name',module_id))+'» выберите модель Ollama')
             prompt=to_text(incoming_value)
             system_prompt=str(runtime.get('system_prompt','')).strip()[:4000]
-            if system_prompt: prompt='Инструкции модуля:\\n'+system_prompt+'\\n\\nВходные данные:\\n'+prompt
+            if system_prompt: prompt='Инструкции модуля:\n'+system_prompt+'\n\nВходные данные:\n'+prompt
             result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':min(max(int(runtime.get('max_tokens',1024)),64),4096)}},timeout=300)
             output=result.get('response','')
         else: output=incoming_value
@@ -303,12 +303,12 @@ class Handler(SimpleHTTPRequestHandler):
             role=(agent or {}).get('role','ANALYST')
             system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
             if agent:
-                system_prompt += '\\n\\nПрофиль агента: '+str(agent.get('name',''))+'\\nНазначение: '+str(agent.get('description',''))[:1000]
+                system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
                 memory=str(agent.get('memory','')).strip()
-                if memory: system_prompt += '\\n\\nДолговременная память агента (пользовательские заметки):\\n'+memory[:8000]
-            prompt='Выполни задачу. Отвечай на русском языке. Разделяй подтверждённые факты и предположения. Если не хватает данных, явно укажи ограничения.\\n\\nНазвание задачи: '+item.get('title','')+'\\n\\nОписание и инструкции:\\n'+item.get('description','')
+                if memory: system_prompt += '\n\nДолговременная память агента (пользовательские заметки):\n'+memory[:8000]
+            prompt='Выполни задачу. Отвечай на русском языке. Разделяй подтверждённые факты и предположения. Если не хватает данных, явно укажи ограничения.\n\nНазвание задачи: '+item.get('title','')+'\n\nОписание и инструкции:\n'+item.get('description','')
             if project:
-                prompt += '\\n\\nКонтекст проекта:\\nНазвание: '+str(project.get('name',''))+'\\nОписание: '+str(project.get('description',''))+'\\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
+                prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
             try:
                 result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
                 item['status']='completed'; item['result']=result.get('response',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
