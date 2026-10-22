@@ -1,5 +1,5 @@
 /* Reusable components: cards, fields, dialogs, status and feedback. */
-.stat-card,.panel,.feature-card,.page-card{border:1px solid var(--line);background:linear-gradient(145deg,#14212cdd,#101821f2);border-radius:var(--radius);box-shadow:0 12px 32px #00000012;backdrop-filter:blur(12px)}
+.stat-card,.panel,.feature-card,.page-card{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);box-shadow:0 12px 32px #00000012;backdrop-filter:blur(12px)}
 
 .stat-card{padding:19px}
 
@@ -7,7 +7,7 @@
 
 .feature-card{padding:17px;cursor:pointer;text-align:left;color:inherit;transition:.18s;position:relative;overflow:hidden}
 
-.feature-card:hover,.page-card:hover{border-color:#347b9d;transform:translateY(-2px)}
+.feature-card:hover,.page-card:hover{border-color:var(--accent);transform:translateY(-2px)}
 
 .feature-card b{font-size:12px;display:block}
 
@@ -15,9 +15,9 @@
 
 .field{display:grid;gap:7px}
 
-.field label,.modal label{font-size:11px;color:#b8b6cb}
+.field label,.modal label{font-size:11px;color:var(--muted)}
 
-.field input,.field select,.field textarea,.modal input,.modal textarea{width:100%;background:#111119;border:1px solid #353548;border-radius:8px;padding:10px 11px;color:#eeeefa;outline:none;min-width:0}
+.field input,.field select,.field textarea,.modal input,.modal textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 11px;color:var(--text);outline:none;min-width:0}
 
 .field input:focus,.field select:focus,.field textarea:focus,.modal input:focus,.modal textarea:focus{border-color:#8375e7;box-shadow:0 0 0 3px var(--accent)18}
 
@@ -31,15 +31,15 @@
 
 .settings-section .field-grid{margin-bottom:16px}
 
-.notice{border:1px solid #3a3556;background:#201d31;color:#c6c0ef;border-radius:9px;padding:13px;font-size:11px;line-height:1.6;margin-bottom:15px}
+.notice{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:9px;padding:13px;font-size:11px;line-height:1.6;margin-bottom:15px}
 
-.notice.warning{border-color:#5a452b;background:#2b241a;color:#edcf9d}
+.notice.warning{border-color:var(--line);background:var(--panel);color:var(--text)}
 
-.badge{font-size:9px;padding:5px 8px;border-radius:20px;background:#202e2a;color:#8be0b8;border:1px solid #2d4940}
+.badge{font-size:9px;padding:5px 8px;border-radius:20px;background:var(--panel2);color:var(--text);border:1px solid var(--line)}
 
-.badge.off{background:#30251f;color:#e7b77e;border-color:#51402e}
+.badge.off{background:var(--panel2);color:var(--muted);border-color:var(--line)}
 
-.modal{width:min(520px,calc(100% - 28px));padding:0;border:1px solid #414055;border-radius:15px;background:#191923;color:var(--text);box-shadow:0 20px 100px #0009}
+.modal{width:min(520px,calc(100% - 28px));padding:0;border:1px solid var(--line);border-radius:15px;background:var(--panel);color:var(--text);box-shadow:0 20px 100px #0009}
 
 .modal::backdrop{background:#07070dbd;backdrop-filter:blur(5px)}
 
@@ -47,7 +47,7 @@
 
 .modal label{display:grid;gap:7px}
 
-.toast{position:fixed;bottom:22px;right:22px;z-index:20;max-width:min(420px,calc(100% - 44px));padding:12px 16px;background:#242336;border:1px solid #4a426e;border-radius:10px;color:#eeebff;font-size:12px;box-shadow:0 10px 40px #0005;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}
+.toast{position:fixed;bottom:22px;right:22px;z-index:20;max-width:min(420px,calc(100% - 44px));padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:12px;box-shadow:0 10px 40px #0005;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}
 
 .toast.show{opacity:1;transform:translateY(0)}
 
@@ -57,28 +57,11 @@
 
 .page-card,.panel,.stat-card{transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
 
-.panel:hover{border-color:#2e4b5e}
+.panel:hover{border-color:var(--accent)}
 
-:root[data-theme="light"] .notice{background:#eef6fc;border-color:#d4e6f4;color:#344e66}
+.badge.success{color:var(--status-completed-fg);background:var(--status-completed-bg);border-color:var(--status-completed-bg)}
 
-:root[data-theme="light"] .notice.warning{background:#fff7e8;border-color:#f0ddb5;color:#81571b}
-
-:root[data-theme="light"] .badge{background:#edf3f9;color:#52677d;border-color:#d9e3ed}
-
-:root[data-theme="light"] .table-wrap,
-:root[data-theme="light"] table{border-color:var(--line)}
-
-:root[data-theme="light"] .page-card:hover,
-:root[data-theme="light"] .panel:hover{border-color:#b7d6e8;box-shadow:0 12px 28px #234a6410}
-
-:root[data-theme="light"] .dialog,
-:root[data-theme="light"] dialog{color:var(--text);background:#fff;border-color:var(--line);box-shadow:0 24px 70px #17243726;}
-
-:root[data-theme="light"] dialog::backdrop{background:#17243755;backdrop-filter:blur(3px)}
-
-.badge.success{color:#087d55;background:#d9f8e9;border-color:#a8e8ca}
-
-.badge.danger{color:#b42335;background:#ffe3e6;border-color:#ffc3cb}
+.badge.danger{color:var(--status-failed-fg);background:var(--status-failed-bg);border-color:var(--status-failed-bg)}
 
 :root[data-theme="dark"] .badge.success{color:#70e6b3;background:#15372c;border-color:#245f49}
 
