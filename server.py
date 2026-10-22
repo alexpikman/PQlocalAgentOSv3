@@ -484,7 +484,7 @@ class Handler(SimpleHTTPRequestHandler):
             builtin=pid in {'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
             old=existing or next((x for x in provider_items() if x.get('id')==pid),{})
             if existing is None and builtin and pid not in {x.get('id') for x in provider_items()}: return self.send_json(400, {'error':'Неизвестный встроенный провайдер'})
-            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(existing or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(old or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
             key=str(data.get('api_key','')).strip()
             if key: item['api_key']=key
             elif old.get('api_key'): item['api_key']=old['api_key']
