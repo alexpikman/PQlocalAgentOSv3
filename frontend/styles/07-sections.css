@@ -71,11 +71,11 @@
 
 .log-row span{color:var(--color-hex-aaa9bc);overflow-wrap:anywhere}
 
-.modal-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:4px}
+.modal-card-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:4px}
 
-.modal-head h2{font-size:18px}
+.modal-card-head h2{font-size:18px}
 
-.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:5px}
+.modal-card-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:5px}
 
 .muted{color:var(--muted)}
 
@@ -380,3 +380,8 @@
 .domain-modal .modal-card{width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto}
 
 .domain-modal .field-grid{margin-top:14px}
+
+
+.modal-card-body{min-width:0}
+.modal-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:5px}
+.modal-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px}
