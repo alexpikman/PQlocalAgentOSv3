@@ -395,6 +395,147 @@ def run_agent_team(model, task, agent=None, project=None):
     ]
     return {'response':review.get('response',''),'team_result':stages,'tool_calls':sum(int(x.get('tool_calls',0) or 0) for x in stages),'model':model}
 
+
+def _filetime_value(value):
+    return (value.dwHighDateTime << 32) | value.dwLowDateTime
+
+def _windows_cpu_times():
+    import ctypes
+    from ctypes import wintypes
+    idle, kernel, user = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+        raise OSError('GetSystemTimes failed')
+    return (_filetime_value(idle), _filetime_value(kernel), _filetime_value(user))
+
+def _cpu_usage():
+    try:
+        before = _windows_cpu_times()
+        import time
+        time.sleep(0.15)
+        after = _windows_cpu_times()
+        idle = after[0] - before[0]
+        total = (after[1] - before[1]) + (after[2] - before[2])
+        return round(max(0.0, min(100.0, (1 - idle / total) * 100)), 1) if total > 0 else None
+    except Exception:
+        try:
+            import psutil
+            return round(psutil.cpu_percent(interval=0.15), 1)
+        except Exception:
+            return None
+
+def _memory_stats():
+    try:
+        import ctypes
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong),
+                        ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                        ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong),
+                        ('ullTotalVirtual', ctypes.c_ulonglong), ('ullAvailVirtual', ctypes.c_ulonglong),
+                        ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) and status.ullTotalPhys:
+            total = status.ullTotalPhys / (1024 ** 3)
+            available = status.ullAvailPhys / (1024 ** 3)
+            used = total - available
+            return {'available': True, 'percent': round(used / total * 100, 1), 'used': round(used, 2), 'total': round(total, 2)}
+    except Exception:
+        pass
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        return {'available': True, 'percent': mem.percent, 'used': round(mem.used / (1024 ** 3), 2), 'total': round(mem.total / (1024 ** 3), 2)}
+    except Exception:
+        return {'available': False, 'percent': None, 'used': None, 'total': None}
+
+def _cpu_name():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
+            return str(winreg.QueryValueEx(key, 'ProcessorNameString')[0]).strip()
+    except Exception:
+        try:
+            import platform
+            return platform.processor() or 'Процессор'
+        except Exception:
+            return 'Процессор'
+
+def _gpu_stats():
+    import subprocess
+    from pathlib import Path
+    candidates = ['nvidia-smi']
+    program_files = os.environ.get('ProgramFiles', r'C:\Program Files')
+    candidates.append(str(Path(program_files) / 'NVIDIA Corporation' / 'NVSMI' / 'nvidia-smi.exe'))
+    for command in candidates:
+        try:
+            result = subprocess.run([command, '--query-gpu=name,utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'],
+                                    capture_output=True, text=True, timeout=2, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            line = next((line.strip() for line in result.stdout.splitlines() if line.strip()), '')
+            if not line:
+                continue
+            parts = [part.strip() for part in line.split(',')]
+            if len(parts) < 4:
+                continue
+            usage = float(parts[-3])
+            used_mb = float(parts[-2])
+            total_mb = float(parts[-1])
+            return {'available': True, 'name': ','.join(parts[:-3]).strip() or 'NVIDIA GPU',
+                    'percent': round(usage, 1), 'vramUsed': round(used_mb / 1024, 2),
+                    'vramTotal': round(total_mb / 1024, 2)}
+        except Exception:
+            continue
+    return {'available': False, 'name': None, 'percent': None, 'vramUsed': None, 'vramTotal': None}
+
+def _disk_stats():
+    disks = []
+    try:
+        import ctypes
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        for index in range(26):
+            if not (mask & (1 << index)):
+                continue
+            mount = chr(65 + index) + ':\\'
+            try:
+                drive_type = ctypes.windll.kernel32.GetDriveTypeW(mount)
+                if drive_type not in (2, 3, 6):
+                    continue
+                usage = shutil.disk_usage(mount)
+                total = usage.total / (1024 ** 3)
+                used = (usage.total - usage.free) / (1024 ** 3)
+                if total <= 0:
+                    continue
+                disks.append({'mount': mount, 'available': True, 'percent': round(used / total * 100, 1),
+                              'used': round(used, 1), 'free': round(usage.free / (1024 ** 3), 1),
+                              'total': round(total, 1)})
+            except (OSError, PermissionError):
+                continue
+    except Exception:
+        try:
+            usage = shutil.disk_usage(str(ROOT))
+            total = usage.total / (1024 ** 3)
+            used = (usage.total - usage.free) / (1024 ** 3)
+            if total:
+                disks.append({'mount': str(ROOT.anchor or ROOT), 'available': True,
+                              'percent': round(used / total * 100, 1), 'used': round(used, 1),
+                              'free': round(usage.free / (1024 ** 3), 1), 'total': round(total, 1)})
+        except Exception:
+            pass
+    return disks
+
+def system_stats():
+    cpu_percent = _cpu_usage()
+    memory = _memory_stats()
+    gpu = _gpu_stats()
+    return {
+        'ok': True,
+        'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+        'cpu': {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name()},
+        'ram': memory,
+        'gpu': gpu,
+        'disks': _disk_stats()
+    }
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
@@ -408,6 +549,7 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
+        if path=='/api/system/stats': return self.send_json(200, system_stats())
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
