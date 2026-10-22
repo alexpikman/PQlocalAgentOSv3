@@ -111,6 +111,87 @@ def github_public_request(path):
         except Exception: pass
         raise RuntimeError(message)
 
+
+MODULE_RUNTIME_KINDS = {'input','template','ollama','transform','output'}
+def module_runtime_manifest(module):
+    manifest=module.get('manifest') if isinstance(module.get('manifest'),dict) else {}
+    if not manifest and (MODULES/module.get('id','')/'module.json').is_file():
+        manifest=read_json(MODULES/module['id']/'module.json',{})
+    return manifest if isinstance(manifest,dict) else {}
+def execute_module_graph(data):
+    registry=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+    modules={m.get('id'):m for m in registry.get('modules',[]) if isinstance(m,dict) and m.get('id')}
+    links=registry.get('connections',[])
+    start=str(data.get('start_id','')).strip()
+    if start not in modules: raise ValueError('Выберите стартовый модуль')
+    outgoing={key:[] for key in modules}; incoming={key:[] for key in modules}
+    for link in links:
+        source=link.get('from'); target=link.get('to')
+        if source in modules and target in modules:
+            outgoing[source].append(target); incoming[target].append(source)
+    reachable=set(); stack=[start]
+    while stack:
+        node=stack.pop()
+        if node in reachable: continue
+        reachable.add(node); stack.extend(outgoing[node])
+    indegree={node:sum(1 for parent in incoming[node] if parent in reachable) for node in reachable}
+    queue=[node for node in reachable if indegree[node]==0]; order=[]
+    while queue:
+        node=queue.pop(0); order.append(node)
+        for target in outgoing[node]:
+            if target in indegree:
+                indegree[target]-=1
+                if indegree[target]==0: queue.append(target)
+    if len(order)!=len(reachable): raise ValueError('В схеме обнаружен цикл. Удалите циклическую связь.')
+    if start in incoming and any(parent in reachable for parent in incoming[start]):
+        raise ValueError('Стартовый модуль не может иметь входящих связей внутри выполняемой схемы')
+    values={}; records=[]; prompt_input=str(data.get('input',''))[:12000]
+    selected_model=str(data.get('model','')).strip()[:160]
+    for module_id in order:
+        module=modules[module_id]; manifest=module_runtime_manifest(module); runtime=manifest.get('runtime') if isinstance(manifest.get('runtime'),dict) else {}
+        kind=str(runtime.get('kind','')).strip()
+        if kind not in MODULE_RUNTIME_KINDS:
+            raise ValueError('Модуль «'+str(module.get('name',module_id))+'» не имеет разрешённого встроенного типа исполнения. Внешние модули требуют отдельного адаптера.')
+        parents=[parent for parent in incoming[module_id] if parent in reachable]
+        incoming_value=prompt_input if module_id==start else (values[parents[0]] if len(parents)==1 else {parent:values[parent] for parent in parents})
+        def to_text(value):
+            if isinstance(value,str): return value
+            return json.dumps(value,ensure_ascii=False,indent=2)
+        if kind=='input': output=incoming_value if module_id!=start else prompt_input
+        elif kind=='template':
+            template=str(runtime.get('template','{input}'))[:12000]
+            output=template.replace('{input}',to_text(incoming_value)).replace('{context}',str(data.get('context',''))[:8000]).replace('{task}',str(data.get('task',''))[:8000])
+        elif kind=='transform':
+            operation=str(runtime.get('operation','strip'))
+            value=to_text(incoming_value)
+            if operation=='uppercase': output=value.upper()
+            elif operation=='lowercase': output=value.lower()
+            elif operation=='strip': output=value.strip()
+            elif operation=='json_parse':
+                try: output=json.loads(value)
+                except ValueError: raise ValueError('Модуль «'+str(module.get('name',module_id))+'»: вход не является корректным JSON')
+            elif operation=='json_pretty':
+                try: output=json.dumps(json.loads(value),ensure_ascii=False,indent=2)
+                except ValueError: raise ValueError('Модуль «'+str(module.get('name',module_id))+'»: вход не является корректным JSON')
+            else: raise ValueError('Неизвестная операция преобразования: '+operation)
+        elif kind=='ollama':
+            model=str(runtime.get('model') or selected_model or module.get('model') or '').strip()[:160]
+            if not model: raise ValueError('Для модуля «'+str(module.get('name',module_id))+'» выберите модель Ollama')
+            prompt=to_text(incoming_value)
+            system_prompt=str(runtime.get('system_prompt','')).strip()[:4000]
+            if system_prompt: prompt='Инструкции модуля:\\n'+system_prompt+'\\n\\nВходные данные:\\n'+prompt
+            result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':min(max(int(runtime.get('max_tokens',1024)),64),4096)}},timeout=300)
+            output=result.get('response','')
+        else: output=incoming_value
+        values[module_id]=output
+        records.append({'module_id':module_id,'name':module.get('name',module_id),'kind':kind,'status':'completed','output':output if isinstance(output,(str,int,float,bool,type(None),dict,list)) else str(output)})
+    leaves=[node for node in reachable if not any(target in reachable for target in outgoing[node])]
+    outputs={node:values[node] for node in leaves}
+    result={'ok':True,'start_id':start,'executed':len(records),'order':order,'steps':records,'outputs':outputs,'result':next(iter(outputs.values())) if len(outputs)==1 else outputs,'finished_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+    log_event('module.graph.run',str(start)+' · '+str(len(records))+' модулей')
+    write_json(DATA/'module-runs.json',([result]+read_json(DATA/'module-runs.json',[]))[:100])
+    return result
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
@@ -138,6 +219,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
         if path=='/api/modules':
             return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
+        if path=='/api/modules/runs':
+            return self.send_json(200, read_json(DATA/'module-runs.json', []))
         if path=='/api/github/search':
             q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
             if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
@@ -264,7 +347,19 @@ class Handler(SimpleHTTPRequestHandler):
             if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'Модуль с таким ID уже существует'})
             inputs=[{'name':x.strip(),'type':'text','required':False} for x in str(data.get('inputs','')).split(',') if x.strip()][:30]
             outputs=[{'name':x.strip(),'type':'text'} for x in str(data.get('outputs','')).split(',') if x.strip()][:30]
-            manifest={'id':module_id,'name':name,'version':version,'description':description,'api_version':'1.0','inputs':inputs,'outputs':outputs,'capabilities':[],'permissions':[],'dependencies':[]}
+            runtime_kind=str(data.get('runtime_kind','input')).strip()
+            if runtime_kind not in MODULE_RUNTIME_KINDS: return self.send_json(400, {'error':'Неизвестный встроенный тип модуля'})
+            runtime={'kind':runtime_kind}
+            if runtime_kind=='template': runtime['template']=str(data.get('template','{input}'))[:12000]
+            if runtime_kind=='transform':
+                operation=str(data.get('operation','strip'))
+                if operation not in {'uppercase','lowercase','strip','json_parse','json_pretty'}: return self.send_json(400, {'error':'Неизвестная операция преобразования'})
+                runtime['operation']=operation
+            if runtime_kind=='ollama':
+                runtime['system_prompt']=str(data.get('system_prompt',''))[:4000]
+                runtime['model']=str(data.get('model',''))[:160]
+                runtime['max_tokens']=min(max(int(data.get('max_tokens',1024)),64),4096)
+            manifest={'id':module_id,'name':name,'version':version,'description':description,'api_version':'1.0','inputs':inputs,'outputs':outputs,'runtime':runtime,'capabilities':[],'permissions':[],'dependencies':[]}
             folder=MODULES/module_id
             if folder.exists(): return self.send_json(409, {'error':'Папка модуля уже существует; проверьте каталог modules/'})
             folder.mkdir(parents=True,exist_ok=False)
@@ -328,13 +423,33 @@ class Handler(SimpleHTTPRequestHandler):
                 write_json(DATA/'modules.json',current); log_event('module.download',source)
                 return self.send_json(200, {'ok':True,'module':module,'files':saved,'total_bytes':total,'message':'Исходники загружены и оставлены неисполняемыми для проверки.'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/modules/run':
+            try: return self.send_json(200, execute_module_graph(data))
+            except ValueError as e: return self.send_json(400, {'error':str(e)})
+            except Exception as e: return self.send_json(502, {'error':'Ошибка выполнения схемы: '+str(e)[:240]})
         if path=='/api/modules/connections':
             connections=data.get('connections',[])
             if not isinstance(connections,list) or len(connections)>300: return self.send_json(400, {'error':'Некорректный список связей'})
             current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
             ids={m.get('id') for m in current.get('modules',[])}
+            seen=set()
             for link in connections:
                 if not isinstance(link,dict) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
+                if link.get('from')==link.get('to'): return self.send_json(400, {'error':'Модуль не может быть соединён сам с собой'})
+                pair=(link['from'],link['to'])
+                if pair in seen: return self.send_json(400, {'error':'Повторяющаяся связь: '+pair[0]+' → '+pair[1]})
+                seen.add(pair)
+            adjacency={key:[] for key in ids}
+            for link in connections: adjacency[link['from']].append(link['to'])
+            visiting=set(); visited=set()
+            def has_cycle(node):
+                if node in visiting: return True
+                if node in visited: return False
+                visiting.add(node)
+                for target in adjacency[node]:
+                    if has_cycle(target): return True
+                visiting.remove(node); visited.add(node); return False
+            if any(has_cycle(node) for node in ids if node not in visited): return self.send_json(400, {'error':'Циклические связи запрещены. Постройте направленный ациклический граф.'})
             current['connections']=connections; write_json(DATA/'modules.json',current); log_event('module.connections','Связи модулей обновлены'); return self.send_json(200, current)
         if path=='/api/github/file':
             file_path=str(data.get('path','')).strip(); content=str(data.get('content','')); message=str(data.get('message','').strip() or 'Update '+file_path)[:200]
