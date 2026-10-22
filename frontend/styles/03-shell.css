@@ -27,7 +27,7 @@
 
 .nav-item .nav-count{font-size:10px;color:#85839a}
 
-.sidebar-bottom{display:flex;align-items:center;gap:10px;margin-top:auto;padding:14px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);background:linear-gradient(145deg,#14232e,#111b24)}
+.sidebar-bottom{display:flex;align-items:center;gap:10px;margin-top:auto;padding:14px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 
 .sidebar-bottom b,.sidebar-bottom small{display:block;font-size:11px}
 
@@ -59,7 +59,7 @@
 
 .head-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
 
-.eyebrow{font-size:9px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:10px;color:#65d9ef}
+.eyebrow{font-size:9px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:10px}
 
 .eyebrow span{color:#55536c;margin:0 5px}
 
