@@ -606,8 +606,13 @@ class Handler(SimpleHTTPRequestHandler):
             manifest['description']=str(data.get('description',module.get('description','')).strip()[:1000])
             folder=MODULES/module_id
             if not folder.is_dir() or folder.resolve().parent!=MODULES.resolve(): return self.send_json(400, {'error':'Не найдена локальная папка модуля'})
-            write_json(folder/'module.json',manifest)
+            previous_manifest=module_runtime_manifest(module)
             module.update({'version':manifest['version'],'description':manifest['description'],'manifest':manifest,'status':'draft','note':'Настройки runtime сохранены. Модуль выполняется только через встроенный безопасный исполнитель.'})
+            try: current['connections']=validate_module_connections(current,current.get('connections',[]))
+            except ValueError as e:
+                module['manifest']=previous_manifest; module['version']=previous_manifest.get('version',module.get('version','1.0.0')); module['description']=previous_manifest.get('description',module.get('description',''))
+                return self.send_json(400, {'error':'Изменение портов нарушит существующие связи: '+str(e)})
+            write_json(folder/'module.json',manifest)
             write_json(DATA/'modules.json',current); log_event('module.update',module_id)
             return self.send_json(200, {'ok':True,'module':module})
         if path=='/api/modules/install':
