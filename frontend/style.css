@@ -161,3 +161,11 @@
 .error-text{color:#c43e50!important}
 :root[data-theme="light"] .error-text{color:#b42335!important}
 @media(max-width:700px){.diagnostic-row,.domain-row{align-items:flex-start;flex-direction:column}.domain-main{width:100%;flex-basis:auto}.domain-row .btn{align-self:flex-start}}
+
+.module-run-result{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.module-run-result pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--text)}
+.module-final-output{border-color:var(--accent)!important}
+.module-step{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0}
+.module-step summary{cursor:pointer;font-size:11px;font-weight:650}
+.module-step pre{margin-bottom:0}
+.connection-row .btn{padding:5px 8px;margin-left:4px}
