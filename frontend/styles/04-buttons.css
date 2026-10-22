@@ -1,0 +1,36 @@
+/* Shared button system. */
+.btn{border:1px solid transparent;border-radius:9px;padding:10px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:.16s}
+
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 4px 14px #3b9dff20;background:linear-gradient(110deg,#238be8,#20b9ce);box-shadow:0 4px 18px #1689bb28}
+
+.btn.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
+
+.btn.secondary{background:#20202c;border-color:#343447;color:#deddec}
+
+.btn.secondary:hover{background:#29293a}
+
+.btn.danger{background:#351f2a;border-color:#59303d;color:#ffb8c6}
+
+.icon-btn{display:grid;place-items:center;border:1px solid #343447;background:#1b1b27;color:#d7d5e9;border-radius:8px;width:34px;height:34px;cursor:pointer}
+
+.task-row-actions .btn{white-space:nowrap}
+
+.task-row-actions .btn.primary{background:linear-gradient(120deg,#d6eaff,#a9d0ff);border-color:#b8d9ff;color:#17436d}
+
+.task-row-actions .btn.secondary{background:#edf0f4;border-color:#d9dee7;color:#475569}
+
+.task-row-actions .btn.danger{background:#fbe0e0;border-color:#f3c1c1;color:#8d3333}
+
+.row-actions .btn{white-space:nowrap}
+
+.menu-row-actions .btn{padding:7px 10px}
+
+.domain-row .btn{flex-shrink:0}
+
+.connection-row .btn{padding:5px 8px;margin-left:4px}
+
+.agent-memory-editor .btn{justify-self:start}
+
+.module-edit-panel .btn{justify-self:start}
+
+.provider-row .btn,.provider-model-row .btn{flex-shrink:0}
