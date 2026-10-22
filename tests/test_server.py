@@ -8,7 +8,7 @@ class StorageTests(unittest.TestCase):
         self.assertIn('header', server.DEFAULT_SETTINGS)
     def test_default_pages_include_core_sections(self):
         ids={p['id'] for p in server.DEFAULT_PAGES}
-        self.assertTrue({'dashboard','interface-settings','pages','github','system-log','menu-builder','modules'}.issubset(ids))
+        self.assertTrue({'dashboard','interface-settings','pages','github','system-log','menu-builder','modules','diagnostics','models','agents','projects','tasks'}.issubset(ids))
     def test_header_spacing_defaults_exist(self):
         self.assertEqual(server.DEFAULT_SETTINGS['header']['paddingTop'], 24)
         self.assertEqual(server.DEFAULT_SETTINGS['header']['paddingRight'], 22)
