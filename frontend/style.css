@@ -203,3 +203,12 @@
 .module-node{fill:var(--panel2);stroke:var(--line);stroke-width:1.2}
 .module-node-name{fill:var(--text);font-size:11px;font-weight:650}
 .module-node-kind{fill:var(--muted);font-size:9px}
+
+.module-edit-panel{margin:12px 0;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.module-edit-panel summary{cursor:pointer;font-size:11px;font-weight:650}
+.module-edit-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
+.module-edit-panel label{display:grid;gap:5px;font-size:10px;color:var(--muted)}
+.module-edit-panel input,.module-edit-panel textarea,.module-edit-panel select{min-width:0;width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px;color:var(--text);font:11px/1.4 var(--font)}
+.module-edit-panel textarea{resize:vertical}
+.module-edit-panel label:nth-of-type(7),.module-edit-panel label:nth-of-type(8){grid-column:1/-1}
+.module-edit-panel .btn{justify-self:start}
