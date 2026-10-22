@@ -549,10 +549,12 @@ class Handler(SimpleHTTPRequestHandler):
             if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'Модуль с таким ID уже существует'})
             inputs=[{'name':x.strip(),'type':'text','required':False} for x in str(data.get('inputs','')).split(',') if x.strip()][:30]
             outputs=[{'name':x.strip(),'type':'text'} for x in str(data.get('outputs','')).split(',') if x.strip()][:30]
+            if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',p['name']) for p in inputs+outputs): return self.send_json(400, {'error':'Имена портов должны содержать латинские буквы, цифры, точку, дефис или подчёркивание.'})
+            if len({p['name'] for p in inputs})!=len(inputs) or len({p['name'] for p in outputs})!=len(outputs): return self.send_json(400, {'error':'Имена портов должны быть уникальными.'})
             runtime_kind=str(data.get('runtime_kind','input')).strip()
             if runtime_kind not in MODULE_RUNTIME_KINDS: return self.send_json(400, {'error':'Неизвестный встроенный тип модуля'})
             runtime={'kind':runtime_kind}
-            if runtime_kind=='template': runtime['template']=str(data.get('template','{input}'))[:12000]
+            if runtime_kind=='template': runtime['template']=str(data.get('template') or '{input}')[:12000]
             if runtime_kind=='transform':
                 operation=str(data.get('operation','strip'))
                 if operation not in {'uppercase','lowercase','strip','json_parse','json_pretty'}: return self.send_json(400, {'error':'Неизвестная операция преобразования'})
