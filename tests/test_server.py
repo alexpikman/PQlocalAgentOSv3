@@ -43,6 +43,21 @@ class ModuleRuntimeTests(unittest.TestCase):
             self.assertEqual(result['result'],'HELLO PQLOCAL')
             self.assertEqual(result['order'],['source','upper','finish'])
 
+    def test_graph_routes_values_through_named_ports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            modules=[
+                {'id':'source','name':'Источник','manifest':{'runtime':{'kind':'input'},'inputs':[],'outputs':[{'name':'prompt','type':'text'}]}},
+                {'id':'template','name':'Шаблон','manifest':{'runtime':{'kind':'template','template':'Prompt: {input.message}'},'inputs':[{'name':'message','type':'text'}],'outputs':[{'name':'result','type':'text'}]}},
+                {'id':'finish','name':'Выход','manifest':{'runtime':{'kind':'output'},'inputs':[{'name':'input','type':'text'}],'outputs':[{'name':'output','type':'text'}]}}
+            ]
+            registry={'modules':modules,'connections':[{'from':'source','to':'template','from_port':'prompt','to_port':'message'},{'from':'template','to':'finish','from_port':'result','to_port':'input'}]}
+            with patch.object(server,'DATA',root), patch.object(server,'MODULES',root/'modules'):
+                (root/'modules').mkdir()
+                server.write_json(root/'modules.json',registry)
+                result=server.execute_module_graph({'start_id':'source','input':'hello'})
+            self.assertEqual(result['result'],'Prompt: hello')
+
     def test_graph_rejects_unconfigured_external_module(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
