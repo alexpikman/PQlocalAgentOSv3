@@ -67,7 +67,7 @@
 
 .head-actions{display:flex;gap:9px}
 
-.content{padding:var(--pad);flex:1;max-width:1500px;width:100%}
+.content{padding:var(--pad);flex:1;max-width:1500px;width:100%;overflow-y:auto;max-height:calc(100vh - 64px)}
 
 .footer{display:flex;justify-content:space-between;padding:16px var(--pad);border-top:1px solid var(--line);font-size:9px;color:#727188;letter-spacing:.7px}
 
