@@ -59,9 +59,30 @@
 
 .panel:hover{border-color:#2e4b5e}
 
+:root[data-theme="light"] .notice{background:#eef6fc;border-color:#d4e6f4;color:#344e66}
+
+:root[data-theme="light"] .notice.warning{background:#fff7e8;border-color:#f0ddb5;color:#81571b}
+
+:root[data-theme="light"] .badge{background:#edf3f9;color:#52677d;border-color:#d9e3ed}
+
+:root[data-theme="light"] .table-wrap,
+:root[data-theme="light"] table{border-color:var(--line)}
+
+:root[data-theme="light"] .page-card:hover,
+:root[data-theme="light"] .panel:hover{border-color:#b7d6e8;box-shadow:0 12px 28px #234a6410}
+
+:root[data-theme="light"] .dialog,
+:root[data-theme="light"] dialog{color:var(--text);background:#fff;border-color:var(--line);box-shadow:0 24px 70px #17243726;}
+
+:root[data-theme="light"] dialog::backdrop{background:#17243755;backdrop-filter:blur(3px)}
+
 .badge.success{color:#087d55;background:#d9f8e9;border-color:#a8e8ca}
 
 .badge.danger{color:#b42335;background:#ffe3e6;border-color:#ffc3cb}
+
+:root[data-theme="dark"] .badge.success{color:#70e6b3;background:#15372c;border-color:#245f49}
+
+:root[data-theme="dark"] .badge.danger{color:#ff9ba7;background:#3c2027;border-color:#713440}
 
 .provider-row .badge{white-space:nowrap}
 
