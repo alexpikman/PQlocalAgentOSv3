@@ -1,6 +1,5 @@
 /* Design tokens and theme values. All literal color values live in this file. */
-:root{
-  --color-hex-15384a45: #15384a45;
+:root{  --color-hex-15384a45: #15384a45;
   --color-transparent: transparent;
   --color-hex-d6f0ff99: #d6f0ff99;
   --color-hex-fff: #fff;
@@ -30,7 +29,6 @@
   --color-hex-111b24: #111b24;
   --color-hex-101018d9: #101018d9;
   --color-hex-9695a9: #9695a9;
-  --color-white: white;
   --color-hex-deddf0: #deddf0;
   --color-hex-a8a5bd: #a8a5bd;
   --color-hex-333344: #333344;
@@ -143,14 +141,9 @@
   --color-hex-ff9ba7: #ff9ba7;
   --color-hex-3c2027: #3c2027;
   --color-hex-713440: #713440;
+  --color-hex-233548: #233548;
+  --color-hex-ffffff70: #ffffff70;
   --color-hex-0003: #0003;
-  --color-hex-101018: #101018;
-  --color-hex-1d1d29: #1d1d29;
-  --color-hex-2b2b3b: #2b2b3b;
-  --color-hex-9292a8: #9292a8;
-  --color-hex-f2f1ff: #f2f1ff;
-  --color-hex-3b9dff: #3b9dff;
-  --color-hex-142b3d: #142b3d;
   --color-hex-59d9a4: #59d9a4;
   --color-hex-59d9a455: #59d9a455;
   --color-hex-555568: #555568;
@@ -171,8 +164,6 @@
   --color-hex-c7c2ff: #c7c2ff;
   --color-hex-aaa9bc: #aaa9bc;
   --color-hex-0000000a: #0000000a;
-  --color-hex-233548: #233548;
-  --color-hex-ffffff70: #ffffff70;
   --color-hex-d9efff: #d9efff;
   --color-hex-b9dcfa: #b9dcfa;
   --color-hex-d7f1ed: #d7f1ed;
@@ -194,7 +185,7 @@
   --color-hex-c43e50: #c43e50;
   --color-hex-07111dcc: #07111dcc;
   --color-hex-0004: #0004;
---sidebar:322px;--right-sidebar:322px;--shell-top:24px;--shell-right:22px;--shell-bottom:24px;--shell-glow:#31c9ed18}
+color-scheme:dark;--bg:#101018;--panel:#171720;--panel2:#1d1d29;--line:#2b2b3b;--muted:#9292a8;--text:#f2f1ff;--accent:#3b9dff;--accent-soft:#142b3d;--radius:12px;--sidebar:248px;--pad:28px;font-family:Inter,'Segoe UI',sans-serif;font-size:14px;--sidebar:322px;--right-sidebar:322px;--shell-top:24px;--shell-right:22px;--shell-bottom:24px;--shell-glow:#31c9ed18}
 
 :root[data-theme="light"]{color-scheme:light;
   --bg:#f3f6fa;
