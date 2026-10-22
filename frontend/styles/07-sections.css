@@ -9,7 +9,7 @@
 
 .stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11px}
 
-.stat-icon{width:32px;height:32px;display:grid;place-items:center;border:1px solid #24485d;background:#172b3c;border-radius:9px;color:#73d9ff;font-size:15px;background:#143044;border-color:#25546a;color:#7de3ff}
+.stat-icon{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--panel2);border-radius:9px;color:var(--accent);font-size:15px}
 
 .stat-number{font-size:27px;font-weight:700;letter-spacing:-1px;margin:15px 0 4px}
 
@@ -57,7 +57,7 @@
 
 .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 
-.check-row{display:flex;align-items:center;gap:9px;font-size:11px;color:#c6c4d7}
+.check-row{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text)}
 
 .setting-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
 
@@ -213,21 +213,11 @@
 
 .module-create-panel .field-grid{align-items:end}
 
-:root[data-theme="light"] .stat-icon{background:#e3f5ff;border-color:#c5e8f7;color:#087aa9;}
-
-:root[data-theme="light"] th{background:#f1f5fa;color:#52647a}
-
-:root[data-theme="light"] td{border-color:#e4eaf1}
-
-:root[data-theme="light"] .mono{color:#35516e}
-
 .diagnostic-list{display:grid;gap:0;margin-top:18px}
 
 .model-response,.task-result{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin-top:10px}
 
 .error-text{color:#c43e50!important}
-
-:root[data-theme="light"] .error-text{color:#b42335!important}
 
 .module-run-result{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 
@@ -373,7 +363,10 @@
 
 .domain-modal .field-grid{margin-top:14px}
 
-
 .modal-card-body{min-width:0}
 .modal-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:5px}
 .modal-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px}
+
+th{background:var(--panel2);color:var(--muted)}
+td{border-color:var(--line)}
+.mono{color:var(--text)}
