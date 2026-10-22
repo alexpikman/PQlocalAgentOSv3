@@ -170,3 +170,51 @@
 .avatar-custom-color input[type=color]{position:absolute;opacity:0;inset:-10px;cursor:pointer;width:40px;height:40px}
 .avatar-custom-color::after{content:"+";font-size:10px;color:var(--muted);font-weight:700}
 .avatar-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+
+
+/* ═══ SYS MONITOR (telemetry in right sidebar) ═══ */
+.sysmon{display:grid;gap:8px;margin-top:8px}
+.sysmon-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sysmon-head b{font-size:10px;letter-spacing:1.2px;color:var(--muted);font-weight:700;text-transform:uppercase}
+.sysmon-live{width:7px;height:7px;border-radius:50%;background:#59d9a4;box-shadow:0 0 10px #59d9a455;animation:sysmonPulse 1.6s infinite}
+@keyframes sysmonPulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sysmon-updated{font-size:9px;color:var(--muted);text-align:right;margin-top:-4px}
+.sysmon-card{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px;cursor:pointer;transition:border-color .15s;display:grid;gap:6px}
+.sysmon-card:hover{border-color:var(--accent)}
+.sysmon-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;background:var(--accent-soft);color:var(--accent);flex:0 0 22px}
+.sysmon-icon.purple{background:#2a1f3d;color:#b79bff}
+.sysmon-icon.green{background:#152f24;color:#6ce0a8}
+.sysmon-icon.amber{background:#332711;color:#e6c07a}
+.sysmon-card-row{display:flex;align-items:center;gap:7px;min-width:0}
+.sysmon-card-row>div{min-width:0}
+.sysmon-card-row b{font-size:10px;display:block;line-height:1.2}
+.sysmon-card-row small{font-size:8px;color:var(--muted);display:block}
+.sysmon-val{font-size:14px;font-weight:700;margin-left:auto;letter-spacing:-.3px}
+.sysmon-track{height:5px;border-radius:4px;background:var(--line);overflow:hidden}
+.sysmon-track i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#238be8,#20b9ce);transition:width .6s ease}
+.sysmon-track.warn i{background:linear-gradient(90deg,#e6a23c,#f0c674)}
+.sysmon-track.danger i{background:linear-gradient(90deg,#d9534f,#f38b88)}
+.sysmon-detail{font-size:9px;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+.sysmon-disks{display:grid;gap:6px}
+.sysmon-disk{display:grid;gap:3px;padding-top:6px;border-top:1px solid var(--line)}
+.sysmon-disk:first-child{border-top:0;padding-top:0}
+.sysmon-disk-head{display:flex;justify-content:space-between;font-size:9px;font-weight:600}
+/* Chart modal */
+.sysmon-chart-modal{position:fixed;inset:0;z-index:1100;display:grid;place-items:center;padding:20px;background:#050510cc;backdrop-filter:blur(6px)}
+.sysmon-chart-modal[hidden]{display:none!important}
+.sysmon-chart-card{position:relative;width:min(720px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 100px #0008;padding:20px}
+.sysmon-chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.sysmon-chart-head h2{font-size:16px;margin:0 0 2px}
+.sysmon-chart-close{border:1px solid var(--line);background:var(--panel2);color:var(--text);width:28px;height:28px;border-radius:8px;font-size:14px;cursor:pointer}
+.sysmon-chart-wrap{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
+.sysmon-chart-svg{width:100%;height:200px;display:block;overflow:visible}
+.sysmon-grid-line{stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
+.sysmon-axis-label{fill:var(--muted);font-size:9px}
+.sysmon-chart-line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.sysmon-chart-area{fill:url(#sysmonGrad);opacity:.35}
+.sysmon-chart-dot{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.sysmon-chart-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.sysmon-chart-stats div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:2px}
+.sysmon-chart-stats small{font-size:9px;color:var(--muted)}
+.sysmon-chart-stats b{font-size:14px;font-weight:700;letter-spacing:-.3px}
+@media(max-width:560px){.sysmon-chart-modal{padding:10px}.sysmon-chart-card{padding:14px}.sysmon-chart-stats{gap:6px}}
