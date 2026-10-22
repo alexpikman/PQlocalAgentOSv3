@@ -1,94 +1,12 @@
-/* Design tokens and theme values. */
-:root[data-theme="light"] .right-sidebar{background:rgba(255,255,255,.96);border-left-color:var(--line);box-shadow:-8px 0 28px #24364b08}
+/* Design tokens and theme token values. */
+:root{--sidebar:322px;--right-sidebar:322px;--shell-top:24px;--shell-right:22px;--shell-bottom:24px;--shell-glow:#31c9ed18}
 
-:root{--shell-top:24px;--shell-right:22px;--shell-bottom:24px}
-
-:root[data-theme="light"] body{color:var(--text);
-  background:radial-gradient(ellipse at 82% -16%,#d6f0ff99,transparent 44%),var(--bg);}
-
-:root[data-theme="light"] .sidebar{background:rgba(255,255,255,.94);
-  border-right-color:var(--line);
-  box-shadow:8px 0 28px #24364b08;}
-
-:root[data-theme="light"] .topbar,
-:root[data-theme="light"] .panel,
-:root[data-theme="light"] .stat-card,
-:root[data-theme="light"] .feature-card,
-:root[data-theme="light"] .page-card,
-:root[data-theme="light"] .module-card,
-:root[data-theme="light"] .settings-section,
-:root[data-theme="light"] .connection-card{background:rgba(255,255,255,.88);
-  border-color:var(--line);
-  box-shadow:0 8px 24px #24364b08;}
-
-:root[data-theme="light"] .page-head{background:linear-gradient(110deg,#e4f4ff99,transparent 68%);}
-
-:root[data-theme="light"] .brand-copy small,
-:root[data-theme="light"] .nav-caption,
-:root[data-theme="light"] .muted,
-:root[data-theme="light"] .panel-subtitle,
-:root[data-theme="light"] .field-help,
-:root[data-theme="light"] .sidebar-bottom small{color:var(--muted);}
-
-:root[data-theme="light"] .nav-item{color:#52647a;border-color:transparent}
-
-:root[data-theme="light"] .nav-item:hover{background:#eaf3fb;color:#173a58}
-
-:root[data-theme="light"] .nav-item.active{background:linear-gradient(100deg,#dff2ff,#e8f8fb);
-  border-color:#b8dff1;
-  color:#075b8e;}
-
-:root[data-theme="light"] .sidebar-bottom{background:linear-gradient(145deg,#edf7fc,#f7f9fc);
-  border-color:var(--line);}
-
-:root[data-theme="light"] input,
-:root[data-theme="light"] textarea,
-:root[data-theme="light"] select{color:var(--text);
-  background:#fff;
-  border-color:#cbd7e4;}
-
-:root[data-theme="light"] input::placeholder,
-:root[data-theme="light"] textarea::placeholder{color:#8291a4}
-
-:root[data-theme="light"] .btn.secondary,
-:root[data-theme="light"] .btn.ghost{color:#344b63;
-  background:#f5f8fc;
-  border-color:#d4dfeb;}
-
-:root[data-theme="light"] .btn.secondary:hover,
-:root[data-theme="light"] .btn.ghost:hover{background:#eaf2fa;border-color:#b9cbdc}
-
-:root[data-theme="light"] .stat-icon{background:#e3f5ff;border-color:#c5e8f7;color:#087aa9;}
-
-:root[data-theme="light"] .eyebrow{color:#087ba5}
-
-:root[data-theme="light"] .notice{background:#eef6fc;border-color:#d4e6f4;color:#344e66}
-
-:root[data-theme="light"] .notice.warning{background:#fff7e8;border-color:#f0ddb5;color:#81571b}
-
-:root[data-theme="light"] .badge{background:#edf3f9;color:#52677d;border-color:#d9e3ed}
-
-:root[data-theme="light"] .table-wrap,
-:root[data-theme="light"] table{border-color:var(--line)}
-
-:root[data-theme="light"] th{background:#f1f5fa;color:#52647a}
-
-:root[data-theme="light"] td{border-color:#e4eaf1}
-
-:root[data-theme="light"] .page-card:hover,
-:root[data-theme="light"] .panel:hover{border-color:#b7d6e8;box-shadow:0 12px 28px #234a6410}
-
-:root[data-theme="light"] .dialog,
-:root[data-theme="light"] dialog{color:var(--text);background:#fff;border-color:var(--line);box-shadow:0 24px 70px #17243726;}
-
-:root[data-theme="light"] dialog::backdrop{background:#17243755;backdrop-filter:blur(3px)}
-
-:root[data-theme="light"] .mono{color:#35516e}
-
-:root[data-theme="dark"] .badge.success{color:#70e6b3;background:#15372c;border-color:#245f49}
-
-:root[data-theme="dark"] .badge.danger{color:#ff9ba7;background:#3c2027;border-color:#713440}
-
-:root[data-theme="light"] .error-text{color:#b42335!important}
-
-
+:root[data-theme="light"]{color-scheme:light;
+  --bg:#f3f6fa;
+  --panel:#ffffff;
+  --panel2:#edf2f8;
+  --line:#d9e2ec;
+  --muted:#637287;
+  --text:#172437;
+  --accent-soft:#e3f3ff;
+  --shell-glow:#1685c90d;}
