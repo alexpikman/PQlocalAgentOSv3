@@ -572,6 +572,44 @@ class Handler(SimpleHTTPRequestHandler):
             module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
             current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.create',module_id)
             return self.send_json(201, {'ok':True,'module':module})
+        if path=='/api/modules/update':
+            module_id=str(data.get('id','')).strip()
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            module=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not module: return self.send_json(404, {'error':'Модуль не найден'})
+            if module.get('source')!='local': return self.send_json(403, {'error':'Редактирование runtime доступно для локальных модулей. Для GitHub-модулей нужен проверенный адаптер.'})
+            runtime_kind=str(data.get('runtime_kind','')).strip()
+            if runtime_kind not in MODULE_RUNTIME_KINDS: return self.send_json(400, {'error':'Неизвестный встроенный тип модуля'})
+            def parse_port_names(raw):
+                names=[x.strip() for x in str(raw or '').split(',') if x.strip()][:30]
+                if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',name) for name in names): raise ValueError('Имена портов должны содержать латинские буквы, цифры, точку, дефис или подчёркивание.')
+                if len(names)!=len(set(names)): raise ValueError('Имена портов должны быть уникальными.')
+                return names
+            try:
+                input_names=parse_port_names(data.get('inputs','')); output_names=parse_port_names(data.get('outputs',''))
+            except ValueError as e: return self.send_json(400, {'error':str(e)})
+            manifest=module_runtime_manifest(module).copy()
+            runtime={'kind':runtime_kind}
+            if runtime_kind=='template': runtime['template']=str(data.get('template','{input}'))[:12000]
+            if runtime_kind=='transform':
+                operation=str(data.get('operation','strip'))
+                if operation not in {'uppercase','lowercase','strip','json_parse','json_pretty'}: return self.send_json(400, {'error':'Неизвестная операция преобразования'})
+                runtime['operation']=operation
+            if runtime_kind=='ollama':
+                runtime['system_prompt']=str(data.get('system_prompt',''))[:4000]
+                runtime['model']=str(data.get('model',''))[:160]
+                try: max_tokens=int(data.get('max_tokens',1024))
+                except (TypeError,ValueError): max_tokens=1024
+                runtime['max_tokens']=min(max(max_tokens,64),4096)
+            manifest.update({'inputs':[{'name':name,'type':'text','required':False} for name in input_names],'outputs':[{'name':name,'type':'text'} for name in output_names],'runtime':runtime})
+            manifest['version']=str(data.get('version',module.get('version','1.0.0')).strip()[:40] or '1.0.0')
+            manifest['description']=str(data.get('description',module.get('description','')).strip()[:1000])
+            folder=MODULES/module_id
+            if not folder.is_dir() or folder.resolve().parent!=MODULES.resolve(): return self.send_json(400, {'error':'Не найдена локальная папка модуля'})
+            write_json(folder/'module.json',manifest)
+            module.update({'version':manifest['version'],'description':manifest['description'],'manifest':manifest,'status':'draft','note':'Настройки runtime сохранены. Модуль выполняется только через встроенный безопасный исполнитель.'})
+            write_json(DATA/'modules.json',current); log_event('module.update',module_id)
+            return self.send_json(200, {'ok':True,'module':module})
         if path=='/api/modules/install':
             full_name=str(data.get('full_name','')).strip()
             if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full_name): return self.send_json(400, {'error':'Некорректное имя репозитория'})
