@@ -61,7 +61,7 @@ def run_diagnostics():
     check('Реестр страниц','ok' if (PAGES/'index.json').is_file() else 'warning','Файл страниц существует.' if (PAGES/'index.json').is_file() else 'Используются системные страницы по умолчанию.',PAGES/'index.json')
     check('Реестр модулей','ok' if (DATA/'modules.json').is_file() else 'warning','Файл реестра существует.' if (DATA/'modules.json').is_file() else 'Будет создан при первом изменении каталога.',DATA/'modules.json')
     check('Журнал событий','ok' if (DATA/'events.json').is_file() and os.access(DATA/'events.json',os.R_OK|os.W_OK) else 'warning','Журнал доступен.' if (DATA/'events.json').is_file() else 'Файл журнала появится после первого события.',DATA/'events.json')
-    check('Реестр агентов','ok' if (DOMAIN_FILES['agents'].is_file() else 'warning','Файл агентов существует.' if DOMAIN_FILES['agents'].is_file() else 'Будет создан при сохранении первого изменения.',DOMAIN_FILES['agents'])
+    check('Реестр агентов','ok' if DOMAIN_FILES['agents'].is_file() else 'warning','Файл агентов существует.' if DOMAIN_FILES['agents'].is_file() else 'Будет создан при сохранении первого изменения.',DOMAIN_FILES['agents'])
     check('Реестр проектов','ok' if DOMAIN_FILES['projects'].is_file() else 'warning','Файл проектов существует.' if DOMAIN_FILES['projects'].is_file() else 'Проекты ещё не сохранялись.',DOMAIN_FILES['projects'])
     check('Реестр задач','ok' if DOMAIN_FILES['tasks'].is_file() else 'warning','Файл задач существует.' if DOMAIN_FILES['tasks'].is_file() else 'Задачи ещё не сохранялись.',DOMAIN_FILES['tasks'])
     schema_path=ROOT/'module-contract.schema.json'
