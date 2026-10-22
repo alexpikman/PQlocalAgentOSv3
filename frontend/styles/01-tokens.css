@@ -40,9 +40,12 @@
 :root[data-theme="light"]{
   --bg:#f3f6fa;
   --panel:#ffffff;
+  --panel2:#edf2f8;
   --line:#d9e2ec;
+  --muted:#637287;
   --text:#172437;
   --accent:#2785e8;
+  --accent-soft:#e3f3ff;
   --status-pending-bg:#d9efff;
   --status-pending-fg:#233548;
   --status-running-bg:#d7f1ed;
