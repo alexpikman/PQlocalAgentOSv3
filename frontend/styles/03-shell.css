@@ -37,7 +37,7 @@
 
 .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--pad);border-bottom:1px solid var(--line);background:var(--color-hex-101018d9);gap:12px;padding-left:24px!important;padding-right:24px!important;position:relative;justify-content:center;padding-left:24px!important;padding-right:24px!important;backdrop-filter:blur(16px)}
 
-.topbar-path{display:flex;gap:11px;align-items:center;color:var(--color-hex-9695a9);font-size:12px;min-width:0;flex:1;position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;var(--color-white)-space:nowrap}
+.topbar-path{display:flex;gap:11px;align-items:center;color:var(--color-hex-9695a9);font-size:12px;min-width:0;flex:1;position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;white-space:nowrap}
 
 .topbar-path b{color:var(--color-hex-deddf0);font-weight:500}
 
@@ -113,9 +113,21 @@
 
 .panel-toggle-floating{position:fixed!important;top:18px!important;z-index:1000!important;pointer-events:auto!important;visibility:visible!important;opacity:1!important}
 
+.panel-toggle-left.panel-toggle-floating{left:var(--sidebar)!important;right:auto!important;transform:translateX(0);left:6px!important;right:auto!important;top:18px!important}
+
+.panel-toggle-right.panel-toggle-floating{right:var(--right-sidebar)!important;left:auto!important;transform:translateX(0);right:6px!important;left:auto!important;top:18px!important}
+
+.panel-toggle-left.panel-toggle-floating.panel-toggle-collapsed{left:6px!important}
+
+.panel-toggle-right.panel-toggle-floating.panel-toggle-collapsed{right:6px!important}
+
 .app-shell.left-hidden .panel-toggle-left.panel-toggle-floating{left:6px!important}
 
 .app-shell.right-hidden .panel-toggle-right.panel-toggle-floating{right:6px!important}
+
+.panel-toggle-left:not(.panel-toggle-floating){position:absolute!important;top:18px!important;right:2px!important;left:auto!important;transform:none!important}
+
+.panel-toggle-right:not(.panel-toggle-floating){position:absolute!important;top:0!important;left:2px!important;right:auto!important;transform:none!important}
 
 .app-shell:not(.left-hidden) .panel-toggle-left:not(.panel-toggle-floating){right:2px!important}
 
