@@ -146,13 +146,13 @@ def execute_module_graph(data):
     for link in links:
         source=link.get('from'); target=link.get('to')
         if source in modules and target in modules:
-            outgoing[source].append(target); incoming[target].append(source)
+            outgoing[source].append(target); incoming[target].append(link)
     reachable=set(); stack=[start]
     while stack:
         node=stack.pop()
         if node in reachable: continue
         reachable.add(node); stack.extend(outgoing[node])
-    indegree={node:sum(1 for parent in incoming[node] if parent in reachable) for node in reachable}
+    indegree={node:sum(1 for edge in incoming[node] if edge.get('from') in reachable) for node in reachable}
     queue=[node for node in reachable if indegree[node]==0]; order=[]
     while queue:
         node=queue.pop(0); order.append(node)
@@ -161,17 +161,30 @@ def execute_module_graph(data):
                 indegree[target]-=1
                 if indegree[target]==0: queue.append(target)
     if len(order)!=len(reachable): raise ValueError('В схеме обнаружен цикл. Удалите циклическую связь.')
-    if start in incoming and any(parent in reachable for parent in incoming[start]):
+    if start in incoming and any(edge.get('from') in reachable for edge in incoming[start]):
         raise ValueError('Стартовый модуль не может иметь входящих связей внутри выполняемой схемы')
-    values={}; records=[]; prompt_input=str(data.get('input',''))[:12000]
+    values={}; port_values={}; records=[]; prompt_input=str(data.get('input',''))[:12000]
     selected_model=str(data.get('model','')).strip()[:160]
     for module_id in order:
         module=modules[module_id]; manifest=module_runtime_manifest(module); runtime=manifest.get('runtime') if isinstance(manifest.get('runtime'),dict) else {}
         kind=str(runtime.get('kind','')).strip()
         if kind not in MODULE_RUNTIME_KINDS:
             raise ValueError('Модуль «'+str(module.get('name',module_id))+'» не имеет разрешённого встроенного типа исполнения. Внешние модули требуют отдельного адаптера.')
-        parents=[parent for parent in incoming[module_id] if parent in reachable]
-        incoming_value=prompt_input if module_id==start else (values[parents[0]] if len(parents)==1 else {parent:values[parent] for parent in parents})
+        edges=[edge for edge in incoming[module_id] if edge.get('from') in reachable]
+        if module_id==start: incoming_value=prompt_input
+        elif len(edges)==1:
+            edge=edges[0]; parent=edge['from']; parent_manifest=module_runtime_manifest(modules[parent]); parent_ports=parent_manifest.get('outputs') if isinstance(parent_manifest.get('outputs'),list) else []
+            source_port=str(edge.get('from_port') or (parent_ports[0].get('name') if parent_ports else 'output'))
+            target_port=str(edge.get('to_port') or ((manifest.get('inputs') or [{}])[0].get('name') if manifest.get('inputs') else 'input'))
+            source_value=port_values.get(parent,{}).get(source_port,values[parent])
+            incoming_value=source_value if target_port=='input' and len(manifest.get('inputs') or [])<=1 else {target_port:source_value}
+        else:
+            incoming_value={}
+            for edge in edges:
+                parent=edge['from']; parent_manifest=module_runtime_manifest(modules[parent]); parent_ports=parent_manifest.get('outputs') if isinstance(parent_manifest.get('outputs'),list) else []
+                source_port=str(edge.get('from_port') or (parent_ports[0].get('name') if parent_ports else 'output'))
+                target_port=str(edge.get('to_port') or 'input')
+                incoming_value[target_port]=port_values.get(parent,{}).get(source_port,values[parent])
         def to_text(value):
             if isinstance(value,str): return value
             return json.dumps(value,ensure_ascii=False,indent=2)
@@ -179,6 +192,8 @@ def execute_module_graph(data):
         elif kind=='template':
             template=str(runtime.get('template','{input}'))[:12000]
             output=template.replace('{input}',to_text(incoming_value)).replace('{context}',str(data.get('context',''))[:8000]).replace('{task}',str(data.get('task',''))[:8000])
+            if isinstance(incoming_value,dict):
+                for port_name,port_value in incoming_value.items(): output=output.replace('{input.'+str(port_name)+'}',to_text(port_value))
         elif kind=='transform':
             operation=str(runtime.get('operation','strip'))
             value=to_text(incoming_value)
@@ -202,6 +217,10 @@ def execute_module_graph(data):
             output=result.get('response','')
         else: output=incoming_value
         values[module_id]=output
+        output_ports=manifest.get('outputs') if isinstance(manifest.get('outputs'),list) else []
+        if not output_ports: port_values[module_id]={'output':output}
+        elif isinstance(output,dict): port_values[module_id]={str(port.get('name','output')):output.get(str(port.get('name','output')),output) for port in output_ports}
+        else: port_values[module_id]={str(port.get('name','output')):output for port in output_ports}
         records.append({'module_id':module_id,'name':module.get('name',module_id),'kind':kind,'status':'completed','output':output if isinstance(output,(str,int,float,bool,type(None),dict,list)) else str(output)})
     leaves=[node for node in reachable if not any(target in reachable for target in outgoing[node])]
     outputs={node:values[node] for node in leaves}
@@ -586,6 +605,13 @@ class Handler(SimpleHTTPRequestHandler):
             seen=set()
             for link in connections:
                 if not isinstance(link,dict) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
+                source_module=next(m for m in current.get('modules',[]) if m.get('id')==link['from']); target_module=next(m for m in current.get('modules',[]) if m.get('id')==link['to'])
+                source_manifest=module_runtime_manifest(source_module); target_manifest=module_runtime_manifest(target_module)
+                source_ports=source_manifest.get('outputs') if isinstance(source_manifest.get('outputs'),list) else []; target_ports=target_manifest.get('inputs') if isinstance(target_manifest.get('inputs'),list) else []
+                if not link.get('from_port'): link['from_port']=source_ports[0].get('name','output') if source_ports else 'output'
+                if not link.get('to_port'): link['to_port']=target_ports[0].get('name','input') if target_ports else 'input'
+                if source_ports and not any(p.get('name')==link['from_port'] for p in source_ports): return self.send_json(400, {'error':'Выходной порт не найден в модуле '+str(source_module.get('name',link['from']))})
+                if target_ports and not any(p.get('name')==link['to_port'] for p in target_ports): return self.send_json(400, {'error':'Входной порт не найден в модуле '+str(target_module.get('name',link['to']))})
                 if link.get('from')==link.get('to'): return self.send_json(400, {'error':'Модуль не может быть соединён сам с собой'})
                 pair=(link['from'],link['to'])
                 if pair in seen: return self.send_json(400, {'error':'Повторяющаяся связь: '+pair[0]+' → '+pair[1]})
