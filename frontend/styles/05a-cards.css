@@ -14,8 +14,6 @@
 
 .feature-card:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,#2fc6e70a,transparent 55%);pointer-events:none}
 
-.feature-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 14px 34px #12a8d51b}
-
 .page-card,.panel,.stat-card{transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
 
 .panel:hover{border-color:var(--accent)}
