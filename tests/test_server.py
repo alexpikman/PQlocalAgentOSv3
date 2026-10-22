@@ -58,6 +58,30 @@ class ModuleRuntimeTests(unittest.TestCase):
                 result=server.execute_module_graph({'start_id':'source','input':'hello'})
             self.assertEqual(result['result'],'Prompt: hello')
 
+    def test_connection_validator_rejects_cycles(self):
+        current={'modules':[{'id':'a','name':'A','manifest':{}},{'id':'b','name':'B','manifest':{}}]}
+        with self.assertRaisesRegex(ValueError,'Циклические связи запрещены'):
+            server.validate_module_connections(current,[{'from':'a','to':'b'},{'from':'b','to':'a'}])
+
+    def test_connection_validator_allows_distinct_ports_between_same_modules(self):
+        current={'modules':[
+            {'id':'source','name':'Источник','manifest':{'outputs':[{'name':'one','type':'text'},{'name':'two','type':'text'}]}},
+            {'id':'target','name':'Цель','manifest':{'inputs':[{'name':'first','type':'text'},{'name':'second','type':'text'}]}}
+        ]}
+        links=server.validate_module_connections(current,[
+            {'from':'source','from_port':'one','to':'target','to_port':'first'},
+            {'from':'source','from_port':'two','to':'target','to_port':'second'}
+        ])
+        self.assertEqual(len(links),2)
+
+    def test_connection_validator_rejects_incompatible_port_types(self):
+        current={'modules':[
+            {'id':'source','name':'Источник','manifest':{'outputs':[{'name':'payload','type':'json'}]}},
+            {'id':'target','name':'Цель','manifest':{'inputs':[{'name':'text','type':'text'}]}}
+        ]}
+        with self.assertRaisesRegex(ValueError,'Несовместимые типы портов'):
+            server.validate_module_connections(current,[{'from':'source','to':'target','from_port':'payload','to_port':'text'}])
+
     def test_graph_rejects_unconfigured_external_module(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
