@@ -176,3 +176,13 @@
 .agent-memory-editor label{display:grid;gap:6px;font-size:10px;color:var(--muted)}
 .agent-memory-editor textarea{width:100%;resize:vertical;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--text);font:12px/1.5 var(--font)}
 .agent-memory-editor .btn{justify-self:start}
+
+.permission-toggle{display:flex;align-items:center;gap:10px;margin:14px 0;padding:13px;border:1px solid var(--line);border-radius:9px;font-size:12px}
+.permission-toggle input,.agent-permission-list input{accent-color:var(--accent)}
+.permission-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.permission-item{display:grid;gap:5px;border:1px solid var(--line);border-radius:8px;padding:11px}
+.permission-item b{font-size:11px}
+.permission-item small{font-size:10px;color:var(--muted)}
+.agent-permission-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;padding:10px;border:1px solid var(--line);border-radius:8px}
+.agent-permission-list label{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text)}
+.agent-memory-editor form .agent-permission-list{margin:2px 0 6px}
