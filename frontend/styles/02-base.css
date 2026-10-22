@@ -12,3 +12,15 @@ h1{font-size:27px;line-height:1.2;letter-spacing:-1px;margin:0;font-weight:700}
 h2{font-size:20px;margin:0;letter-spacing:-.5px}
 
 p{color:var(--muted);line-height:1.6}
+
+:root[data-theme="light"] body{color:var(--text);
+  background:radial-gradient(ellipse at 82% -16%,#d6f0ff99,transparent 44%),var(--bg);}
+
+:root[data-theme="light"] input,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select{color:var(--text);
+  background:#fff;
+  border-color:#cbd7e4;}
+
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder{color:#8291a4}
