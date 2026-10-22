@@ -1,5 +1,4 @@
-/* Reusable card components. */
-.stat-card,.panel,.feature-card,.page-card{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);box-shadow:0 12px 32px #00000012;backdrop-filter:blur(12px)}
+.stat-card,.panel,.feature-card{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);box-shadow:0 12px 32px #00000012;backdrop-filter:blur(12px)}
 
 .stat-card{padding:19px}
 
@@ -7,7 +6,7 @@
 
 .feature-card{padding:17px;cursor:pointer;text-align:left;color:inherit;transition:.18s;position:relative;overflow:hidden}
 
-.feature-card:hover,.page-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.feature-card:hover{border-color:var(--accent);transform:translateY(-2px)}
 
 .feature-card b{font-size:12px;display:block}
 
@@ -17,7 +16,7 @@
 
 .feature-card:hover{box-shadow:0 14px 34px #12a8d51b}
 
-.page-card,.panel,.stat-card{transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
+.panel,.stat-card{transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease}
 
 .panel:hover{border-color:var(--accent)}
 
