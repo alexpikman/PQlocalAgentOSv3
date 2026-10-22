@@ -75,7 +75,7 @@
 
 .right-sidebar{width:var(--right-sidebar);position:fixed;inset:0 0 0 auto;background:var(--panel);border-left:1px solid var(--line);padding:23px 14px 15px;display:flex;flex-direction:column;z-index:4;overflow-y:auto;transition:transform .2s ease}
 
-.right-sidebar-head{display:flex;align-items:center;gap:11px;padding:0 7px 29px;color:var(--text);position:relative}
+.right-sidebar-head{display:flex;align-items:center;gap:11px;padding:0 7px 29px;color:var(--text);position:relative;flex-direction: row-reverse;}
 
 .right-sidebar-head b,.right-sidebar-head small{display:block}
 
