@@ -84,7 +84,7 @@ def run_diagnostics():
     check('Реестр задач','ok' if DOMAIN_FILES['tasks'].is_file() else 'warning','Файл задач существует.' if DOMAIN_FILES['tasks'].is_file() else 'Задачи ещё не сохранялись.',DOMAIN_FILES['tasks'])
     schema_path=ROOT/'module-contract.schema.json'
     check('Контракт модулей','ok' if schema_path.is_file() else 'error','JSON-схема контракта доступна.' if schema_path.is_file() else 'Не найдена JSON-схема контракта.',schema_path)
-    frontend_ok=all((FRONTEND/name).is_file() for name in ('index.html','app.js','style.css'))
+    frontend_ok=all((FRONTEND/name).is_file() for name in ('index.html','app.js','style.css','components.css'))
     check('Frontend-ресурсы','ok' if frontend_ok else 'error','HTML, JavaScript и CSS доступны.' if frontend_ok else 'Не хватает одного или нескольких файлов frontend.',FRONTEND)
     try:
         models=ollama_request('/api/tags',timeout=3).get('models',[])
