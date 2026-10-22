@@ -174,8 +174,8 @@
 
 /* ═══ SYS MONITOR (telemetry in right sidebar) ═══ */
 .sysmon{display:grid;gap:8px;margin-top:8px}
-.sysmon-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.sysmon-head b{font-size:10px;letter-spacing:1.2px;color:var(--muted);font-weight:700;text-transform:uppercase}
+.sysmon-head{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sysmon-head b{font-size:10px;letter-spacing:1.2px;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right}
 .sysmon-live{width:7px;height:7px;border-radius:50%;background:#59d9a4;box-shadow:0 0 10px #59d9a455;animation:sysmonPulse 1.6s infinite}
 @keyframes sysmonPulse{0%,100%{opacity:1}50%{opacity:.4}}
 .sysmon-updated{font-size:9px;color:var(--muted);text-align:right;margin-top:-4px}
