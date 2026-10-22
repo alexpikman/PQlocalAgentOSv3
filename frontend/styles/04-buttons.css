@@ -13,15 +13,13 @@
 
 .icon-btn{display:grid;place-items:center;border:1px solid var(--color-hex-343447);background:var(--color-hex-1b1b27);color:var(--color-hex-d7d5e9);border-radius:8px;width:34px;height:34px;cursor:pointer}
 
-.entity-row-actions .btn{var(--color-white)-space:nowrap}
+.entity-row-actions .btn{white-space:nowrap;white-space:nowrap}
 
 .entity-row-actions .btn.primary{background:linear-gradient(120deg,var(--color-hex-d6eaff),var(--color-hex-a9d0ff));border-color:var(--color-hex-b8d9ff);color:var(--color-hex-17436d)}
 
 .entity-row-actions .btn.secondary{background:var(--color-hex-edf0f4);border-color:var(--color-hex-d9dee7);color:var(--color-hex-475569)}
 
 .entity-row-actions .btn.danger{background:var(--color-hex-fbe0e0);border-color:var(--color-hex-f3c1c1);color:var(--color-hex-8d3333)}
-
-.entity-row-actions .btn{var(--color-white)-space:nowrap}
 
 .menu-row-actions .btn{padding:7px 10px}
 
