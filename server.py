@@ -412,8 +412,9 @@ class Handler(SimpleHTTPRequestHandler):
             items=provider_items(); models=[]
             for p in items:
                 found=[]; connected=False
-                try: found=provider_models(p); connected=True
-                except Exception: pass
+                if p.get('kind')=='local' or p.get('api_key'):
+                    try: found=provider_models(p); connected=True
+                    except Exception: pass
                 p['connected']=connected; p['model_count']=len(found); p['api_key_set']=bool(p.get('api_key'))
                 for m in found: models.append({'provider':p.get('name',''),'provider_id':p.get('id'),'kind':p.get('kind','local'),'name':m.get('name',''),'tokens':'—','size':m.get('size',0),'connected':connected})
             return self.send_json(200, {'providers':[public_provider(p) for p in items], 'models':models})
