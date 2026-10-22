@@ -8,6 +8,12 @@
 
 .entity-row-main{min-width:0}
 
+.entity-row-heading{min-width:0}
+
+.entity-row-main > p,.entity-row-main > small{overflow-wrap:anywhere;word-break:break-word}
+
+.entity-row .provider-avatar{width:24px;height:24px;font-size:12px}
+
 .entity-row-heading{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:wrap}
 
 .entity-row-status{display:inline-flex;align-items:center;justify-content:center;flex:0 0 108px;width:108px;min-height:26px;padding:4px 8px;border-radius:7px;font-size:11px;font-weight:650;white-space:nowrap;color:#233548;border:1px solid #ffffff70}
