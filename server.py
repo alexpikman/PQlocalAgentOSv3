@@ -271,6 +271,27 @@ def run_agent_task(model, task, agent=None, project=None):
     message=last.get('message',{}) if isinstance(last,dict) else {}
     return {'response':message.get('content','') if isinstance(message,dict) and isinstance(message.get('content',''),str) else '', 'tool_calls':total,'model':last.get('model',model) if isinstance(last,dict) else model,'warning':'Достигнут лимит циклов вызова инструментов.'}
 
+
+def run_agent_team(model, task, agent=None, project=None):
+    """Run a bounded manager -> specialist -> reviewer workflow."""
+    base_description=str(task.get('description',''))
+    manager_agent={'id':None,'name':'Менеджер команды','role':'MANAGER','system_prompt':AGENT_ROLE_PROMPTS['MANAGER'],'permissions':{}}
+    manager_task={'title':str(task.get('title',''))+' — планирование','description':base_description+'\n\nСоставь краткий план выполнения, критерии готовности и риски. Не выполняй саму работу.'}
+    manager=run_agent_task(model,manager_task,manager_agent,project)
+    specialist=agent or {'id':None,'name':'Специалист','role':'ANALYST','system_prompt':AGENT_ROLE_PROMPTS['ANALYST'],'permissions':{}}
+    specialist_task={'title':str(task.get('title',''))+' — выполнение','description':base_description+'\n\nПлан менеджера:\n'+str(manager.get('response',''))+'\n\nВыполни задачу по плану. Если план содержит ошибочные предположения, исправь их.'}
+    specialist_model=str((agent or {}).get('model') or model)
+    specialist_result=run_agent_task(specialist_model,specialist_task,specialist,project)
+    reviewer={'id':None,'name':'Контролёр качества','role':'TESTER','system_prompt':AGENT_ROLE_PROMPTS['TESTER'],'permissions':{}}
+    review_task={'title':str(task.get('title',''))+' — проверка результата','description':'Исходная задача:\n'+base_description+'\n\nПлан менеджера:\n'+str(manager.get('response',''))+'\n\nРезультат специалиста:\n'+str(specialist_result.get('response',''))+'\n\nПроверь соответствие исходной задаче, найди неподтверждённые утверждения и недостающие части. Верни итоговый результат и явно перечисли ограничения. Не утверждай, что запускал проверки, если этого не делал.'}
+    review=run_agent_task(model,review_task,reviewer,project)
+    stages=[
+        {'role':'MANAGER','name':'Менеджер','model':manager.get('model',model),'response':manager.get('response',''),'tool_calls':manager.get('tool_calls',0),'warning':manager.get('warning','')},
+        {'role':specialist.get('role','ANALYST'),'name':specialist.get('name','Специалист'),'model':specialist_result.get('model',specialist_model),'response':specialist_result.get('response',''),'tool_calls':specialist_result.get('tool_calls',0),'warning':specialist_result.get('warning','')},
+        {'role':'TESTER','name':'Контроль качества','model':review.get('model',model),'response':review.get('response',''),'tool_calls':review.get('tool_calls',0),'warning':review.get('warning','')}
+    ]
+    return {'response':review.get('response',''),'team_result':stages,'tool_calls':sum(int(x.get('tool_calls',0) or 0) for x in stages),'model':model}
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
@@ -358,10 +379,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
-            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'status':'pending','result':'','error':''})
+            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'team_mode':bool(data.get('team_mode',False)),'status':'pending','result':'','error':'','team_result':[]})
             items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
             return self.send_json(201,item)
-        if path.startswith('/api/tasks/') and path.endswith('/run'):
+        if path.startswith('/api/tasks/') and (path.endswith('/run') or path.endswith('/run-team')):
             task_id=path.split('/')[-2]; items=domain_items('tasks'); item=next((x for x in items if x.get('id')==task_id),None)
             if not item: return self.send_json(404, {'error':'Задача не найдена'})
             agents=domain_items('agents')
@@ -380,8 +401,9 @@ class Handler(SimpleHTTPRequestHandler):
             if project:
                 prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
             try:
-                result=run_agent_task(model,item,agent,project)
-                item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                team_mode=path.endswith('/run-team') or bool(item.get('team_mode'))
+                result=run_agent_team(model,item,agent,project) if team_mode else run_agent_task(model,item,agent,project)
+                item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['team_result']=result.get('team_result',[]); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 if agent:
                     agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
                 log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
@@ -394,13 +416,14 @@ class Handler(SimpleHTTPRequestHandler):
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
             if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
             for key in allowed:
                 if key not in data: continue
                 if kind=='agents' and key=='permissions':
                     if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
+                elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
                 else: item[key]=str(data[key]).strip()[:5000]
             save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
             return self.send_json(200,item)
