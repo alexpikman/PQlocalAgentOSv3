@@ -38,7 +38,6 @@
 }
 
 :root[data-theme="light"]{
-  color-scheme:light;
   --bg:#f3f6fa;
   --panel:#ffffff;
   --line:#d9e2ec;
