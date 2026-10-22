@@ -59,6 +59,10 @@
 
 .panel:hover{border-color:var(--accent)}
 
+.table-wrap,table{border-color:var(--line)}
+dialog{color:var(--text);background:var(--panel);border:1px solid var(--line)}
+dialog::backdrop{background:#07070dbd;backdrop-filter:blur(5px)}
+
 .badge.success{color:var(--status-completed-fg);background:var(--status-completed-bg);border-color:var(--status-completed-bg)}
 
 .badge.danger{color:var(--status-failed-fg);background:var(--status-failed-bg);border-color:var(--status-failed-bg)}
