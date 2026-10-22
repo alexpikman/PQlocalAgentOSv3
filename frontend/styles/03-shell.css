@@ -35,7 +35,7 @@
 
 .main{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column;margin-left:var(--left-panel-width);margin-right:var(--right-sidebar);transition:margin .2s ease}
 
-.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--pad);border-bottom:1px solid var(--line);background:#101018d9;gap:12px;backdrop-filter:blur(16px)}
+.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 var(--pad);border-bottom:1px solid var(--line);background:#101018d9;gap:12px;padding-left:24px!important;padding-right:24px!important;position:relative;justify-content:center;padding-left:24px!important;padding-right:24px!important;backdrop-filter:blur(16px)}
 
 .topbar-path{display:flex;gap:11px;align-items:center;color:#9695a9;font-size:12px;min-width:0;flex:1;position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;white-space:nowrap}
 
@@ -85,7 +85,7 @@
 
 #right-nav{display:grid;gap:4px}
 
-.panel-toggle{flex-shrink:0;font-size:15px;flex-basis:28px;width:28px;height:28px;min-width:28px;padding:6px;border-radius:7px}
+.panel-toggle{flex-shrink:0;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;min-width:32px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);cursor:pointer;z-index:12;flex-basis:28px;width:28px;height:28px;min-width:28px;padding:6px;border-radius:7px}
 
 .app-shell.left-hidden .sidebar{transform:translateX(-100%);pointer-events:none}
 
@@ -94,6 +94,8 @@
 .app-shell.right-hidden .right-sidebar{transform:translateX(100%);pointer-events:none}
 
 .app-shell.right-hidden .main{margin-right:0}
+
+:root[data-theme="light"] .right-sidebar{background:rgba(255,255,255,.96);border-left-color:var(--line);box-shadow:-8px 0 28px #24364b08}
 
 .panel-toggle svg{display:block;width:20px;height:20px;flex:0 0 20px;width:14px;height:14px;flex-basis:14px}
 
@@ -109,6 +111,8 @@
 
 .app-shell.right-hidden #toggle-right-panel{position:fixed;top:6px;right:6px;left:auto}
 
+.panel-toggle-floating{position:fixed!important;top:18px!important;z-index:1000!important;pointer-events:auto!important;visibility:visible!important;opacity:1!important}
+
 .app-shell.left-hidden #toggle-left-panel.panel-toggle-floating{left:6px!important}
 
 .app-shell.right-hidden #toggle-right-panel.panel-toggle-floating{right:6px!important}
@@ -116,3 +120,40 @@
 .app-shell:not(.left-hidden) #toggle-left-panel:not(.panel-toggle-floating){right:2px!important}
 
 .app-shell:not(.right-hidden) #toggle-right-panel:not(.panel-toggle-floating){left:2px!important}
+
+:root[data-theme="light"] .sidebar{background:rgba(255,255,255,.94);
+  border-right-color:var(--line);
+  box-shadow:8px 0 28px #24364b08;}
+
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .stat-card,
+:root[data-theme="light"] .feature-card,
+:root[data-theme="light"] .page-card,
+:root[data-theme="light"] .module-card,
+:root[data-theme="light"] .settings-section,
+:root[data-theme="light"] .connection-card{background:rgba(255,255,255,.88);
+  border-color:var(--line);
+  box-shadow:0 8px 24px #24364b08;}
+
+:root[data-theme="light"] .page-head{background:linear-gradient(110deg,#e4f4ff99,transparent 68%);}
+
+:root[data-theme="light"] .brand-copy small,
+:root[data-theme="light"] .nav-caption,
+:root[data-theme="light"] .muted,
+:root[data-theme="light"] .panel-subtitle,
+:root[data-theme="light"] .field-help,
+:root[data-theme="light"] .sidebar-bottom small{color:var(--muted);}
+
+:root[data-theme="light"] .nav-item{color:#52647a;border-color:transparent}
+
+:root[data-theme="light"] .nav-item:hover{background:#eaf3fb;color:#173a58}
+
+:root[data-theme="light"] .nav-item.active{background:linear-gradient(100deg,#dff2ff,#e8f8fb);
+  border-color:#b8dff1;
+  color:#075b8e;}
+
+:root[data-theme="light"] .sidebar-bottom{background:linear-gradient(145deg,#edf7fc,#f7f9fc);
+  border-color:var(--line);}
+
+:root[data-theme="light"] .eyebrow{color:#087ba5}
