@@ -25,6 +25,14 @@
 
 .menu-row-actions .btn{padding:7px 10px}
 
+:root[data-theme="light"] .btn.secondary,
+:root[data-theme="light"] .btn.ghost{color:#344b63;
+  background:#f5f8fc;
+  border-color:#d4dfeb;}
+
+:root[data-theme="light"] .btn.secondary:hover,
+:root[data-theme="light"] .btn.ghost:hover{background:#eaf2fa;border-color:#b9cbdc}
+
 .domain-row .btn{flex-shrink:0}
 
 .connection-row .btn{padding:5px 8px;margin-left:4px}
