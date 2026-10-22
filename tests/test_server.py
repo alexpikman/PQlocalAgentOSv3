@@ -1,4 +1,5 @@
 import json, os, tempfile, unittest
+from unittest.mock import patch
 from pathlib import Path
 import server
 
@@ -22,4 +23,34 @@ class StorageTests(unittest.TestCase):
         slug=re.sub(r'[^a-z0-9-]+','-','my page / hello').strip('-')
         self.assertEqual(slug,'my-page-hello')
 
+
+class ModuleRuntimeTests(unittest.TestCase):
+    def test_graph_executes_builtin_transform_chain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            modules=[
+                {'id':'source','name':'Источник','manifest':{'runtime':{'kind':'input'}}},
+                {'id':'upper','name':'В верхний регистр','manifest':{'runtime':{'kind':'transform','operation':'uppercase'}}},
+                {'id':'finish','name':'Выход','manifest':{'runtime':{'kind':'output'}}}
+            ]
+            registry={'modules':modules,'connections':[{'from':'source','to':'upper','label':'text'},{'from':'upper','to':'finish','label':'text'}]}
+            with patch.object(server,'DATA',root), patch.object(server,'MODULES',root/'modules'):
+                (root/'modules').mkdir()
+                server.write_json(root/'modules.json',registry)
+                result=server.execute_module_graph({'start_id':'source','input':'hello pqlocal'})
+            self.assertTrue(result['ok'])
+            self.assertEqual(result['executed'],3)
+            self.assertEqual(result['result'],'HELLO PQLOCAL')
+            self.assertEqual(result['order'],['source','upper','finish'])
+
+    def test_graph_rejects_unconfigured_external_module(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            registry={'modules':[{'id':'external','name':'Внешний','manifest':{'api_version':'1.0'}}],'connections':[]}
+            with patch.object(server,'DATA',root), patch.object(server,'MODULES',root/'modules'):
+                server.write_json(root/'modules.json',registry)
+                with self.assertRaisesRegex(ValueError,'не имеет разрешённого встроенного типа'):
+                    server.execute_module_graph({'start_id':'external','input':'test'})
+
 if __name__=='__main__': unittest.main()
+
