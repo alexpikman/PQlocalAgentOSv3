@@ -1,4 +1,4 @@
-// ═══ TELEMETRY (fake data, ready for real backend) ═══
+// Real system telemetry: values come from the local backend; unavailable metrics stay unavailable.
 (function () {
   'use strict';
 
@@ -6,71 +6,91 @@
   const history = { cpu: [], ram: [], gpu: [] };
   let currentChart = 'cpu';
 
-  function fakeStats() {
-    return {
-      cpu: { percent: 2 + Math.random() * 18, name: 'Intel64 Family 6 Model 186' },
-      ram: { percent: 88 + Math.random() * 8, used: 14.0 + Math.random() * 1.2, total: 15.7 },
-      gpu: { percent: Math.random() * 30, name: 'NVIDIA RTX 4060 Laptop', vramUsed: 3.0 + Math.random() * 0.6, vramTotal: 8.0 },
-      disks: [
-        { mount: 'C:\\', percent: 91.9, used: 228.9, free: 20.2, total: 249.1 },
-        { mount: 'D:\\', percent: 98.1, used: 548.2, free: 10.7, total: 558.9 }
-      ]
-    };
-  }
-
-  // Future backend: replace with fetch('/api/system/stats').then(r => r.json())
   async function fetchStats() {
-    return fakeStats();
+    const response = await fetch('/api/system/stats', { cache: 'no-store' });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
   }
 
   function setBar(id, percent) {
     const bar = document.getElementById(id);
     if (!bar) return;
     const track = bar.parentElement;
-    bar.style.width = Math.min(100, Math.max(0, percent)) + '%';
-    track.classList.toggle('warn', percent >= 70 && percent < 90);
-    track.classList.toggle('danger', percent >= 90);
+    const valid = Number.isFinite(percent);
+    bar.style.width = valid ? Math.min(100, Math.max(0, percent)) + '%' : '0%';
+    track.classList.toggle('warn', valid && percent >= 70 && percent < 90);
+    track.classList.toggle('danger', valid && percent >= 90);
+    track.classList.toggle('unavailable', !valid);
   }
 
-  function render() {
+  function displayPercent(value) {
+    return Number.isFinite(value) ? Math.round(value) + '%' : '—';
+  }
+
+  function displayGb(value, digits) {
+    return Number.isFinite(value) ? value.toFixed(digits) : '—';
+  }
+
+  function renderState(stats, error) {
     const state = document.getElementById('sysmon-state');
-    if (state) state.textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+    if (!state) return;
+    if (error) {
+      state.textContent = 'нет данных от локального сервера';
+      state.title = String(error.message || error);
+      return;
+    }
+    const time = stats.timestamp ? new Date(stats.timestamp) : new Date();
+    const unavailable = [stats.cpu, stats.ram, stats.gpu].filter(item => !item || item.available === false).length;
+    state.textContent = 'обновлено ' + time.toLocaleTimeString('ru-RU') + (unavailable ? ' · часть данных недоступна' : '');
+    state.title = 'Данные получены с локального сервера';
   }
 
-  async function tick() {
-    const stats = await fetchStats();
-    ['cpu', 'ram', 'gpu'].forEach((key) => {
-      history[key].push(stats[key].percent);
+  function updateMetric(key, percent) {
+    if (Number.isFinite(percent)) {
+      history[key].push(percent);
       if (history[key].length > HISTORY_MAX) history[key].shift();
-    });
+    }
+  }
 
+  function render(stats) {
+    updateMetric('cpu', stats.cpu && stats.cpu.available ? stats.cpu.percent : null);
+    updateMetric('ram', stats.ram && stats.ram.available ? stats.ram.percent : null);
+    updateMetric('gpu', stats.gpu && stats.gpu.available ? stats.gpu.percent : null);
+
+    const cpu = stats.cpu || {};
     const cpuVal = document.getElementById('sysmon-cpu-val');
     const cpuName = document.getElementById('sysmon-cpu-name');
-    if (cpuVal) cpuVal.textContent = Math.round(stats.cpu.percent) + '%';
-    if (cpuName) cpuName.textContent = stats.cpu.name + ' · ' + Math.round(stats.cpu.percent) + '% загрузки';
-    setBar('sysmon-cpu-bar', stats.cpu.percent);
+    if (cpuVal) cpuVal.textContent = cpu.available ? displayPercent(cpu.percent) : '—';
+    if (cpuName) cpuName.textContent = (cpu.name || 'Процессор') + ' · ' + (cpu.available ? displayPercent(cpu.percent) + ' загрузки' : 'загрузка недоступна');
+    setBar('sysmon-cpu-bar', cpu.available ? cpu.percent : null);
 
+    const ram = stats.ram || {};
     const ramVal = document.getElementById('sysmon-ram-val');
     const ramDetail = document.getElementById('sysmon-ram-detail');
-    if (ramVal) ramVal.textContent = Math.round(stats.ram.percent) + '%';
-    if (ramDetail) ramDetail.textContent = stats.ram.used.toFixed(1) + ' ГБ из ' + stats.ram.total.toFixed(1) + ' ГБ';
-    setBar('sysmon-ram-bar', stats.ram.percent);
+    if (ramVal) ramVal.textContent = ram.available ? displayPercent(ram.percent) : '—';
+    if (ramDetail) ramDetail.textContent = ram.available ? displayGb(ram.used, 1) + ' ГБ из ' + displayGb(ram.total, 1) + ' ГБ' : 'Данные памяти недоступны';
+    setBar('sysmon-ram-bar', ram.available ? ram.percent : null);
 
+    const gpu = stats.gpu || {};
     const gpuVal = document.getElementById('sysmon-gpu-val');
     const gpuDetail = document.getElementById('sysmon-gpu-detail');
-    if (gpuVal) gpuVal.textContent = Math.round(stats.gpu.percent) + '%';
-    if (gpuDetail) gpuDetail.textContent = 'RTX 4060 · VRAM ' + stats.gpu.vramUsed.toFixed(1) + ' / ' + stats.gpu.vramTotal.toFixed(0) + ' ГБ';
-    setBar('sysmon-gpu-bar', stats.gpu.percent);
+    if (gpuVal) gpuVal.textContent = gpu.available ? displayPercent(gpu.percent) : '—';
+    if (gpuDetail) gpuDetail.textContent = gpu.available
+      ? gpu.name + ' · VRAM ' + displayGb(gpu.vramUsed, 1) + ' / ' + displayGb(gpu.vramTotal, 1) + ' ГБ'
+      : 'Данные GPU недоступны (требуется nvidia-smi)';
+    setBar('sysmon-gpu-bar', gpu.available ? gpu.percent : null);
 
     const diskList = document.getElementById('sysmon-disks');
     if (diskList) {
-      diskList.innerHTML = stats.disks.map((disk) => {
+      const disks = Array.isArray(stats.disks) ? stats.disks : [];
+      diskList.innerHTML = disks.length ? disks.map((disk) => {
         const level = disk.percent >= 90 ? 'danger' : disk.percent >= 70 ? 'warn' : '';
-        return '<div class="sysmon-disk"><div class="sysmon-disk-head"><b>' + disk.mount + '</b><span>' + Math.round(disk.percent) + '%</span></div><div class="sysmon-track ' + level + '"><i style="width:' + disk.percent + '%"></i></div><div class="sysmon-detail">' + disk.used.toFixed(1) + ' ГБ занято · ' + disk.free.toFixed(1) + ' ГБ свободно</div></div>';
-      }).join('');
+        const mount = String(disk.mount || 'Диск').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return '<div class="sysmon-disk"><div class="sysmon-disk-head"><b>' + mount + '</b><span>' + displayPercent(disk.percent) + '</span></div><div class="sysmon-track ' + level + '"><i style="width:' + Math.min(100, Math.max(0, Number(disk.percent) || 0)) + '%"></i></div><div class="sysmon-detail">' + displayGb(disk.used, 1) + ' ГБ занято · ' + displayGb(disk.free, 1) + ' ГБ свободно</div></div>';
+      }).join('') : '<div class="sysmon-detail">Данные о дисках недоступны</div>';
     }
 
-    render();
+    renderState(stats, null);
     const modal = document.getElementById('sysmon-chart-modal');
     if (modal && !modal.hidden) drawChart(currentChart);
   }
@@ -98,7 +118,6 @@
       dotEl.setAttribute('cx', last[0]);
       dotEl.setAttribute('cy', last[1]);
     }
-
     let grid = '';
     for (let i = 0; i <= 4; i++) {
       const y = padding + i * (height - padding * 2) / 4;
@@ -107,7 +126,6 @@
     }
     const gridEl = document.getElementById('sysmon-chart-grid');
     if (gridEl) gridEl.innerHTML = grid;
-
     const now = data[data.length - 1];
     const average = data.reduce((sum, value) => sum + value, 0) / data.length;
     const maximum = Math.max.apply(null, data);
@@ -136,12 +154,34 @@
         drawChart(currentChart);
       });
     });
-
     const close = document.getElementById('sysmon-chart-close');
     if (close) close.addEventListener('click', () => {
       const modal = document.getElementById('sysmon-chart-modal');
       if (modal) modal.hidden = true;
     });
+  }
+
+  async function tick() {
+    try {
+      render(await fetchStats());
+    } catch (error) {
+      renderState(null, error);
+      ['cpu', 'ram', 'gpu'].forEach(key => {
+        const value = document.getElementById('sysmon-' + key + '-val');
+        if (value) value.textContent = '—';
+        setBar('sysmon-' + key + '-bar', null);
+      });
+      const cpuName = document.getElementById('sysmon-cpu-name');
+      const ramDetail = document.getElementById('sysmon-ram-detail');
+      const gpuDetail = document.getElementById('sysmon-gpu-detail');
+      if (cpuName) cpuName.textContent = 'Нет соединения с локальным сервером';
+      if (ramDetail) ramDetail.textContent = 'Данные памяти недоступны';
+      if (gpuDetail) gpuDetail.textContent = 'Данные GPU недоступны';
+      const diskList = document.getElementById('sysmon-disks');
+      if (diskList) diskList.innerHTML = '<div class="sysmon-detail">Нет соединения с локальным сервером</div>';
+    }
+    const modal = document.getElementById('sysmon-chart-modal');
+    if (modal && !modal.hidden) drawChart(currentChart);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
