@@ -27,6 +27,23 @@ class AgentRuntimeTests(unittest.TestCase):
             final_messages=request.call_args_list[1].args[1]['messages']
             self.assertTrue(any(x.get('role')=='tool' and 'Approved project brief' in x.get('content','') for x in final_messages))
 
+    def test_team_workflow_passes_manager_plan_to_specialist_and_result_to_qa(self):
+        results=[
+            {'response':'План: изучить требования и реализовать.','tool_calls':0,'model':'model-a'},
+            {'response':'Реализация подготовлена.','tool_calls':2,'model':'model-b'},
+            {'response':'QA: обнаружено одно ограничение.','tool_calls':0,'model':'model-a'}
+        ]
+        task={'title':'Собрать компонент','description':'Реализовать и проверить компонент.'}
+        specialist={'id':'coder1','name':'Разработчик','role':'CODER','model':'model-b','system_prompt':'Пиши качественный код.','permissions':{}}
+        with patch.object(server,'run_agent_task',side_effect=results) as run:
+            result=server.run_agent_team('model-a',task,specialist,{'name':'Demo','description':'Context','path':''})
+        self.assertEqual(run.call_count,3)
+        self.assertEqual(result['response'],'QA: обнаружено одно ограничение.')
+        self.assertEqual(result['tool_calls'],2)
+        self.assertIn('План: изучить требования',run.call_args_list[1].args[1]['description'])
+        self.assertIn('Реализация подготовлена',run.call_args_list[2].args[1]['description'])
+        self.assertEqual([stage['role'] for stage in result['team_result']],['MANAGER','CODER','TESTER'])
+
     def test_agent_loop_does_not_offer_file_tools_without_global_permission(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); data=root/'data'; data.mkdir()
