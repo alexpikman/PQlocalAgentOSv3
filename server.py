@@ -14,7 +14,7 @@ HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
 for p in (FRONTEND, DATA, PAGES, MODULES): p.mkdir(parents=True, exist_ok=True)
 DEFAULT_SETTINGS = {'appearance': {'theme':'dark','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}}
-DEFAULT_PAGES = [{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True}]
+DEFAULT_PAGES = [{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True}]
 def read_json(path, fallback):
     try: return json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError): return fallback
@@ -39,6 +39,31 @@ def log_event(action, detail=''):
     path=DATA/'events.json'; events=read_json(path, [])
     events.insert(0, {'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'action':action,'detail':str(detail)[:300]})
     write_json(path, events[:500])
+OLLAMA_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
+DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 'tasks': DATA/'tasks.json'}
+AGENT_ROLES = ['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS']
+def domain_items(kind):
+    fallback=[{'id':'manager','name':'Менеджер проекта','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
+    return read_json(DOMAIN_FILES[kind],fallback)
+def save_domain(kind, items): write_json(DOMAIN_FILES[kind],items)
+def ollama_request(path, payload=None, timeout=8):
+    req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
+    with urllib.request.urlopen(req,timeout=timeout) as response: return json.loads(response.read().decode('utf-8'))
+def run_diagnostics():
+    checks=[
+      {'name':'HTTP API','status':'ok','message':'Сервер обработал диагностический запрос.','detail':'PQlocalAgentOSv3'},
+      {'name':'Хранилище данных','status':'ok' if os.access(DATA,os.R_OK|os.W_OK) else 'error','message':'Проверка чтения и записи каталога данных.','detail':str(DATA)},
+      {'name':'Python','status':'ok','message':'Интерпретатор доступен.','detail':__import__('sys').version.split()[0]},
+      {'name':'Каталог модулей','status':'ok' if MODULES.is_dir() and os.access(MODULES,os.R_OK|os.W_OK) else 'error','message':'Проверка каталога модулей.','detail':str(MODULES)},
+      {'name':'Настройки','status':'ok' if (DATA/'settings.json').exists() else 'warning','message':'Файл настроек существует.' if (DATA/'settings.json').exists() else 'Файл настроек создаётся при первом обращении.','detail':str(DATA/'settings.json')}
+    ]
+    try:
+        models=ollama_request('/api/tags',timeout=3).get('models',[])
+        checks.extend([{'name':'Ollama','status':'ok','message':'Локальный сервис моделей доступен.','detail':OLLAMA_URL},{'name':'Локальные модели','status':'ok' if models else 'warning','message':f'Доступно моделей: {len(models)}.','detail':', '.join(x.get('name','') for x in models[:8]) or 'Модели не установлены'}])
+    except Exception as exc:
+        checks.extend([{'name':'Ollama','status':'warning','message':'Локальный сервис моделей недоступен.','detail':str(exc)[:180},{'name':'Локальные модели','status':'warning','message':'Список моделей недоступен, пока Ollama не запущена.','detail':OLLAMA_URL}])
+    return {'checked_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'checks':checks,'summary':{'total':len(checks),'ok':sum(x['status']=='ok' for x in checks),'warning':sum(x['status']=='warning' for x in checks),'error':sum(x['status']=='error' for x in checks)}}
+
 def github_request(path, method='GET', payload=None):
     token=os.environ.get('GITHUB_TOKEN')
     if not token: raise RuntimeError('Задайте GITHUB_TOKEN в окружении и перезапустите сервер.')
@@ -78,6 +103,62 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+        if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
+        if path=='/api/models':
+            try:
+                payload=ollama_request('/api/tags',timeout=4)
+                models=[{'name':m.get('name',''),'size':m.get('size',0),'modified_at':m.get('modified_at','')} for m in payload.get('models',[]) if isinstance(m,dict) and m.get('name')]
+                return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':True,'models':models,'error':None})
+            except Exception as e: return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':False,'models':[],'error':'Не удалось подключиться к Ollama: '+str(e)[:180]})
+        if path in ('/api/agents','/api/projects','/api/tasks'):
+            kind=path.split('/')[-1]; items=domain_items(kind)
+            return self.send_json(200, {'items':items,'total':len(items)})
+        if path=='/api/models/test':
+            model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Проверь, что модель отвечает.')).strip()[:4000]
+            if not model: return self.send_json(400, {'error':'Выберите модель'})
+            try:
+                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':256}},timeout=180)
+                log_event('model.test',model)
+                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':result.get('response',''),'done':bool(result.get('done',False))})
+            except Exception as e: return self.send_json(502, {'error':'Ошибка запроса к локальной модели: '+str(e)[:200]})
+        if path in ('/api/agents','/api/projects','/api/tasks'):
+            kind=path.split('/')[-1]; items=domain_items(kind); field='title' if kind=='tasks' else 'name'
+            name=str(data.get(field,'')).strip()[:160]
+            if not name: return self.send_json(400, {'error':'Укажите название'})
+            item={'id':uuid.uuid4().hex[:12],field:name,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if kind=='agents':
+                role=str(data.get('role','ANALYST')).upper()
+                if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
+                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'status':'idle','system':False})
+            elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
+            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'status':'pending','result':'','error':''})
+            items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
+            return self.send_json(201,item)
+        if path.startswith('/api/tasks/') and path.endswith('/run'):
+            task_id=path.split('/')[-2]; items=domain_items('tasks'); item=next((x for x in items if x.get('id')==task_id),None)
+            if not item: return self.send_json(404, {'error':'Задача не найдена'})
+            model=item.get('model') or str(data.get('model','')).strip()
+            if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи'})
+            item['status']='running'; item['model']=model; save_domain('tasks',items)
+            prompt='Выполни задачу и верни результат на русском языке.\\n\\nНазвание: '+item.get('title','')+'\\n\\nОписание:\\n'+item.get('description','')
+            try:
+                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':1024}},timeout=300)
+                item['status']='completed'; item['result']=result.get('response',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
+            except Exception as e:
+                item['status']='failed'; item['error']=str(e)[:300]; save_domain('tasks',items); log_event('task.failed',item.get('title',''))
+                return self.send_json(502, {'error':'Не удалось выполнить задачу через Ollama: '+str(e)[:180],'task':item})
+        if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
+            parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
+            if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
+            items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
+            if not item: return self.send_json(404, {'error':'Запись не найдена'})
+            if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
+            allowed={'agents':{'name','role','model','description'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id'}}[kind]
+            for key in allowed:
+                if key in data: item[key]=str(data[key]).strip()[:5000]
+            save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
+            return self.send_json(200,item)
         if path=='/api/settings': return self.send_json(200, settings())
         if path=='/api/pages': return self.send_json(200, pages())
         if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
