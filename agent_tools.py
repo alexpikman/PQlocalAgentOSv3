@@ -94,7 +94,8 @@ def _github_request(path: str) -> dict[str, Any]:
     token=os.environ.get('GITHUB_TOKEN')
     if not token: raise PermissionError('Для GitHub-инструментов задайте GITHUB_TOKEN.')
     repo=os.environ.get('GITHUB_REPOSITORY','alexpikman/PQlocalAgentOSv3')
-    req=urllib.request.Request('https://api.github.com/repos/'+repo+path,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
+    url='https://api.github.com'+path if path.startswith('/search/') else 'https://api.github.com/repos/'+repo+path
+    req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
     try:
         with urllib.request.urlopen(req,timeout=12) as response: return json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as exc:
@@ -128,12 +129,12 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             q=urllib.parse.quote(query+' repo:'+repo)
             result=_github_request('/search/code?q='+q+'&per_page=10')
             return {'items':[{'path':x.get('path'),'url':x.get('html_url')} for x in result.get('items',[])]}
-        path=resolve_authorized_path(str(args.get('path','')),permission_config,must_exist=name in {'list_files','read_file','search_files','delete_file','delete_directory'})
+        path=None if name=='move_file' else resolve_authorized_path(str(args.get('path','')),permission_config,must_exist=name in {'list_files','read_file','search_files','delete_file','delete_directory'})
         if name=='list_files':
             if not path.is_dir(): return {'error':'Указанный путь не является папкой.'}
             items=[]
             for child in sorted(path.iterdir(),key=lambda x:(not x.is_dir(),x.name.lower()))[:200]:
-                if child.name in BLOCKED_DIRS: continue
+                if child.name in BLOCKED_DIRS or _reparse(child): continue
                 items.append({'name':child.name,'path':str(child),'type':'directory' if child.is_dir() else 'file','size':child.stat().st_size if child.is_file() else None})
             return {'path':str(path),'items':items}
         if name=='read_file':
@@ -148,7 +149,9 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             if not path.is_dir(): return {'error':'Указанный путь не является папкой.'}
             results=[]; scanned=0
             for file in path.rglob('*'):
-                if not file.is_file() or file.suffix.lower() not in TEXT_EXTENSIONS or any(part in BLOCKED_DIRS for part in file.parts): continue
+                if not file.is_file() or _contains_reparse(file) or file.suffix.lower() not in TEXT_EXTENSIONS or any(part in BLOCKED_DIRS for part in file.parts): continue
+                try: resolve_authorized_path(str(file),permission_config,must_exist=True)
+                except (PermissionError,ValueError): continue
                 scanned+=1
                 if scanned>MAX_SEARCH_FILES: break
                 try:
