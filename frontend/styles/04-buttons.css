@@ -5,9 +5,9 @@
 
 .btn.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
 
-.btn.secondary{background:var(--color-hex-20202c);border-color:var(--color-hex-343447);color:var(--color-hex-deddec)}
+.btn.secondary,.btn.ghost{background:var(--button-secondary-bg);border-color:var(--button-secondary-border);color:var(--button-secondary-text)}
 
-.btn.secondary:hover{background:var(--color-hex-29293a)}
+.btn.secondary:hover,.btn.ghost:hover{background:var(--button-secondary-hover)}
 
 .btn.danger{background:var(--color-hex-351f2a);border-color:var(--color-hex-59303d);color:var(--color-hex-ffb8c6)}
 
