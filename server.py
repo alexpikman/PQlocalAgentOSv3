@@ -448,7 +448,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200,item)
         if path=='/api/permissions':
             current=permission_settings()
-            if 'local_files' in data: current['local_files']=bool(data.get('local_files'))
+            if 'local_files' in data:
+                if not isinstance(data.get('local_files'),bool): return self.send_json(400, {'error':'local_files должен быть логическим значением'})
+                current['local_files']=data['local_files']
             if current['local_files'] and not current['roots']: return self.send_json(409, {'error':'Сначала добавьте хотя бы одну разрешённую папку.'})
             write_json(DATA/'permissions.json',current); log_event('permissions.global',str(current['local_files']))
             return self.send_json(200,current)
@@ -604,7 +606,7 @@ class Handler(SimpleHTTPRequestHandler):
             ids={m.get('id') for m in current.get('modules',[])}
             seen=set()
             for link in connections:
-                if not isinstance(link,dict) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
+                if not isinstance(link,dict) or not isinstance(link.get('from'),str) or not isinstance(link.get('to'),str) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
                 source_module=next(m for m in current.get('modules',[]) if m.get('id')==link['from']); target_module=next(m for m in current.get('modules',[]) if m.get('id')==link['to'])
                 source_manifest=module_runtime_manifest(source_module); target_manifest=module_runtime_manifest(target_module)
                 source_ports=source_manifest.get('outputs') if isinstance(source_manifest.get('outputs'),list) else []; target_ports=target_manifest.get('inputs') if isinstance(target_manifest.get('inputs'),list) else []
