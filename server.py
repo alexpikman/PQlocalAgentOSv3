@@ -113,6 +113,50 @@ class Handler(SimpleHTTPRequestHandler):
         if path in ('/api/agents','/api/projects','/api/tasks'):
             kind=path.split('/')[-1]; items=domain_items(kind)
             return self.send_json(200, {'items':items,'total':len(items)})
+        if path=='/api/settings': return self.send_json(200, settings())
+        if path=='/api/pages': return self.send_json(200, pages())
+        if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
+        if path=='/api/modules':
+            return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
+        if path=='/api/github/search':
+            q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
+            if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
+            try:
+                result=github_public_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
+                items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
+                return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github': return self.send_json(200, {'repository':REPO,'configured':bool(os.environ.get('GITHUB_TOKEN')),'connected':False,'message':'Токен не задан' if not os.environ.get('GITHUB_TOKEN') else 'Токен задан; нажмите «Проверить подключение»'})
+        if path=='/api/github/check':
+            token=os.environ.get('GITHUB_TOKEN')
+            if not token: return self.send_json(200, {'ok':False,'message':'Задайте GITHUB_TOKEN в окружении перед запуском сервера.'})
+            req=urllib.request.Request('https://api.github.com/repos/'+REPO,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
+            try:
+                with urllib.request.urlopen(req,timeout=8) as res: data=json.loads(res.read())
+                log_event('github.check',REPO); return self.send_json(200, {'ok':True,'message':'Подключение успешно','repository':data.get('full_name',REPO),'private':data.get('private'),'default_branch':data.get('default_branch')})
+            except urllib.error.HTTPError as e: return self.send_json(200, {'ok':False,'message':'GitHub вернул HTTP '+str(e.code)+'. Проверьте токен и доступ к репозиторию.'})
+            except Exception as e: return self.send_json(200, {'ok':False,'message':'Не удалось подключиться к GitHub: '+str(e)[:180]})
+        if path=='/api/github/files':
+            try:
+                repo=github_request('/repos/'+REPO)
+                tree=github_request('/repos/'+REPO+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
+                files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
+                return self.send_json(200, {'repository':REPO,'branch':repo.get('default_branch','main'),'files':files})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github/file':
+            file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
+            if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
+            try:
+                f=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
+                import base64
+                content=base64.b64decode(f.get('content','')).decode('utf-8',errors='replace')
+                return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        return super().do_GET()
+    def do_POST(self):
+        path=urlparse(self.path).path
+        try: data=self.body()
+        except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/models/test':
             model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Проверь, что модель отвечает.')).strip()[:4000]
             if not model: return self.send_json(400, {'error':'Выберите модель'})
@@ -159,50 +203,6 @@ class Handler(SimpleHTTPRequestHandler):
                 if key in data: item[key]=str(data[key]).strip()[:5000]
             save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
             return self.send_json(200,item)
-        if path=='/api/settings': return self.send_json(200, settings())
-        if path=='/api/pages': return self.send_json(200, pages())
-        if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
-        if path=='/api/modules':
-            return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
-        if path=='/api/github/search':
-            q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
-            if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
-            try:
-                result=github_public_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
-                items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
-                return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
-            except Exception as e: return self.send_json(400, {'error':str(e)})
-        if path=='/api/github': return self.send_json(200, {'repository':REPO,'configured':bool(os.environ.get('GITHUB_TOKEN')),'connected':False,'message':'Токен не задан' if not os.environ.get('GITHUB_TOKEN') else 'Токен задан; нажмите «Проверить подключение»'})
-        if path=='/api/github/check':
-            token=os.environ.get('GITHUB_TOKEN')
-            if not token: return self.send_json(200, {'ok':False,'message':'Задайте GITHUB_TOKEN в окружении перед запуском сервера.'})
-            req=urllib.request.Request('https://api.github.com/repos/'+REPO,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
-            try:
-                with urllib.request.urlopen(req,timeout=8) as res: data=json.loads(res.read())
-                log_event('github.check',REPO); return self.send_json(200, {'ok':True,'message':'Подключение успешно','repository':data.get('full_name',REPO),'private':data.get('private'),'default_branch':data.get('default_branch')})
-            except urllib.error.HTTPError as e: return self.send_json(200, {'ok':False,'message':'GitHub вернул HTTP '+str(e.code)+'. Проверьте токен и доступ к репозиторию.'})
-            except Exception as e: return self.send_json(200, {'ok':False,'message':'Не удалось подключиться к GitHub: '+str(e)[:180]})
-        if path=='/api/github/files':
-            try:
-                repo=github_request('/repos/'+REPO)
-                tree=github_request('/repos/'+REPO+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
-                files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
-                return self.send_json(200, {'repository':REPO,'branch':repo.get('default_branch','main'),'files':files})
-            except Exception as e: return self.send_json(400, {'error':str(e)})
-        if path=='/api/github/file':
-            file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
-            if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
-            try:
-                f=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
-                import base64
-                content=base64.b64decode(f.get('content','')).decode('utf-8',errors='replace')
-                return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
-            except Exception as e: return self.send_json(400, {'error':str(e)})
-        return super().do_GET()
-    def do_POST(self):
-        path=urlparse(self.path).path
-        try: data=self.body()
-        except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/settings':
             allowed={'appearance','header','navigation'}; current=settings()
             for k,v in data.items():
