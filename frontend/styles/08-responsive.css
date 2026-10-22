@@ -57,7 +57,6 @@
 
 @media(max-width:600px){.domain-row{padding:12px}.row-actions{flex-wrap:wrap}}
 
-@media(max-width:760px){.menu-editor-row{align-items:flex-start;flex-wrap:wrap}.menu-edit-fields{grid-template-columns:1fr;width:calc(100% - 50px);flex:1 1 70%}.menu-visible{margin-left:44px}.menu-row-actions{margin-left:auto}.module-search{flex-direction:column}.module-card-actions{align-items:flex-start}.connection-row small{margin-left:0;width:100%}}
 
 @media(max-width:700px){.diagnostic-row,.domain-row{align-items:flex-start;flex-direction:column}.domain-main{width:100%;flex-basis:auto}.domain-row .btn{align-self:flex-start}}
 
@@ -65,6 +64,6 @@
 
 @media(max-width:980px){.models-layout{grid-template-columns:1fr}}
 
-@media(max-width:620px){.provider-row,.provider-model-row{align-items:flex-start;flex-wrap:wrap}.provider-row .provider-main,.provider-model-row .provider-main{flex:1 1 calc(100% - 55px)}.provider-row .badge{margin-left:44px}.provider-row .btn{margin-left:0}.modal-card{padding:15px}}
+@media(max-width:620px){.provider-row{align-items:flex-start;flex-wrap:wrap}.provider-row .provider-main{flex:1 1 calc(100% - 55px)}.provider-row .badge{margin-left:44px}.provider-row .btn{margin-left:0}.modal-card{padding:15px}}
 
 @media(max-width:760px){.domain-row{grid-template-columns:28px 24px minmax(0,1fr)}.domain-row .row-actions{grid-column:3;justify-content:flex-start}.domain-info:after{left:auto;right:-12px;transform:none}}
