@@ -50,7 +50,7 @@ def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) ->
         if name.startswith('github_'):
             if permissions.get('github_access') and os.environ.get('GITHUB_TOKEN'):
                 allowed.append(item)
-        elif global_files and permissions.get(PERMISSION_FOR_TOOL[name][0]):
+        elif global_files and (permissions.get(PERMISSION_FOR_TOOL[name][0]) or (name=='move_file' and permissions.get('directory_moving'))):
             allowed.append(item)
     return allowed
 
