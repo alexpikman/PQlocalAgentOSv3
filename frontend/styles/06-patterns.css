@@ -8,8 +8,6 @@
 
 .entity-row-main{min-width:0}
 
-.entity-row-heading{min-width:0}
-
 .entity-row-main > p,.entity-row-main > small{overflow-wrap:anywhere;word-break:break-word}
 
 .entity-row .provider-avatar{width:24px;height:24px;font-size:12px}
