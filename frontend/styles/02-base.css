@@ -3,7 +3,7 @@
 
 *{box-sizing:border-box}
 
-body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font,Inter,'Segoe UI',sans-serif);font-size:var(--font-size,14px);background:radial-gradient(ellipse at 80% -15%,var(--color-hex-15384a45),var(--color-transparent) 42%),var(--bg)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font,Inter,'Segoe UI',sans-serif);font-size:var(--font-size,14px);background:radial-gradient(ellipse at 80% -15%,#15384a45,transparent 42%),var(--bg)}
 
 button,input,textarea,select{font:inherit}
 
@@ -14,13 +14,13 @@ h2{font-size:20px;margin:0;letter-spacing:-.5px}
 p{color:var(--muted);line-height:1.6}
 
 :root[data-theme="light"] body{color:var(--text);
-  background:radial-gradient(ellipse at 82% -16%,var(--color-hex-d6f0ff99),var(--color-transparent) 44%),var(--bg);}
+  background:radial-gradient(ellipse at 82% -16%,#d6f0ff99,transparent 44%),var(--bg);}
 
 :root[data-theme="light"] input,
 :root[data-theme="light"] textarea,
 :root[data-theme="light"] select{color:var(--text);
-  background:var(--color-hex-fff);
-  border-color:var(--color-hex-cbd7e4);}
+  background:#fff;
+  border-color:#cbd7e4;}
 
 :root[data-theme="light"] input::placeholder,
-:root[data-theme="light"] textarea::placeholder{color:var(--color-hex-8291a4)}
+:root[data-theme="light"] textarea::placeholder{color:#8291a4}
