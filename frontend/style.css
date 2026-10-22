@@ -104,7 +104,7 @@
 }
 
 /* Task list: calm pastel status chips and right-aligned actions. */
-.domain-index{display:grid;place-items:center;width:28px;min-height:28px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:11px;font-weight:650;font-variant-numeric:tabular-nums;flex-shrink:0}
+.domain-index{display:none!important}
 .entity-toolbar{display:grid;grid-template-columns:auto minmax(220px,1fr) auto;align-items:center;gap:12px;padding:4px 0 18px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .entity-search-wrap{position:relative;display:flex;align-items:center;min-width:0;height:42px;border:1px solid var(--line);border-radius:11px;background:var(--bg);box-shadow:inset 0 1px 2px #0000000a;transition:border-color .18s ease,box-shadow .18s ease}
 .entity-search-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent),0 5px 18px #0000000a}
@@ -147,7 +147,7 @@
 
 /* Shared entity-list system: projects, agents and tasks use the same list language. */
 .domain-list{display:flex;flex-direction:column;gap:10px}
-.domain-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:12px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel);transition:border-color .15s ease,background .15s ease}
+.domain-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:12px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel);transition:border-color .15s ease,background .15s ease}
 .domain-row:hover{border-color:var(--accent)}
 .domain-row[hidden]{display:none!important}
 .domain-main{min-width:0}
@@ -158,5 +158,5 @@
 .row-actions .btn{white-space:nowrap}
 .domain-info{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--line);border-radius:50%;color:var(--muted);font-size:12px;font-weight:600;cursor:help;flex-shrink:0}
 .domain-info:hover,.domain-info:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
-@media(max-width:900px){.domain-row{grid-template-columns:28px minmax(0,1fr)}.row-actions{grid-column:2;justify-content:flex-end;width:100%}}
+@media(max-width:900px){.domain-row{grid-template-columns:24px minmax(0,1fr)}.row-actions{grid-column:2;justify-content:flex-end;width:100%}}
 @media(max-width:600px){.domain-row{padding:12px}.row-actions{flex-wrap:wrap}}
