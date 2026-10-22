@@ -204,7 +204,9 @@ class Handler(SimpleHTTPRequestHandler):
             model=item.get('model') or str(data.get('model','')).strip()
             if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи'})
             item['status']='running'; item['model']=model; save_domain('tasks',items)
-            prompt='Выполни задачу и верни результат на русском языке.\n\nНазвание: '+item.get('title','')+'\n\nОписание:\n'+item.get('description','')
+            agent=next((x for x in domain_items('agents') if x.get('id')==item.get('agent_id')),None)
+            agent_context=('\\n\\nКонтекст назначенного агента: '+agent.get('name','')+'; роль: '+agent.get('role','')+'; описание: '+agent.get('description','')) if agent else ''
+            prompt='Выполни задачу и верни результат на русском языке.'+agent_context+'\\n\\nНазвание: '+item.get('title','')+'\\n\\nОписание:\\n'+item.get('description','')
             try:
                 result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':1024}},timeout=300)
                 item['status']='completed'; item['result']=result.get('response',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
