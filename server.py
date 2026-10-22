@@ -42,6 +42,16 @@ def log_event(action, detail=''):
 OLLAMA_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
 DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 'tasks': DATA/'tasks.json'}
 AGENT_ROLES = ['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS']
+AGENT_ROLE_PROMPTS = {
+    'MANAGER':'Ты менеджер проекта. Разбей цель на этапы, уточни критерии результата, риски и зависимости. Дай приоритетный план и явно обозначь, что не выполнено.',
+    'ARCHITECT':'Ты системный архитектор. Проектируй модульную структуру, контракты, потоки данных, ограничения и точки отказа. Не выдумывай существующие API.',
+    'ANALYST':'Ты аналитик. Разделяй факты, предположения и рекомендации; проверяй полноту требований и формулируй выводы структурированно.',
+    'DESIGNER':'Ты продуктовый и интерфейсный дизайнер. Учитывай сценарии пользователя, доступность, адаптивность, визуальную иерархию и единообразие компонентов.',
+    'COPYWRITER':'Ты редактор и технический автор. Пиши ясно, конкретно, на языке пользователя; сохраняй смысл и не выдумывай факты.',
+    'CODER':'Ты инженер-программист. Предлагай проверяемые решения, учитывай ошибки, безопасность, тесты и сопровождение. Не утверждай, что код запущен, если это не так.',
+    'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии, ошибки обработки данных, безопасность и воспроизводимые критерии приёмки.',
+    'DEVOPS':'Ты инженер инфраструктуры. Учитывай воспроизводимые сборки, конфигурацию окружения, логи, мониторинг, откат и минимальные привилегии.'
+}
 def domain_items(kind):
     fallback=[{'id':'manager','name':'Менеджер проекта','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
     return read_json(DOMAIN_FILES[kind],fallback)
@@ -276,26 +286,37 @@ class Handler(SimpleHTTPRequestHandler):
             if kind=='agents':
                 role=str(data.get('role','ANALYST')).upper()
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
-                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'status':'idle','system':False})
+                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'status':'idle','system':False})
             elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
-            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'status':'pending','result':'','error':''})
+            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'status':'pending','result':'','error':''})
             items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
             return self.send_json(201,item)
         if path.startswith('/api/tasks/') and path.endswith('/run'):
             task_id=path.split('/')[-2]; items=domain_items('tasks'); item=next((x for x in items if x.get('id')==task_id),None)
             if not item: return self.send_json(404, {'error':'Задача не найдена'})
-            model=item.get('model') or str(data.get('model','')).strip()
-            if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи'})
-            item['status']='running'; item['model']=model; save_domain('tasks',items)
-            agent=next((x for x in domain_items('agents') if x.get('id')==item.get('agent_id')),None)
-            agent_context=('\\n\\nКонтекст назначенного агента: '+agent.get('name','')+'; роль: '+agent.get('role','')+'; описание: '+agent.get('description','')) if agent else ''
-            prompt='Выполни задачу и верни результат на русском языке.'+agent_context+'\\n\\nНазвание: '+item.get('title','')+'\\n\\nОписание:\\n'+item.get('description','')
+            agents=domain_items('agents')
+            agent=next((x for x in agents if x.get('id')==item.get('agent_id')),None)
+            model=item.get('model') or (agent or {}).get('model') or str(data.get('model','')).strip()
+            if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи или назначьте модель агенту'})
+            project=next((x for x in domain_items('projects') if x.get('id')==item.get('project_id')),None)
+            item['status']='running'; item['model']=model; item['started_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items)
+            role=(agent or {}).get('role','ANALYST')
+            system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
+            if agent:
+                system_prompt += '\\n\\nПрофиль агента: '+str(agent.get('name',''))+'\\nНазначение: '+str(agent.get('description',''))[:1000]
+                memory=str(agent.get('memory','')).strip()
+                if memory: system_prompt += '\\n\\nДолговременная память агента (пользовательские заметки):\\n'+memory[:8000]
+            prompt='Выполни задачу. Отвечай на русском языке. Разделяй подтверждённые факты и предположения. Если не хватает данных, явно укажи ограничения.\\n\\nНазвание задачи: '+item.get('title','')+'\\n\\nОписание и инструкции:\\n'+item.get('description','')
+            if project:
+                prompt += '\\n\\nКонтекст проекта:\\nНазвание: '+str(project.get('name',''))+'\\nОписание: '+str(project.get('description',''))+'\\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
             try:
-                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':1024}},timeout=300)
+                result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
                 item['status']='completed'; item['result']=result.get('response',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                if agent:
+                    agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
                 log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
             except Exception as e:
-                item['status']='failed'; item['error']=str(e)[:300]; save_domain('tasks',items); log_event('task.failed',item.get('title',''))
+                item['status']='failed'; item['error']=str(e)[:300]; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items); log_event('task.failed',item.get('title',''))
                 return self.send_json(502, {'error':'Не удалось выполнить задачу через Ollama: '+str(e)[:180],'task':item})
         if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
             parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
@@ -303,7 +324,7 @@ class Handler(SimpleHTTPRequestHandler):
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
             if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
-            allowed={'agents':{'name','role','model','description'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id'}}[kind]
             for key in allowed:
                 if key in data: item[key]=str(data[key]).strip()[:5000]
             save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
