@@ -1,5 +1,5 @@
 /* Shared button system. */
-.btn{border:1px solid var(--color-transparent);border-radius:9px;padding:10px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:.16s}
+.btn{border:1px solid var(--color-transparent);border-radius:9px;padding:10px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:.16s;white-space:nowrap;flex-shrink:0}
 
 .btn.primary{background:var(--accent);color:var(--color-hex-fff);box-shadow:0 4px 14px var(--color-hex-3b9dff20);background:linear-gradient(110deg,var(--color-hex-238be8),var(--color-hex-20b9ce));box-shadow:0 4px 18px var(--color-hex-1689bb28)}
 
@@ -13,30 +13,9 @@
 
 .icon-btn{display:grid;place-items:center;border:1px solid var(--color-hex-343447);background:var(--color-hex-1b1b27);color:var(--color-hex-d7d5e9);border-radius:8px;width:34px;height:34px;cursor:pointer}
 
-.entity-row-actions .btn{white-space:nowrap;white-space:nowrap}
+.btn.soft-primary{background:linear-gradient(120deg,var(--color-hex-d6eaff),var(--color-hex-a9d0ff));border-color:var(--color-hex-b8d9ff);color:var(--color-hex-17436d)}
 
-.entity-row-actions .btn.primary{background:linear-gradient(120deg,var(--color-hex-d6eaff),var(--color-hex-a9d0ff));border-color:var(--color-hex-b8d9ff);color:var(--color-hex-17436d)}
+.btn.soft-secondary{background:var(--color-hex-edf0f4);border-color:var(--color-hex-d9dee7);color:var(--color-hex-475569)}
 
-.entity-row-actions .btn.secondary{background:var(--color-hex-edf0f4);border-color:var(--color-hex-d9dee7);color:var(--color-hex-475569)}
+.btn.soft-danger{background:var(--color-hex-fbe0e0);border-color:var(--color-hex-f3c1c1);color:var(--color-hex-8d3333)}
 
-.entity-row-actions .btn.danger{background:var(--color-hex-fbe0e0);border-color:var(--color-hex-f3c1c1);color:var(--color-hex-8d3333)}
-
-.menu-row-actions .btn{padding:7px 10px}
-
-:root[data-theme="light"] .btn.secondary,
-:root[data-theme="light"] .btn.ghost{color:var(--color-hex-344b63);
-  background:var(--color-hex-f5f8fc);
-  border-color:var(--color-hex-d4dfeb);}
-
-:root[data-theme="light"] .btn.secondary:hover,
-:root[data-theme="light"] .btn.ghost:hover{background:var(--color-hex-eaf2fa);border-color:var(--color-hex-b9cbdc)}
-
-.entity-row .btn{flex-shrink:0}
-
-.connection-row .btn{padding:5px 8px;margin-left:4px}
-
-.agent-memory-editor .btn{justify-self:start}
-
-.module-edit-panel .btn{justify-self:start}
-
-.provider-row .btn,.provider-model-row .btn{flex-shrink:0}
