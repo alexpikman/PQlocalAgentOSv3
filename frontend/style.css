@@ -50,3 +50,22 @@
   .app-shell .sidebar.open{transform:translateX(0);pointer-events:auto}
   .app-shell .right-sidebar.open{transform:translateX(0);pointer-events:auto}
 }
+
+/* Panel collapse controls: mirrored 20px SVG icons */
+.panel-toggle{display:flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;min-width:32px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);cursor:pointer;z-index:12}
+.panel-toggle svg{display:block;width:20px;height:20px;flex:0 0 20px}
+.panel-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.panel-toggle-left{position:absolute;top:25px;right:14px}
+.sidebar .brand{padding-right:42px}
+.right-sidebar-head{position:relative}
+.panel-toggle-right{position:static;margin-right:0;flex-shrink:0}
+.app-shell.left-hidden #toggle-left-panel{position:fixed;top:6px;left:6px;right:auto}
+.app-shell.right-hidden #toggle-right-panel{position:fixed;top:6px;right:6px;left:auto}
+@media(max-width:720px){
+ .panel-toggle-left{position:fixed;top:6px;left:6px;right:auto}
+ .panel-toggle-right{position:fixed;top:6px;right:6px;left:auto}
+ .sidebar.open .panel-toggle-left{position:absolute;top:25px;left:auto;right:14px}
+ .right-sidebar.open .panel-toggle-right{position:static}
+ .app-shell.left-hidden #toggle-left-panel{left:6px}
+ .app-shell.right-hidden #toggle-right-panel{right:6px}
+}
