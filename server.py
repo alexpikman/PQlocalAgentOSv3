@@ -221,6 +221,10 @@ def run_agent_task(model, task, agent=None, project=None):
         memory=str(agent.get('memory','')).strip()
         if memory: system_prompt += '\n\nДолговременная память агента (пользовательские заметки):\n'+memory[:8000]
     system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
+    if permissions.get('local_files') and permissions.get('roots'):
+        system_prompt += '\n\nРазрешённые корневые папки для файловых инструментов:\n'+'\n'.join(str(root) for root in permissions['roots'][:50])+'\nИспользуй только эти пути. Доступ за пределами этих папок будет отклонён.'
+    if (agent or {}).get('permissions',{}).get('github_access') and os.environ.get('GITHUB_TOKEN'):
+        system_prompt += '\n\nДоступен только чтение настроенного репозитория GitHub: '+REPO+'.'
     prompt='Выполни задачу. Разделяй факты и предположения; сообщи о том, что не удалось проверить.\n\nНазвание задачи: '+str(task.get('title',''))+'\n\nИнструкция:\n'+str(task.get('description',''))
     if project:
         prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nПуть (справочная информация; не открывай автоматически): '+str(project.get('path',''))
