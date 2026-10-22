@@ -136,6 +136,44 @@ def module_runtime_manifest(module):
     if not manifest and (MODULES/module.get('id','')/'module.json').is_file():
         manifest=read_json(MODULES/module['id']/'module.json',{})
     return manifest if isinstance(manifest,dict) else {}
+
+def validate_module_connections(current, connections):
+    if not isinstance(connections,list) or len(connections)>300: raise ValueError('Некорректный список связей')
+    modules={m.get('id'):m for m in current.get('modules',[]) if isinstance(m,dict) and isinstance(m.get('id'),str)}
+    ids=set(modules); normalized=[]; seen_edges=set(); occupied_inputs=set(); adjacency={key:[] for key in ids}
+    for raw in connections:
+        if not isinstance(raw,dict) or not isinstance(raw.get('from'),str) or not isinstance(raw.get('to'),str) or raw.get('from') not in ids or raw.get('to') not in ids:
+            raise ValueError('Связь должна соединять зарегистрированные модули')
+        link=dict(raw); source=modules[link['from']]; target=modules[link['to']]
+        if link['from']==link['to']: raise ValueError('Модуль не может быть соединён сам с собой')
+        source_manifest=module_runtime_manifest(source); target_manifest=module_runtime_manifest(target)
+        source_ports=source_manifest.get('outputs') if isinstance(source_manifest.get('outputs'),list) else []
+        target_ports=target_manifest.get('inputs') if isinstance(target_manifest.get('inputs'),list) else []
+        if not isinstance(link.get('from_port'),str) or not link.get('from_port'): link['from_port']=source_ports[0].get('name','output') if source_ports else 'output'
+        if not isinstance(link.get('to_port'),str) or not link.get('to_port'): link['to_port']=target_ports[0].get('name','input') if target_ports else 'input'
+        source_port=next((p for p in source_ports if isinstance(p,dict) and p.get('name')==link['from_port']),None)
+        target_port=next((p for p in target_ports if isinstance(p,dict) and p.get('name')==link['to_port']),None)
+        if source_ports and not source_port: raise ValueError('Выходной порт не найден в модуле '+str(source.get('name',link['from'])))
+        if target_ports and not target_port: raise ValueError('Входной порт не найден в модуле '+str(target.get('name',link['to'])))
+        if source_port and target_port:
+            source_type=source_port.get('type','text'); target_type=target_port.get('type','text')
+            if source_type!=target_type and 'any' not in {source_type,target_type}: raise ValueError('Несовместимые типы портов: '+str(source_type)+' → '+str(target_type))
+        edge=(link['from'],link['from_port'],link['to'],link['to_port'])
+        if edge in seen_edges: raise ValueError('Повторяющаяся связь между портами')
+        slot=(link['to'],link['to_port'])
+        if slot in occupied_inputs: raise ValueError('Входной порт '+link['to_port']+' уже подключён')
+        seen_edges.add(edge); occupied_inputs.add(slot); normalized.append(link); adjacency[link['from']].append(link['to'])
+    visiting=set(); visited=set()
+    def has_cycle(node):
+        if node in visiting: return True
+        if node in visited: return False
+        visiting.add(node)
+        for target in adjacency[node]:
+            if has_cycle(target): return True
+        visiting.remove(node); visited.add(node); return False
+    if any(has_cycle(node) for node in ids if node not in visited): raise ValueError('Циклические связи запрещены. Постройте направленный ациклический граф.')
+    return normalized
+
 def execute_module_graph(data):
     registry=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
     modules={m.get('id'):m for m in registry.get('modules',[]) if isinstance(m,dict) and m.get('id')}
@@ -600,39 +638,10 @@ class Handler(SimpleHTTPRequestHandler):
                 runs=read_json(DATA/'module-runs.json',[]); runs=runs if isinstance(runs,list) else []; write_json(DATA/'module-runs.json',([failed]+runs)[:100]); log_event('module.graph.failed',str(e))
                 return self.send_json(502, {'error':'Ошибка выполнения схемы: '+str(e)[:240],'run':failed})
         if path=='/api/modules/connections':
-            connections=data.get('connections',[])
-            if not isinstance(connections,list) or len(connections)>300: return self.send_json(400, {'error':'Некорректный список связей'})
             current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
-            ids={m.get('id') for m in current.get('modules',[])}
-            seen=set()
-            for link in connections:
-                if not isinstance(link,dict) or not isinstance(link.get('from'),str) or not isinstance(link.get('to'),str) or link.get('from') not in ids or link.get('to') not in ids: return self.send_json(400, {'error':'Связь должна соединять зарегистрированные модули'})
-                source_module=next(m for m in current.get('modules',[]) if m.get('id')==link['from']); target_module=next(m for m in current.get('modules',[]) if m.get('id')==link['to'])
-                source_manifest=module_runtime_manifest(source_module); target_manifest=module_runtime_manifest(target_module)
-                source_ports=source_manifest.get('outputs') if isinstance(source_manifest.get('outputs'),list) else []; target_ports=target_manifest.get('inputs') if isinstance(target_manifest.get('inputs'),list) else []
-                if not link.get('from_port'): link['from_port']=source_ports[0].get('name','output') if source_ports else 'output'
-                if not link.get('to_port'): link['to_port']=target_ports[0].get('name','input') if target_ports else 'input'
-                if source_ports and not any(p.get('name')==link['from_port'] for p in source_ports): return self.send_json(400, {'error':'Выходной порт не найден в модуле '+str(source_module.get('name',link['from']))})
-                if target_ports and not any(p.get('name')==link['to_port'] for p in target_ports): return self.send_json(400, {'error':'Входной порт не найден в модуле '+str(target_module.get('name',link['to']))})
-                if source_ports and target_ports:
-                    source_type=next((p.get('type','text') for p in source_ports if p.get('name')==link['from_port']),'text'); target_type=next((p.get('type','text') for p in target_ports if p.get('name')==link['to_port']),'text')
-                    if source_type!=target_type and 'any' not in {source_type,target_type}: return self.send_json(400, {'error':'Несовместимые типы портов: '+str(source_type)+' → '+str(target_type)})
-                if link.get('from')==link.get('to'): return self.send_json(400, {'error':'Модуль не может быть соединён сам с собой'})
-                pair=(link['from'],link['to'])
-                if pair in seen: return self.send_json(400, {'error':'Повторяющаяся связь: '+pair[0]+' → '+pair[1]})
-                seen.add(pair)
-            adjacency={key:[] for key in ids}
-            for link in connections: adjacency[link['from']].append(link['to'])
-            visiting=set(); visited=set()
-            def has_cycle(node):
-                if node in visiting: return True
-                if node in visited: return False
-                visiting.add(node)
-                for target in adjacency[node]:
-                    if has_cycle(target): return True
-                visiting.remove(node); visited.add(node); return False
-            if any(has_cycle(node) for node in ids if node not in visited): return self.send_json(400, {'error':'Циклические связи запрещены. Постройте направленный ациклический граф.'})
-            current['connections']=connections; write_json(DATA/'modules.json',current); log_event('module.connections','Связи модулей обновлены'); return self.send_json(200, current)
+            try: current['connections']=validate_module_connections(current,data.get('connections',[]))
+            except ValueError as e: return self.send_json(400, {'error':str(e)})
+            write_json(DATA/'modules.json',current); log_event('module.connections','Связи модулей обновлены'); return self.send_json(200,current)
         if path=='/api/github/file':
             file_path=str(data.get('path','')).strip(); content=str(data.get('content','')); message=str(data.get('message','').strip() or 'Update '+file_path)[:200]
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
