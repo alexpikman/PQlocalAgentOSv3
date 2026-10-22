@@ -61,7 +61,7 @@ def run_diagnostics():
         models=ollama_request('/api/tags',timeout=3).get('models',[])
         checks.extend([{'name':'Ollama','status':'ok','message':'Локальный сервис моделей доступен.','detail':OLLAMA_URL},{'name':'Локальные модели','status':'ok' if models else 'warning','message':f'Доступно моделей: {len(models)}.','detail':', '.join(x.get('name','') for x in models[:8]) or 'Модели не установлены'}])
     except Exception as exc:
-        checks.extend([{'name':'Ollama','status':'warning','message':'Локальный сервис моделей недоступен.','detail':str(exc)[:180},{'name':'Локальные модели','status':'warning','message':'Список моделей недоступен, пока Ollama не запущена.','detail':OLLAMA_URL}])
+        checks.extend([{'name':'Ollama','status':'warning','message':'Локальный сервис моделей недоступен.','detail':str(exc)[:180]},{'name':'Локальные модели','status':'warning','message':'Список моделей недоступен, пока Ollama не запущена.','detail':OLLAMA_URL}])
     return {'checked_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'checks':checks,'summary':{'total':len(checks),'ok':sum(x['status']=='ok' for x in checks),'warning':sum(x['status']=='warning' for x in checks),'error':sum(x['status']=='error' for x in checks)}}
 
 def github_request(path, method='GET', payload=None):
