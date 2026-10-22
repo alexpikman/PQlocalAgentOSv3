@@ -210,6 +210,63 @@ def execute_module_graph(data):
     write_json(DATA/'module-runs.json',([result]+read_json(DATA/'module-runs.json',[]))[:100])
     return result
 
+
+def run_agent_task(model, task, agent=None, project=None):
+    from agent_tools import effective_tools, execute_tool
+    permissions=permission_settings()
+    role=(agent or {}).get('role','ANALYST')
+    system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
+    if agent:
+        system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
+        memory=str(agent.get('memory','')).strip()
+        if memory: system_prompt += '\n\nДолговременная память агента (пользовательские заметки):\n'+memory[:8000]
+    system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
+    prompt='Выполни задачу. Разделяй факты и предположения; сообщи о том, что не удалось проверить.\n\nНазвание задачи: '+str(task.get('title',''))+'\n\nИнструкция:\n'+str(task.get('description',''))
+    if project:
+        prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nПуть (справочная информация; не открывай автоматически): '+str(project.get('path',''))
+    available=effective_tools(agent or {},permissions) if agent else []
+    if not available:
+        result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
+        return {'response':result.get('response',''),'tool_calls':0,'model':result.get('model',model)}
+    messages=[{'role':'system','content':system_prompt},{'role':'user','content':prompt}]
+    names={tool['function']['name'] for tool in available}
+    total=0; last={}
+    for _ in range(12):
+        try:
+            payload=ollama_request('/api/chat',{'model':model,'messages':messages,'tools':available,'stream':False,'think':False,'keep_alive':'5m','options':{'num_predict':1024}},timeout=240)
+        except urllib.error.HTTPError as exc:
+            if total==0 and exc.code in {400,404,422}:
+                result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
+                return {'response':result.get('response',''),'tool_calls':0,'model':result.get('model',model),'warning':'Модель не поддерживает вызов инструментов; выполнен обычный запрос без инструментов.'}
+            raise
+        last=payload
+        message=payload.get('message')
+        if not isinstance(message,dict): break
+        calls=message.get('tool_calls')
+        if not isinstance(calls,list) or not calls:
+            return {'response':message.get('content','') if isinstance(message.get('content',''),str) else '', 'tool_calls':total,'model':payload.get('model',model)}
+        messages.append(message)
+        for call in calls:
+            total+=1
+            if total>24:
+                messages.append({'role':'tool','content':'Остановлено: достигнут лимит 24 вызова инструмента.'})
+                break
+            function=call.get('function',{}) if isinstance(call,dict) else {}
+            name=function.get('name') if isinstance(function,dict) else None
+            args=function.get('arguments',{}) if isinstance(function,dict) else {}
+            if isinstance(args,str):
+                try: args=json.loads(args)
+                except ValueError: args={}
+            if not isinstance(args,dict) or not isinstance(name,str) or name not in names:
+                result={'error':'Некорректный или недоступный инструмент.'}; name=str(name or 'unknown')
+            else:
+                result=execute_tool(name,args,agent,permissions)
+            log_event('agent.tool_called',str((agent or {}).get('id',''))+' · '+name+' · '+('error' if 'error' in result else 'ok'))
+            messages.append({'role':'tool','tool_name':name,'content':json.dumps(result,ensure_ascii=False)[:12000]})
+        if total>24: break
+    message=last.get('message',{}) if isinstance(last,dict) else {}
+    return {'response':message.get('content','') if isinstance(message,dict) and isinstance(message.get('content',''),str) else '', 'tool_calls':total,'model':last.get('model',model) if isinstance(last,dict) else model,'warning':'Достигнут лимит циклов вызова инструментов.'}
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
@@ -319,8 +376,8 @@ class Handler(SimpleHTTPRequestHandler):
             if project:
                 prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
             try:
-                result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
-                item['status']='completed'; item['result']=result.get('response',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                result=run_agent_task(model,item,agent,project)
+                item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 if agent:
                     agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
                 log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
