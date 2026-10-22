@@ -194,3 +194,12 @@
 .task-team-results section{display:grid;gap:7px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .task-team-results section>b{font-size:11px}
 .task-team-results section>small{font-size:10px;color:var(--muted)}
+
+.module-graph-panel{margin-top:16px}
+.module-graph-scroll{overflow-x:auto;padding:8px 2px}
+.module-graph-svg{display:block;width:100%;min-width:340px;max-height:680px;color:var(--muted);overflow:visible}
+.module-edge{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.8}
+.module-edge-label{fill:var(--muted);font-size:9px;text-anchor:middle}
+.module-node{fill:var(--panel2);stroke:var(--line);stroke-width:1.2}
+.module-node-name{fill:var(--text);font-size:11px;font-weight:650}
+.module-node-kind{fill:var(--muted);font-size:9px}
