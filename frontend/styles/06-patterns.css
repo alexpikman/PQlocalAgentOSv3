@@ -1,7 +1,6 @@
 /* Reusable list and row patterns. */
 .page-list{display:grid;gap:10px}
 
-.page-card-actions{display:flex;gap:6px;display:flex;flex-wrap:wrap;gap:8px}
 
 .entity-toolbar{display:grid;grid-template-columns:auto minmax(220px,1fr) auto;align-items:center;gap:12px;padding:4px 0 18px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 
@@ -45,9 +44,7 @@
 
 .domain-info:hover:after,.domain-info:focus-visible:after{opacity:1;visibility:visible}
 
-.page-card .domain-info{margin-top:3px}
 
-.page-card-main p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 
 
 .entity-row-status--pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
