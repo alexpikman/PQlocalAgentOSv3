@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
@@ -664,6 +664,10 @@ _FOLDER_SIZE_CACHE_AT = 0
 _WINDOWS_CACHE = None
 _WINDOWS_CACHE_AT = 0
 _TELEMETRY_HISTORY = []
+# Кэшируем только выбранные системные показатели, чтобы не собирать снимок при каждом опросе.
+_TELEMETRY_CACHE = None
+_TELEMETRY_CACHE_AT = 0.0
+_TELEMETRY_CACHE_LOCK = threading.Lock()
 def _rate_snapshot(key, current):
     import time
     now=time.monotonic(); old=_TELEMETRY_PREVIOUS.get(key); _TELEMETRY_PREVIOUS[key]=(now,current)
@@ -870,15 +874,25 @@ def _ai_runtime_stats():
 
 
 def _telemetry_snapshot():
-    data=system_stats()
-    sample={'timestamp':data.get('timestamp'),'cpuPercent':(data.get('cpu') or {}).get('percent'),
-            'ramPercent':(data.get('ram') or {}).get('percent'),'gpuPercent':(data.get('gpu') or {}).get('percent'),
-            'gpuTemperatureC':(data.get('gpu') or {}).get('temperatureC'),
-            'ramUsedGB':(data.get('ram') or {}).get('used'),
-            'diskPercent':{str(d.get('mount')):d.get('percent') for d in data.get('disks',[]) if isinstance(d,dict)}}
-    _TELEMETRY_HISTORY.append(sample)
-    del _TELEMETRY_HISTORY[:-360]
-    return data
+    import time
+    global _TELEMETRY_CACHE, _TELEMETRY_CACHE_AT
+    # Один сбор раз в 5 секунд; блокировка не даёт параллельным запросам дублировать сбор.
+    with _TELEMETRY_CACHE_LOCK:
+        now = time.monotonic()
+        if _TELEMETRY_CACHE is not None and now - _TELEMETRY_CACHE_AT < 5:
+            return _TELEMETRY_CACHE
+        data = system_stats()
+        sample = {'timestamp': data.get('timestamp'),
+                  'cpuPercent': (data.get('cpu') or {}).get('percent'),
+                  'ramPercent': (data.get('ram') or {}).get('percent'),
+                  'gpuPercent': (data.get('gpu') or {}).get('percent'),
+                  'gpuTemperatureC': (data.get('gpu') or {}).get('temperatureC'),
+                  'ramUsedGB': (data.get('ram') or {}).get('used')}
+        _TELEMETRY_HISTORY.append(sample)
+        del _TELEMETRY_HISTORY[:-360]
+        _TELEMETRY_CACHE = data
+        _TELEMETRY_CACHE_AT = time.monotonic()
+        return data
 
 def _telemetry_schema_node(value, path=''):
     if isinstance(value,dict):
@@ -984,6 +998,7 @@ def _telemetry_unavailable_fields():
 def system_stats():
     import platform
     import time
+    # Собираем только CPU, RAM/файл подкачки, GPU, ОС и среду Python.
     cpu_percent = _cpu_usage()
     memory = _memory_stats()
     gpu = _gpu_stats()
@@ -1007,7 +1022,6 @@ def system_stats():
         cpu_physical = None
         cpu_logical = os.cpu_count()
         cpu_frequency_data = {'currentMHz': None, 'minMHz': None, 'maxMHz': None}
-        boot_timestamp = None
         uptime_seconds = None
         process_count = None
         thread_count = None
@@ -1017,10 +1031,8 @@ def system_stats():
                'hostname': platform.node(), 'pythonVersion': platform.python_version(),
                'pythonImplementation': platform.python_implementation()}
     try:
-        import ctypes
-        uptime_ms = ctypes.windll.kernel32.GetTickCount64()
-        if uptime_ms is not None:
-            uptime_seconds = int(uptime_ms / 1000)
+        uptime_ms = __import__('ctypes').windll.kernel32.GetTickCount64()
+        uptime_seconds = int(uptime_ms / 1000)
     except Exception:
         pass
     try:
@@ -1031,21 +1043,12 @@ def system_stats():
     cpu = {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name(),
            'physicalCores': cpu_physical, 'logicalCores': cpu_logical, 'frequency': cpu_frequency_data,
            'processCount': process_count, 'threadCount': thread_count}
-    disks=_disk_stats()
-    processes=_process_stats()
     return {
         'ok': True,
         'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
         'collection': {'source':'local Windows host','optionalDependency':'psutil + optional NVIDIA nvidia-smi; unavailable hardware sensors are returned as null','refreshHintSeconds':5},
-        'cpu': cpu, 'cpuDetails': _extended_cpu(),
-        'ram': memory, 'memoryDetails': _extended_memory(),
-        'gpu': gpu, 'gpuDetails': _extended_gpu(),
-        'disks': disks, 'diskDetails': _extended_disks(),
-        'system': {'os':os_data,'uptimeSeconds':uptime_seconds,'bootTime':boot_iso,'processCount':process_count,'threadCount':thread_count},
-        'windows': _windows_details(),
-        'network': _network_stats(), 'networkDetails': _extended_network(),
-        'processes': processes, 'battery': _battery_stats(),
-        'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats()
+        'cpu': cpu, 'ram': memory, 'gpu': gpu,
+        'system': {'os':os_data,'uptimeSeconds':uptime_seconds,'bootTime':boot_iso,'processCount':process_count,'threadCount':thread_count}
     }
 
 
