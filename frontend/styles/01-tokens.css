@@ -35,12 +35,12 @@
   --btn-soft-danger-bg:#fbe0e0;
   --btn-soft-danger-fg:#8d3333;
   --btn-soft-danger-border:#f3c1c1;
-  --sysmon-icon-purple-bg:#2b2448;
-  --sysmon-icon-purple-fg:#bdb4ff;
-  --sysmon-icon-green-bg:#173c31;
-  --sysmon-icon-green-fg:#80e0b5;
-  --sysmon-icon-amber-bg:#46361c;
-  --sysmon-icon-amber-fg:#f0c674;
+  --sysmon-icon-purple-bg:#2a1f3d;
+  --sysmon-icon-purple-fg:#b79bff;
+  --sysmon-icon-green-bg:#152f24;
+  --sysmon-icon-green-fg:#6ce0a8;
+  --sysmon-icon-amber-bg:#332711;
+  --sysmon-icon-amber-fg:#e6c07a;
 }
 
 :root[data-theme="light"]{
