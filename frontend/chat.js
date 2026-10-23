@@ -263,10 +263,32 @@
     elements.clear.addEventListener('click', clearChat);
   }
 
+
+  function bindShellEvents() {
+    const shell = document.querySelector('.app-shell');
+    const left = document.getElementById('toggle-left-panel');
+    const right = document.getElementById('toggle-right-panel');
+    if (!shell) return;
+
+    if (left) {
+      left.addEventListener('click', () => {
+        shell.classList.toggle('left-hidden');
+        left.setAttribute('aria-expanded', String(!shell.classList.contains('left-hidden')));
+      });
+    }
+    if (right) {
+      right.addEventListener('click', () => {
+        shell.classList.toggle('right-hidden');
+        right.setAttribute('aria-expanded', String(!shell.classList.contains('right-hidden')));
+      });
+    }
+  }
+
   function init() {
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     buildUI();
+    bindShellEvents();
     bindEvents();
     renderHistory();
     loadModels();
