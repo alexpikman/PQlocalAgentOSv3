@@ -67,7 +67,7 @@ function visualMetric(key,value){
   else if(/bytes$|bytes_|memorybytes|vramused|vramtotal/.test(lower)){return metric(key,bytes(value))}
   return metric(key,shown,unit,bar);
  }
- if(typeof value==='string'&&/^https?:\\/\\//i.test(value))return '<div class="metric"><span class="key">'+esc(key)+'</span><span class="value"><a href="'+esc(value)+'" target="_blank" rel="noopener">'+esc(value)+'</a></span></div>';
+ if(typeof value==='string'&&(value.startsWith('http://')||value.startsWith('https://')))return '<div class="metric"><span class="key">'+esc(key)+'</span><span class="value"><a href="'+esc(value)+'" target="_blank" rel="noopener">'+esc(value)+'</a></span></div>';
  return metric(key,value);
 }
 function deepBlock(label,value,depth=0){
