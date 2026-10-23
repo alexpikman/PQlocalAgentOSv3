@@ -177,8 +177,7 @@
       if (cpuName) cpuName.textContent = 'Нет соединения с локальным сервером';
       if (ramDetail) ramDetail.textContent = 'Данные памяти недоступны';
       if (gpuDetail) gpuDetail.textContent = 'Данные GPU недоступны';
-      const diskList = document.getElementById('sysmon-disks');
-      if (diskList) diskList.innerHTML = '<div class="sysmon-detail">Нет соединения с локальным сервером</div>';
+      // В компактной телеметрии отображаются только CPU, RAM и GPU.
     }
     const modal = document.getElementById('sysmon-chart-modal');
     if (modal && !modal.hidden) drawChart(currentChart);
@@ -187,6 +186,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     bind();
     tick();
-    setInterval(tick, 2000);
+    // Обновляем компактную телеметрию раз в 5 секунд, чтобы снизить нагрузку на сбор системных данных.
+    setInterval(tick, 5000);
   });
 })();
