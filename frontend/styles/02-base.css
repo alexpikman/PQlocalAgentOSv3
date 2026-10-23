@@ -18,7 +18,7 @@ input,textarea,select{color:var(--text);background:var(--panel);border-color:var
 input::placeholder,textarea::placeholder{color:var(--muted)}
 
 /* Тонкий скроллбар: Firefox */
-*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 
 /* Тонкий скроллбар: Chrome, Edge, Safari */
 ::-webkit-scrollbar{width:6px;height:6px}
