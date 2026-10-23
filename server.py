@@ -1693,10 +1693,10 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception:
                     detail = None
                 return self.send_json(500, {'error': 'Ошибка Ollama: ' + str(detail or exc.reason)[:240]})
-            except (urllib.error.URLError, ConnectionError, OSError) as exc:
-                return self.send_json(500, {'error': 'Ollama недоступна. Запустите ollama serve.'})
             except TimeoutError:
                 return self.send_json(500, {'error': 'Ollama не ответила за 120 секунд. Попробуйте ещё раз.'})
+            except (urllib.error.URLError, ConnectionError, OSError) as exc:
+                return self.send_json(500, {'error': 'Ollama недоступна. Запустите ollama serve.'})
             except Exception as exc:
                 return self.send_json(500, {'error': 'Не удалось получить ответ Ollama: ' + str(exc)[:180]})
         if path=='/api/providers':
