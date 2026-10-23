@@ -1480,11 +1480,22 @@ def _telemetry_unavailable_fields():
         'exitCode':unavailable('Process lifecycle monitor','Код завершения доступен только для процессов, завершение которых приложение отслеживало заранее.')
       },
       'aiRuntime':{
+        'modelContextLength':unavailable('Provider model metadata','Размер контекста доступен только если конкретный провайдер/model API предоставляет это поле.'),
         'tokensPerSecond':unavailable('Inference request instrumentation','Скорость токенов появится для запросов, выполняемых через инструментированный runtime платформы.'),
         'inputOutputTokenCounts':unavailable('Inference request instrumentation','Количество токенов доступно только если API/модель возвращает usage или runtime его считает.'),
         'modelLoadDurationMs':unavailable('Inference request instrumentation','Время загрузки модели требует измерения вокруг команды загрузки/первого запроса.'),
         'perModelGpuMemory':unavailable('NVIDIA process mapping','Связать VRAM с конкретной моделью можно только при сопоставлении PID процесса и модели.'),
-        'taskRetryCounts':unavailable('Task execution history','Счётчик повторов зависит от сохранения попыток в исполнительном контуре задач.')
+        'taskQueueLength':unavailable('Task scheduler instrumentation','Число ожидающих задач требует отдельного состояния очереди планировщика.'),
+        'successfulRunCount':unavailable('Persisted task run history','История успешных запусков доступна только если исполнитель сохраняет каждую попытку.'),
+        'failedRunCount':unavailable('Persisted task run history','История неуспешных запусков требует сохранения каждого результата исполнения.'),
+        'averageTaskDurationMs':unavailable('Persisted task run history','Средняя длительность рассчитывается после сохранения времён начала и завершения запусков.'),
+        'taskRetryCounts':unavailable('Task execution history','Счётчик повторов зависит от сохранения попыток в исполнительном контуре задач.'),
+        'taskFailureReasons':unavailable('Task execution history','Причины ошибок доступны из сохранённых результатов и журналов конкретных запусков.'),
+        'currentTaskStage':unavailable('Task execution instrumentation','Этап задачи обновляется только при инструментировании исполнителя на каждом шаге.'),
+        'lastSuccessfulModelCall':unavailable('Inference request instrumentation','Последний успешный вызов модели требует журнала вызовов провайдера.'),
+        'perTaskProviderAndModel':unavailable('Task execution history','Провайдер и модель на каждую задачу должны фиксироваться при запуске.'),
+        'perTaskTokenUsage':unavailable('Inference request instrumentation','Токены на задачу требуют учёта usage со стороны модели или runtime.')
+      }
       }
     }
 
