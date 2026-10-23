@@ -1619,9 +1619,21 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
         if path=='/api/system/stats':
             try:
-                return self.send_json(200, system_stats())
+                return self.send_json(200, _telemetry_snapshot())
             except Exception as exc:
                 return self.send_json(500, {'ok':False,'error':str(exc),'errorType':type(exc).__name__})
+        if path=='/api/system/stats/schema':
+            try:
+                return self.send_json(200, _telemetry_api_schema())
+            except Exception as exc:
+                return self.send_json(500, {'ok':False,'error':str(exc),'errorType':type(exc).__name__})
+        if path=='/api/system/stats/history':
+            try:
+                query=parse_qs(urlparse(self.path).query)
+                limit=max(1,min(360,int(query.get('limit',['60'])[0])))
+                return self.send_json(200, {'ok':True,'count':min(limit,len(_TELEMETRY_HISTORY)),'maxSamples':360,'samples':_TELEMETRY_HISTORY[-limit:]})
+            except (ValueError,TypeError) as exc:
+                return self.send_json(400, {'ok':False,'error':'Параметр limit должен быть числом от 1 до 360','detail':str(exc)[:120]})
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
