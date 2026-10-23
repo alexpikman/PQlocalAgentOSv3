@@ -14,7 +14,11 @@ jobs:
       - name: Python syntax check
         run: python -m py_compile server.py tests/test_server.py
       - name: Frontend JavaScript syntax check
-        run: node --check frontend/app.js
+        run: |
+          find frontend -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check "$file"
+          done
       - name: Module contract JSON validation
         run: python -m json.tool module-contract.schema.json > /dev/null
       - name: Unit tests
