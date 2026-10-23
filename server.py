@@ -658,6 +658,196 @@ def _local_services():
         result.append(item)
     return result
 
+
+# Extended telemetry helpers. Optional Windows counters return null when unavailable.
+_TELEMETRY_PREVIOUS = {}
+def _rate_snapshot(key, current):
+    import time
+    now=time.monotonic(); old=_TELEMETRY_PREVIOUS.get(key); _TELEMETRY_PREVIOUS[key]=(now,current)
+    if not old or now<=old[0]: return None
+    return round(max(0,current-old[1])/(now-old[0]),2)
+
+def _extended_cpu():
+    result={'perCorePercent':[],'manufacturer':None,'baseMHz':None,'queueLength':None,'temperatureC':None,'powerW':None,'systemCpuTimeSeconds':None,'processesTopCpu':[]}
+    try:
+        import psutil
+        result['perCorePercent']=psutil.cpu_percent(interval=0.05,percpu=True)
+        result['systemCpuTimeSeconds']=round(sum(psutil.cpu_times()._asdict().values()),2)
+        try:
+            q=psutil.cpu_stats()
+            result['contextSwitches']=q.ctx_switches; result['interrupts']=q.interrupts
+        except Exception: pass
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
+                result['manufacturer']=str(winreg.QueryValueEx(key,'VendorIdentifier')[0]).strip()
+                mhz=winreg.QueryValueEx(key,'~MHz')[0]; result['baseMHz']=float(mhz) if mhz else None
+        except Exception: pass
+        procs=[]
+        for p in psutil.process_iter(['pid','name','cpu_percent','status','num_threads']):
+            try:
+                i=p.info; procs.append({'pid':i.get('pid'),'name':i.get('name'),'cpuPercent':i.get('cpu_percent'),'status':i.get('status'),'threads':i.get('num_threads')})
+            except Exception: pass
+        result['processesTopCpu']=sorted(procs,key=lambda x:x.get('cpuPercent') or 0,reverse=True)[:20]
+    except Exception as exc: result['error']=str(exc)[:180]
+    # Temperature sensors are not consistently exposed by Windows/psutil.
+    result['temperatureNote']='Температура CPU и мощность доступны только при наличии поддерживаемого датчика/драйвера.'
+    return result
+
+def _extended_memory():
+    out={'cachedGB':None,'buffersGB':None,'availableGB':None,'processesTopMemory':[],'processesTopVirtual':[],'peakWorkingSetAvailable':False,'readWriteBytesPerSec':None,'hardwareReservedGB':None}
+    try:
+        import psutil
+        m=psutil.virtual_memory()
+        out.update({'availableGB':round(m.available/1024**3,2),'cachedGB':round(getattr(m,'cached',0)/1024**3,2) if hasattr(m,'cached') else None,'buffersGB':round(getattr(m,'buffers',0)/1024**3,2) if hasattr(m,'buffers') else None})
+        rows=[]
+        for p in psutil.process_iter(['pid','name','memory_info','memory_full_info']):
+            try:
+                i=p.info; mi=i.get('memory_info'); full=i.get('memory_full_info')
+                rows.append({'pid':i.get('pid'),'name':i.get('name'),'rssBytes':getattr(mi,'rss',None),'vmsBytes':getattr(mi,'vms',None),'privateBytes':getattr(full,'private',None)})
+            except Exception: pass
+        out['processesTopMemory']=sorted(rows,key=lambda x:x.get('rssBytes') or 0,reverse=True)[:20]
+        out['processesTopVirtual']=sorted(rows,key=lambda x:x.get('vmsBytes') or 0,reverse=True)[:20]
+    except Exception as exc: out['error']=str(exc)[:180]
+    return out
+
+def _extended_gpu():
+    import subprocess
+    out={'adapters':[],'engines':None,'processes':[],'activeGpuCount':None,'note':'Engine-level utilization and per-process VRAM depend on the installed NVIDIA driver and nvidia-smi support.'}
+    command=shutil.which('nvidia-smi')
+    if not command:
+        p=os.environ.get('ProgramFiles',r'C:\Program Files')
+        candidate=str(Path(p)/'NVIDIA Corporation'/'NVSMI'/'nvidia-smi.exe')
+        if Path(candidate).is_file(): command=candidate
+    if not command: return out
+    def run(args,timeout=2):
+        return subprocess.run([command]+args,capture_output=True,text=True,timeout=timeout,check=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).stdout
+    try:
+        raw=run(['--query-gpu=index,name,uuid,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,clocks.gr,clocks.mem,pstate,clocks_throttle_reasons.active','--format=csv,noheader,nounits'])
+        for line in raw.splitlines():
+            p=[x.strip() for x in line.split(',')]
+            if len(p)>=13:
+                def n(i):
+                    try:return float(p[i]) if p[i] and p[i].lower() not in ('n/a','[n/a]','not supported') else None
+                    except Exception:return None
+                out['adapters'].append({'index':n(0),'name':p[1],'uuid':p[2],'gpuPercent':n(3),'memoryPercent':n(4),'vramUsedMiB':n(5),'vramTotalMiB':n(6),'temperatureC':n(7),'powerW':n(8),'coreClockMHz':n(9),'memoryClockMHz':n(10),'performanceState':p[11],'throttleReasons':p[12]})
+        out['activeGpuCount']=len(out['adapters'])
+    except Exception as exc: out['queryError']=str(exc)[:180]
+    try:
+        raw=run(['--query-compute-apps=gpu_uuid,pid,process_name,used_memory','--format=csv,noheader,nounits'])
+        for line in raw.splitlines():
+            p=[x.strip() for x in line.split(',',3)]
+            if len(p)>=4: out['processes'].append({'gpuUuid':p[0],'pid':p[1],'name':p[2],'vramMiB':p[3]})
+    except Exception: pass
+    try:
+        raw=run(['dmon','-c','1','-s','u'])
+        lines=[x.split() for x in raw.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+        if len(lines)>1: out['engines']={'header':lines[0],'sample':lines[-1]}
+    except Exception: pass
+    return out
+
+def _extended_disks():
+    result={'io':None,'physicalDevices':[],'projectFolders':[],'note':'SMART, drive temperature and controller write endurance require vendor/driver support.'}
+    try:
+        import psutil
+        io=psutil.disk_io_counters(perdisk=True)
+        entries=[]
+        for name,c in io.items():
+            read_rate=_rate_snapshot('disk-read-'+name,c.read_bytes); write_rate=_rate_snapshot('disk-write-'+name,c.write_bytes)
+            entries.append({'device':name,'readBytes':c.read_bytes,'writeBytes':c.write_bytes,'readBytesPerSec':read_rate,'writeBytesPerSec':write_rate,'readMBps':round(read_rate/1024**2,3) if read_rate is not None else None,'writeMBps':round(write_rate/1024**2,3) if write_rate is not None else None,'readCount':c.read_count,'writeCount':c.write_count,'readIOPS':_rate_snapshot('disk-readops-'+name,c.read_count),'writeIOPS':_rate_snapshot('disk-writeops-'+name,c.write_count),'readTimeMs':c.read_time,'writeTimeMs':c.write_time,'busyTimeMs':getattr(c,'busy_time',None)})
+        result['io']=entries
+    except Exception as exc: result['error']=str(exc)[:180]
+    for name,path in [('Project root',ROOT),('Models (Ollama default)',Path.home()/'.ollama'/'models'),('LM Studio models',Path.home()/'.lmstudio'/'models'),('ComfyUI W drive',Path('W:/--Comfy')),('Hugging Face cache',Path.home()/'.cache'/'huggingface')]:
+        try:
+            if path.exists():
+                total=0; files=0
+                for base,dirs,names in os.walk(path):
+                    dirs[:]=[d for d in dirs if d not in {'.git','node_modules','.venv','venv','__pycache__'}]
+                    for fn in names:
+                        try: total+=os.path.getsize(os.path.join(base,fn)); files+=1
+                        except OSError: pass
+                    if files>200000: break
+                result['projectFolders'].append({'name':name,'path':str(path),'sizeBytes':total,'files':files})
+            else: result['projectFolders'].append({'name':name,'path':str(path),'exists':False})
+        except Exception: pass
+    try:
+        import subprocess
+        ps=r"$ErrorActionPreference='Stop'; Get-PhysicalDisk | Select-Object FriendlyName,MediaType,BusType,Size,HealthStatus,OperationalStatus | ConvertTo-Json -Compress"
+        run=subprocess.run(['powershell','-NoProfile','-Command',ps],capture_output=True,text=True,timeout=2.2,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if run.returncode==0 and run.stdout.strip():
+            data=json.loads(run.stdout); result['physicalDevices']=data if isinstance(data,list) else [data]
+    except Exception: pass
+    return result
+
+def _extended_network():
+    out={'rates':[],'defaultGateways':[],'dnsServers':[],'internet':None,'tcpConnections':None,'serviceChecks':[],'note':'Per-process network accounting is not provided by psutil on Windows without ETW/WFP-based collection.'}
+    try:
+        import psutil
+        counters=psutil.net_io_counters(pernic=True)
+        for name,c in counters.items():
+            rx=_rate_snapshot('net-rx-'+name,c.bytes_recv); tx=_rate_snapshot('net-tx-'+name,c.bytes_sent)
+            out['rates'].append({'adapter':name,'receiveBytesPerSec':rx,'sendBytesPerSec':tx,'receiveMbps':round(rx*8/1e6,3) if rx is not None else None,'sendMbps':round(tx*8/1e6,3) if tx is not None else None})
+        out['tcpConnections']=len(psutil.net_connections(kind='tcp'))
+    except Exception as exc: out['error']=str(exc)[:180]
+    try:
+        import subprocess
+        cmd="Get-NetIPConfiguration | Where-Object {$_.NetAdapter.Status -eq 'Up'} | Select-Object InterfaceAlias,@{n='IPv4Gateway';e={$_.IPv4DefaultGateway.NextHop -join ','}},@{n='DNSServers';e={$_.DNSServer.ServerAddresses -join ','}} | ConvertTo-Json -Compress"
+        run=subprocess.run(['powershell','-NoProfile','-Command',cmd],capture_output=True,text=True,timeout=2.2,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if run.returncode==0 and run.stdout.strip():
+            data=json.loads(run.stdout); data=data if isinstance(data,list) else [data]
+            for x in data:
+                if x.get('IPv4Gateway'): out['defaultGateways'].append({'adapter':x.get('InterfaceAlias'),'gateway':x.get('IPv4Gateway')})
+                if x.get('DNSServers'): out['dnsServers'].append({'adapter':x.get('InterfaceAlias'),'servers':x.get('DNSServers')})
+    except Exception: pass
+    checks=[('Ollama','http://127.0.0.1:11434/api/tags'),('LM Studio','http://127.0.0.1:1234/v1/models'),('GitHub API','https://api.github.com')]
+    import urllib.request
+    for name,url in checks:
+        started=time.monotonic()
+        try:
+            req=urllib.request.Request(url,headers={'User-Agent':'PQlocalAgentOSv3-telemetry'})
+            with urllib.request.urlopen(req,timeout=1.2) as response: status=response.status
+            out['serviceChecks'].append({'name':name,'available':200<=status<400,'statusCode':status,'latencyMs':round((time.monotonic()-started)*1000,1),'checkedAt':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+        except Exception as exc: out['serviceChecks'].append({'name':name,'available':False,'error':str(exc)[:140],'latencyMs':round((time.monotonic()-started)*1000,1),'checkedAt':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+    try:
+        req=urllib.request.Request('https://www.msftconnecttest.com/connecttest.txt',headers={'User-Agent':'PQlocalAgentOSv3-telemetry'})
+        with urllib.request.urlopen(req,timeout=1.5) as response: out['internet']={'available':response.status==200,'statusCode':response.status}
+    except Exception as exc: out['internet']={'available':False,'error':str(exc)[:140]}
+    return out
+
+def _windows_details():
+    out={'timezone':datetime.datetime.now().astimezone().tzname(),'localTime':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'startupItems':[],'services':[],'events':[],'security':{},'recentShutdowns':[],'powerPlan':None,'drivers':[],'note':'Windows event logs, Defender and driver inventory may require additional permissions.'}
+    try:
+        import subprocess
+        ps=r"$ErrorActionPreference='SilentlyContinue'; $s=@{}; $s.edition=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').EditionID; $s.build=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuild; $s.displayVersion=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').DisplayVersion; $s.services=(Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running'} | Select-Object -First 80 Name,DisplayName,StartMode,State); $s.startup=(Get-CimInstance Win32_StartupCommand | Select-Object -First 80 Name,Command,Location,User); $s.power=(powercfg /getactivescheme); $s.security=@{firewall=(Get-NetFirewallProfile | Select-Object Name,Enabled); defender=(Get-MpComputerStatus | Select-Object AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated)}; $s.events=(Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2,3;StartTime=(Get-Date).AddHours(-24)} -MaxEvents 30 -ErrorAction SilentlyContinue | Select-Object TimeCreated,Id,LevelDisplayName,ProviderName,Message); $s.shutdowns=(Get-WinEvent -FilterHashtable @{LogName='System';Id=41,1074,6006,6008;StartTime=(Get-Date).AddDays(-14)} -MaxEvents 20 -ErrorAction SilentlyContinue | Select-Object TimeCreated,Id,ProviderName,Message); $s | ConvertTo-Json -Depth 5 -Compress"
+        run=subprocess.run(['powershell','-NoProfile','-Command',ps],capture_output=True,text=True,timeout=5,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if run.returncode==0 and run.stdout.strip():
+            data=json.loads(run.stdout)
+            out.update({'edition':data.get('edition'),'build':data.get('build'),'displayVersion':data.get('displayVersion'),'services':data.get('services') or [],'startupItems':data.get('startup') or [],'powerPlan':data.get('power'),'security':data.get('security') or {},'events':data.get('events') or [],'recentShutdowns':data.get('shutdowns') or []})
+    except Exception as exc: out['collectionError']=str(exc)[:180]
+    return out
+
+def _ai_runtime_stats():
+    out={'ollamaRunningModels':None,'ollamaApiLatencyMs':None,'agents':{},'tasks':{},'recentPlatformEvents':[]}
+    started=__import__('time').monotonic()
+    try:
+        req=urllib.request.Request(OLLAMA_URL+'/api/ps')
+        with urllib.request.urlopen(req,timeout=1.2) as response: data=json.loads(response.read())
+        out['ollamaRunningModels']=data.get('models',[])
+        out['ollamaApiLatencyMs']=round((__import__('time').monotonic()-started)*1000,1)
+    except Exception as exc: out['ollamaError']=str(exc)[:160]
+    for kind in ('agents','tasks'):
+        try:
+            items=domain_items(kind)
+            statuses={}
+            for item in items:
+                status=str(item.get('status','unknown')).lower(); statuses[status]=statuses.get(status,0)+1
+            out[kind]={'total':len(items),'statuses':statuses,'items':[{'id':x.get('id'),'name':x.get('name',x.get('title')),'status':x.get('status'),'model':x.get('model'),'provider':x.get('provider'),'updated_at':x.get('updated_at'),'created_at':x.get('created_at')} for x in items[:100]]}
+        except Exception as exc: out[kind]={'error':str(exc)[:120]}
+    try: out['recentPlatformEvents']=read_json(DATA/'events.json',[])[:30]
+    except Exception: pass
+    return out
+
+
 def system_stats():
     import platform
     import time
@@ -708,16 +898,21 @@ def system_stats():
     cpu = {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name(),
            'physicalCores': cpu_physical, 'logicalCores': cpu_logical, 'frequency': cpu_frequency_data,
            'processCount': process_count, 'threadCount': thread_count}
+    disks=_disk_stats()
+    processes=_process_stats()
     return {
         'ok': True,
         'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
-        'collection': {'source': 'local Windows host', 'optionalDependency': 'psutil enables detailed process, network and CPU frequency metrics',
-                       'refreshHintSeconds': 5},
-        'cpu': cpu, 'ram': memory, 'gpu': gpu, 'disks': _disk_stats(),
-        'system': {'os': os_data, 'uptimeSeconds': uptime_seconds, 'bootTime': boot_iso,
-                   'processCount': process_count, 'threadCount': thread_count},
-        'network': _network_stats(), 'processes': _process_stats(), 'battery': _battery_stats(),
-        'localAiServices': _local_services()
+        'collection': {'source':'local Windows host','optionalDependency':'psutil + optional NVIDIA nvidia-smi; unavailable hardware sensors are returned as null','refreshHintSeconds':5},
+        'cpu': cpu, 'cpuDetails': _extended_cpu(),
+        'ram': memory, 'memoryDetails': _extended_memory(),
+        'gpu': gpu, 'gpuDetails': _extended_gpu(),
+        'disks': disks, 'diskDetails': _extended_disks(),
+        'system': {'os':os_data,'uptimeSeconds':uptime_seconds,'bootTime':boot_iso,'processCount':process_count,'threadCount':thread_count},
+        'windows': _windows_details(),
+        'network': _network_stats(), 'networkDetails': _extended_network(),
+        'processes': processes, 'battery': _battery_stats(),
+        'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats()
     }
 
 
