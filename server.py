@@ -1410,7 +1410,7 @@ if __name__=='__main__':
     return {'type':'string'}
 
 def _telemetry_api_schema():
-    sample=_telemetry_snapshot()
+    sample=system_stats()
     return {'ok':True,'apiVersion':'1.0','service':'PQlocalAgentOSv3 system telemetry',
             'description':'Все собираемые параметры возвращаются как JSON. Недоступные значения обозначаются null или available=false; поля note/reason объясняют ограничения.',
             'endpoints':[
