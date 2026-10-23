@@ -179,12 +179,12 @@
 .sysmon-live{width:7px;height:7px;border-radius:50%;background:#59d9a4;box-shadow:0 0 10px #59d9a455;animation:sysmonPulse 1.6s infinite}
 @keyframes sysmonPulse{0%,100%{opacity:1}50%{opacity:.4}}
 .sysmon-updated{font-size:9px;color:var(--muted);text-align:right;margin-top:-4px}
-.sysmon-card{background:#d8d8e324;border:1px solid var(--line);border-radius:9px;padding:9px;cursor:pointer;transition:border-color .15s;display:grid;gap:6px}
+.sysmon-card{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px;cursor:pointer;transition:border-color .15s;display:grid;gap:6px}
 .sysmon-card:hover{border-color:var(--accent)}
 .sysmon-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;background:var(--accent-soft);color:var(--accent);flex:0 0 22px}
-.sysmon-icon.purple{background:#2a1f3d;color:#b79bff}
-.sysmon-icon.green{background:#152f24;color:#6ce0a8}
-.sysmon-icon.amber{background:#332711;color:#e6c07a}
+.sysmon-icon.purple{background:var(--sysmon-icon-purple-bg);color:var(--sysmon-icon-purple-fg)}
+.sysmon-icon.green{background:var(--sysmon-icon-green-bg);color:var(--sysmon-icon-green-fg)}
+.sysmon-icon.amber{background:var(--sysmon-icon-amber-bg);color:var(--sysmon-icon-amber-fg)}
 .sysmon-card-row{display:flex;align-items:center;gap:7px;min-width:0}
 .sysmon-card-row>div{min-width:0}
 .sysmon-card-row b{font-size:10px;display:block;line-height:1.2}
