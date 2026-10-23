@@ -944,7 +944,7 @@ def _telemetry_schema_node(value, path='
         'windows': _windows_details(),
         'network': _network_stats(), 'networkDetails': _extended_network(),
         'processes': processes, 'battery': _battery_stats(),
-        'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats()
+        'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats(), 'unavailableParameters': _telemetry_unavailable_fields()
     }
 
 
@@ -1419,6 +1419,74 @@ def _telemetry_api_schema():
                 {'method':'GET','path':'/api/system/stats/history?limit=60','description':'История снятых образцов телеметрии; до 360 последних образцов в памяти текущего процесса сервера.'}
             ],
             'refreshHintSeconds':5,'historyMaxSamples':360,'schema':_telemetry_schema_node(sample)}
+
+
+def _telemetry_unavailable_fields():
+    checked=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    def unavailable(source,reason):
+        return {'value':None,'available':False,'source':source,'checkedAt':checked,'reason':reason}
+    return {
+      'cpu':{
+        'temperatureC':unavailable('Windows hardware sensors','Нет универсального CPU temperature API в Windows; нужен поддерживаемый датчик/LibreHardwareMonitor.'),
+        'powerW':unavailable('Hardware power sensor','Мощность CPU не предоставляется стандартным счётчиком на этом оборудовании.'),
+        'perCoreFrequencyMHz':unavailable('CPU frequency counters','Частота каждого ядра не предоставлена текущим системным API/драйвером.'),
+        'processorQueueLength':unavailable('Windows Performance Counters','Очередь процессора не удалось получить надёжным системным счётчиком.'),
+        'baseFrequencyMHz':unavailable('CPU firmware/registry','Базовая частота не гарантируется для всех CPU; используйте cpuDetails.baseMHz если доступна.')
+      },
+      'ram':{
+        'hardwareReservedGB':unavailable('Windows memory counters','Windows API, используемый приложением, не возвращает отдельный объём аппаратно зарезервированной RAM.'),
+        'readBytesPerSec':unavailable('Windows memory performance counters','Скорость чтения RAM не является стандартным счётчиком psutil.'),
+        'writeBytesPerSec':unavailable('Windows memory performance counters','Скорость записи RAM не является стандартным счётчиком psutil.'),
+        'peakWorkingSetPerProcess':unavailable('Per-process memory counters','Пиковый working set зависит от доступных прав и Windows API; текущие рабочие наборы доступны в processes.')
+      },
+      'gpu':{
+        'engine3DPercent':unavailable('Windows GPU engine counters','Счётчики 3D движка не предоставлены драйвером в доступном формате.'),
+        'engineComputePercent':unavailable('Windows GPU engine counters','Счётчики Compute движка не предоставлены драйвером в доступном формате.'),
+        'engineCopyPercent':unavailable('Windows GPU engine counters','Счётчики Copy движка не предоставлены драйвером в доступном формате.'),
+        'engineVideoEncodePercent':unavailable('Windows GPU engine counters','Счётчики Video Encode движка не предоставлены драйвером в доступном формате.'),
+        'engineVideoDecodePercent':unavailable('Windows GPU engine counters','Счётчики Video Decode движка не предоставлены драйвером в доступном формате.'),
+        'fanRPM':unavailable('NVIDIA/board sensor','Доступен только процент вентилятора, если его возвращает nvidia-smi; RPM не предоставлены.'),
+        'totalSystemPowerW':unavailable('Hardware power meter','Общая мощность ноутбука требует аппаратного измерителя/производительского API.'),
+        'throttleReasonTemperature':unavailable('NVIDIA driver','Отдельная причина температурного троттлинга зависит от поддержки драйвером.'),
+        'throttleReasonPower':unavailable('NVIDIA driver','Отдельная причина ограничения мощности зависит от поддержки драйвером.')
+      },
+      'disks':{
+        'averageResponseMs':unavailable('Windows disk performance counters','Среднее время отклика не получено отдельным счётчиком.'),
+        'queueLength':unavailable('Windows disk performance counters','Очередь диска не получена отдельным счётчиком.'),
+        'activePercent':unavailable('Windows disk performance counters','Процент активности требует доступного Performance Counter.'),
+        'temperatureC':unavailable('SMART/vendor storage driver','Температура диска не доступна через стандартный API; зависит от контроллера/SMART.'),
+        'smartHealth':unavailable('SMART/vendor storage driver','SMART-состояние не доступно универсально через стандартный API Windows.'),
+        'powerOnHours':unavailable('SMART/vendor storage driver','Часы работы накопителя зависят от SMART/производителя.'),
+        'totalBytesWritten':unavailable('SMART/vendor storage driver','Объём записи накопителя зависит от SMART/производителя.')
+      },
+      'network':{
+        'packetLossPercent':unavailable('ICMP probe','Потери пакетов требуют регулярных проверок конкретного узла; однократный запрос не является надёжной статистикой.'),
+        'latencyMs':unavailable('ICMP probe','Постоянная задержка требует заданного целевого узла и периодических измерений.'),
+        'internetSpeedMbps':unavailable('Bandwidth test','Тест скорости интернета не выполняется автоматически, чтобы не создавать лишний трафик.'),
+        'perProcessTraffic':unavailable('ETW/WFP network collector','Трафик отдельных процессов требует ETW/WFP или отдельного сетевого коллектора.'),
+        'subnetAndGatewayByAdapter':unavailable('Windows IP configuration','Сведения шлюза/DNS могут отсутствовать для отключённых или виртуальных адаптеров.')
+      },
+      'windows':{
+        'windowsUpdateStatus':unavailable('Windows Update API','Состояние обновлений не подтверждено через Windows Update API.'),
+        'driverHealth':unavailable('Device Manager/PnP','Общее состояние драйверов не подтверждено отдельной проверкой устройств.'),
+        'recentApplicationCrashes':unavailable('Windows Application event log','Полный список сбоев приложений требует отдельного чтения журнала Application.'),
+        'shutdownReason':unavailable('Windows System event log','Причина доступна только если Windows записала соответствующее событие.'),
+        'defenderStatus':unavailable('Windows Defender cmdlets','Если PowerShell-команда недоступна или нет прав, состояние Defender не подтверждено.')
+      },
+      'processes':{
+        'networkBytesPerSec':unavailable('ETW/WFP network collector','psutil не предоставляет универсальный учёт сети по процессам в Windows.'),
+        'gpuPercentPerProcess':unavailable('Windows GPU engine/NVIDIA telemetry','GPU-процент процесса зависит от драйвера и счётчиков GPU Engine.'),
+        'gpuMemoryBytesPerProcess':unavailable('NVIDIA driver / Windows GPU counters','VRAM по процессам доступна не для всех типов процессов/драйверов.'),
+        'exitCode':unavailable('Process lifecycle monitor','Код завершения доступен только для процессов, завершение которых приложение отслеживало заранее.')
+      },
+      'aiRuntime':{
+        'tokensPerSecond':unavailable('Inference request instrumentation','Скорость токенов появится для запросов, выполняемых через инструментированный runtime платформы.'),
+        'inputOutputTokenCounts':unavailable('Inference request instrumentation','Количество токенов доступно только если API/модель возвращает usage или runtime его считает.'),
+        'modelLoadDurationMs':unavailable('Inference request instrumentation','Время загрузки модели требует измерения вокруг команды загрузки/первого запроса.'),
+        'perModelGpuMemory':unavailable('NVIDIA process mapping','Связать VRAM с конкретной моделью можно только при сопоставлении PID процесса и модели.'),
+        'taskRetryCounts':unavailable('Task execution history','Счётчик повторов зависит от сохранения попыток в исполнительном контуре задач.')
+      }
+    }
 
 def system_stats():
     import platform
