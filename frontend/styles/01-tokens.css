@@ -35,6 +35,9 @@
   --btn-soft-danger-bg:#fbe0e0;
   --btn-soft-danger-fg:#8d3333;
   --btn-soft-danger-border:#f3c1c1;
+  --btn-danger-bg:#351f2a;
+  --btn-danger-fg:#ffb8c6;
+  --btn-danger-border:#59303d;
   --sysmon-icon-purple-bg:#2a1f3d;
   --sysmon-icon-purple-fg:#b79bff;
   --sysmon-icon-green-bg:#152f24;
@@ -69,6 +72,9 @@
   --btn-soft-danger-bg:#fbe0e0;
   --btn-soft-danger-fg:#8d3333;
   --btn-soft-danger-border:#f3c1c1;
+  --btn-danger-bg:#fbe0e0;
+  --btn-danger-fg:#8d3333;
+  --btn-danger-border:#f3c1c1;
   --sysmon-icon-purple-bg:#ede4ff;
   --sysmon-icon-purple-fg:#6a4fb8;
   --sysmon-icon-green-bg:#e0f7ec;
