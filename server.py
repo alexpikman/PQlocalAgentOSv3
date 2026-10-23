@@ -909,9 +909,9 @@ def _telemetry_schema_node(value, path=''):
 def _telemetry_api_schema():
     sample=system_stats()
     return {'ok':True,'apiVersion':'1.0','service':'PQlocalAgentOSv3 system telemetry',
-            'description':'Все собираемые параметры возвращаются как JSON. Недоступные значения обозначаются null или available=false; поля note/reason объясняют ограничения.',
+            'description':'Возвращаются только CPU, RAM/файл подкачки, GPU, операционная система и среда Python. Недоступные значения обозначаются null или available=false.',
             'endpoints':[
-                {'method':'GET','path':'/api/system/stats','description':'Полный актуальный снимок телеметрии: оборудование, Windows, процессы, сеть, диски и AI runtime. Обновление по запросу.'},
+                {'method':'GET','path':'/api/system/stats','description':'Снимок только выбранных показателей: CPU, RAM/файл подкачки, GPU, ОС и среда Python. Снимок кэшируется на 5 секунд.'},
                 {'method':'GET','path':'/api/system/stats/schema','description':'JSON Schema-подобное описание структуры полей полного ответа.'},
                 {'method':'GET','path':'/api/system/stats/history?limit=60','description':'История снятых образцов телеметрии; до 360 последних образцов в памяти текущего процесса сервера.'}
             ],
