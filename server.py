@@ -661,6 +661,8 @@ def _local_services():
 
 # Extended telemetry helpers. Optional Windows counters return null when unavailable.
 _TELEMETRY_PREVIOUS = {}
+_FOLDER_SIZE_CACHE = {}
+_FOLDER_SIZE_CACHE_AT = 0
 def _rate_snapshot(key, current):
     import time
     now=time.monotonic(); old=_TELEMETRY_PREVIOUS.get(key); _TELEMETRY_PREVIOUS[key]=(now,current)
@@ -747,6 +749,7 @@ def _extended_gpu():
     return out
 
 def _extended_disks():
+    global _FOLDER_SIZE_CACHE_AT
     result={'io':None,'physicalDevices':[],'projectFolders':[],'note':'SMART, drive temperature and controller write endurance require vendor/driver support.'}
     try:
         import psutil
@@ -760,14 +763,22 @@ def _extended_disks():
     for name,path in [('Project root',ROOT),('Models (Ollama default)',Path.home()/'.ollama'/'models'),('LM Studio models',Path.home()/'.lmstudio'/'models'),('ComfyUI W drive',Path('W:/--Comfy')),('Hugging Face cache',Path.home()/'.cache'/'huggingface')]:
         try:
             if path.exists():
-                total=0; files=0
-                for base,dirs,names in os.walk(path):
-                    dirs[:]=[d for d in dirs if d not in {'.git','node_modules','.venv','venv','__pycache__'}]
-                    for fn in names:
-                        try: total+=os.path.getsize(os.path.join(base,fn)); files+=1
-                        except OSError: pass
-                    if files>200000: break
-                result['projectFolders'].append({'name':name,'path':str(path),'sizeBytes':total,'files':files})
+                cache_key=str(path)
+                cached=_FOLDER_SIZE_CACHE.get(cache_key)
+                if cached and time.monotonic()-_FOLDER_SIZE_CACHE_AT<300:
+                    total,files,partial=cached
+                else:
+                    total=0; files=0; partial=False
+                    for base,dirs,names in os.walk(path):
+                        dirs[:]=[d for d in dirs if d not in {'.git','node_modules','.venv','venv','__pycache__'}]
+                        for fn in names:
+                            try: total+=os.path.getsize(os.path.join(base,fn)); files+=1
+                            except OSError: pass
+                            if files>=5000: partial=True; break
+                        if partial: break
+                    _FOLDER_SIZE_CACHE[cache_key]=(total,files,partial)
+                    _FOLDER_SIZE_CACHE_AT=time.monotonic()
+                result['projectFolders'].append({'name':name,'path':str(path),'sizeBytes':total,'filesScanned':files,'partialScan':partial,'cacheSeconds':300})
             else: result['projectFolders'].append({'name':name,'path':str(path),'exists':False})
         except Exception: pass
     try:
@@ -780,6 +791,7 @@ def _extended_disks():
     return result
 
 def _extended_network():
+    import time
     out={'rates':[],'defaultGateways':[],'dnsServers':[],'internet':None,'tcpConnections':None,'serviceChecks':[],'note':'Per-process network accounting is not provided by psutil on Windows without ETW/WFP-based collection.'}
     try:
         import psutil
