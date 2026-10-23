@@ -1,36 +1,18 @@
 (function () {
   'use strict';
 
-  const state = {
-    models: [],
-    model: '',
-    messages: [],
-    sending: false
-  };
-
+  const state = { models: [], model: '', messages: [], sending: false };
   const elements = {};
 
   async function chatApi(path, options) {
     const settings = options || {};
     const response = await fetch('/api' + path, {
       ...settings,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(settings.headers || {})
-      }
+      headers: { 'Content-Type': 'application/json', ...(settings.headers || {}) }
     });
-
     let data;
-    try {
-      data = await response.json();
-    } catch (_) {
-      data = {};
-    }
-
-    if (!response.ok) {
-      throw new Error(data.error || data.message || 'Ошибка запроса к серверу.');
-    }
-
+    try { data = await response.json(); } catch (_) { data = {}; }
+    if (!response.ok) throw new Error(data.error || data.message || 'Ошибка запроса к серверу.');
     return data;
   }
 
@@ -41,23 +23,82 @@
     return element;
   }
 
+  function buildUI() {
+    const root = createElement('section', 'panel chat-layout');
+    root.id = 'chat-root';
+
+    const toolbar = createElement('div', 'chat-toolbar');
+    const modelInfo = createElement('div', 'chat-model-info');
+    const label = createElement('span', 'chat-model-label', 'Текущая модель');
+    const modelName = createElement('b', 'chat-model-name', 'Загрузка моделей…');
+    modelName.id = 'chat-model-name';
+    modelInfo.append(label, modelName);
+
+    const controls = createElement('div', 'chat-toolbar-controls');
+    const modelSelect = document.createElement('select');
+    modelSelect.id = 'chat-model';
+    modelSelect.setAttribute('aria-label', 'Выбрать модель');
+    const clearButton = createElement('button', 'btn secondary', 'Очистить чат');
+    clearButton.type = 'button';
+    clearButton.id = 'chat-clear';
+    controls.append(modelSelect, clearButton);
+    toolbar.append(modelInfo, controls);
+
+    const messages = createElement('div', 'chat-messages');
+    messages.id = 'chat-messages';
+    messages.setAttribute('role', 'log');
+    messages.setAttribute('aria-live', 'polite');
+    messages.setAttribute('aria-label', 'История сообщений');
+
+    const composer = createElement('div', 'chat-composer');
+    const typing = createElement('div', 'chat-typing');
+    typing.id = 'chat-typing';
+    typing.hidden = true;
+    typing.append(createElement('span'), createElement('span'), createElement('span'), createElement('b', '', 'Печатает…'));
+
+    const form = document.createElement('form');
+    form.id = 'chat-form';
+    form.className = 'chat-input-row';
+    const input = document.createElement('textarea');
+    input.id = 'chat-input';
+    input.rows = 2;
+    input.placeholder = 'Напишите сообщение…';
+    input.setAttribute('aria-label', 'Сообщение');
+    input.autocomplete = 'off';
+    const send = createElement('button', 'btn primary', 'Отправить');
+    send.type = 'submit';
+    send.id = 'chat-send';
+    form.append(input, send);
+    composer.append(typing, form);
+
+    root.append(toolbar, messages, composer);
+    document.getElementById('content').replaceChildren(root);
+
+    elements.root = root;
+    elements.modelName = modelName;
+    elements.model = modelSelect;
+    elements.messages = messages;
+    elements.form = form;
+    elements.input = input;
+    elements.send = send;
+    elements.clear = clearButton;
+    elements.typing = typing;
+  }
+
+  function clearNotice() {
+    elements.messages.querySelectorAll('.notice').forEach((notice) => notice.remove());
+  }
+
   function showNotice(message, type) {
     clearNotice();
     const notice = createElement('div', 'notice' + (type ? ' ' + type : ''), message);
     notice.setAttribute('role', 'alert');
     elements.messages.prepend(notice);
-  }
-
-  function clearNotice() {
-    elements.messages.querySelectorAll('.chat-notice').forEach((notice) => notice.remove());
-    elements.messages.querySelectorAll('.notice').forEach((notice) => notice.remove());
+    scrollToBottom();
   }
 
   function formatTime(date) {
-    return date.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
 
   function scrollToBottom() {
@@ -72,12 +113,12 @@
 
     const content = createElement('div', 'chat-msg-content');
     const meta = createElement('div', 'chat-msg-meta');
-    const name = createElement('span', 'chat-msg-name', isUser ? 'Вы' : 'Ассистент');
-    const time = createElement('time', 'chat-msg-time', message.time || formatTime(new Date()));
-    meta.append(name, time);
+    meta.append(
+      createElement('span', 'chat-msg-name', isUser ? 'Вы' : 'Ассистент'),
+      createElement('time', 'chat-msg-time', message.time || formatTime(new Date()))
+    );
 
-    const bubble = createElement('div', 'chat-msg-bubble');
-    bubble.textContent = message.content;
+    const bubble = createElement('div', 'chat-msg-bubble', message.content);
     content.append(meta, bubble);
     row.append(avatar, content);
     elements.messages.append(row);
@@ -87,8 +128,7 @@
   function renderHistory() {
     elements.messages.replaceChildren();
     if (!state.messages.length) {
-      const empty = createElement('div', 'empty chat-empty', 'Начните диалог: задайте вопрос локальной модели.');
-      elements.messages.append(empty);
+      elements.messages.append(createElement('div', 'empty chat-empty', 'Начните диалог: задайте вопрос локальной модели.'));
       return;
     }
     state.messages.forEach(renderMessage);
@@ -134,7 +174,6 @@
         ? data.models.filter((model) => model && typeof model.name === 'string' && model.name.trim())
         : [];
       renderModels();
-
       if (!state.models.length) {
         showNotice('Нет доступных моделей. Подключите Ollama в разделе «Модели».', 'warning');
       } else {
@@ -153,12 +192,7 @@
     if (!content || state.sending || !state.model) return;
 
     clearNotice();
-    const userMessage = {
-      role: 'user',
-      content,
-      time: formatTime(new Date())
-    };
-
+    const userMessage = { role: 'user', content, time: formatTime(new Date()) };
     state.messages.push(userMessage);
     elements.messages.querySelector('.chat-empty')?.remove();
     renderMessage(userMessage);
@@ -173,16 +207,11 @@
       }));
       const data = await chatApi('/chat', {
         method: 'POST',
-        body: JSON.stringify({
-          model: state.model,
-          messages
-        })
+        body: JSON.stringify({ model: state.model, messages })
       });
-
       if (typeof data.response !== 'string') {
         throw new Error('Сервер вернул пустой или некорректный ответ модели.');
       }
-
       const assistantMessage = {
         role: 'assistant',
         content: data.response,
@@ -218,46 +247,32 @@
       event.preventDefault();
       sendMessage();
     });
-
     elements.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         sendMessage();
       }
     });
-
     elements.input.addEventListener('input', resizeInput);
-
     elements.model.addEventListener('change', () => {
       state.model = elements.model.value;
       elements.modelName.textContent = state.model || 'Модель не выбрана';
       elements.send.disabled = state.sending || !state.model;
       elements.input.disabled = state.sending || !state.model;
     });
-
     elements.clear.addEventListener('click', clearChat);
   }
 
   function init() {
-    elements.root = document.getElementById('chat-root');
-    if (!elements.root || elements.root.dataset.initialized === 'true') return;
-    elements.root.dataset.initialized = 'true';
-
-    elements.modelName = document.getElementById('chat-model-name');
-    elements.model = document.getElementById('chat-model');
-    elements.messages = document.getElementById('chat-messages');
-    elements.form = document.getElementById('chat-form');
-    elements.input = document.getElementById('chat-input');
-    elements.send = document.getElementById('chat-send');
-    elements.clear = document.getElementById('chat-clear');
-    elements.typing = document.getElementById('chat-typing');
-
+    const content = document.getElementById('content');
+    if (!content || document.getElementById('chat-root')) return;
+    buildUI();
     bindEvents();
     renderHistory();
     loadModels();
   }
 
-  window.ChatPage = { init: init };
+  window.ChatPage = { init };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init, { once: true });
