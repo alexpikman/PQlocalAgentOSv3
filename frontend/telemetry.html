@@ -12,7 +12,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><div class="mark">PQ</div><div><div class="eyebrow">LOCAL SYSTEM INSPECTOR</div><div class="title">Полная телеметрия системы</div><div class="sub">Отдельная диагностическая страница · не включена в меню</div></div></div>
+  <div class="brand"><div class="mark">PQ</div><div><div class="eyebrow">LOCAL SYSTEM INSPECTOR</div><div class="title">Полная телеметрия системы</div><div class="sub">Отдельная диагностическая страница · расширенная телеметрия · не включена в меню</div></div></div>
   <div class="actions"><span id="status" class="status">Подключение…</span><button id="refresh">Обновить</button><button id="copy">Копировать JSON</button></div>
 </header>
 <main>
@@ -35,6 +35,31 @@ function pill(ok){return '<span class="pill '+(ok?'ok':'no')+'">'+(ok?'Дост�
 function objectCard(title,obj,cls=''){if(!obj||typeof obj!=='object')return card(title,metric('Статус','Нет данных'),cls);let rows='';for(const [key,value] of Object.entries(obj)){if(key==='available'||value===null||value===undefined)continue;if(typeof value==='object'){rows+=metric(key,Array.isArray(value)?'['+value.length+' элементов]':'Вложенные данные');continue}rows+=metric(key,value)}return card(title,(obj.available===undefined?'':pill(obj.available))+rows,cls)}
 function itemList(title,items,mapper,cls='full'){const content=Array.isArray(items)&&items.length?'<div class="items">'+items.map(mapper).join('')+'</div>':metric('Элементы','Нет данных');return card(title,content,cls)}
 function mini(label,value){return '<div class="mini"><span>'+esc(label)+'</span><b>'+esc(value===null||value===undefined?'—':value)+'</b></div>'}
+
+function deepBlock(label,value,depth=0){
+ if(value===null||value===undefined)return metric(label,'—');
+ if(Array.isArray(value)){
+  if(!value.length)return metric(label,'Нет данных');
+  const rows=value.slice(0,30).map((item,i)=>'<div class="item"><div class="item-head"><span>'+esc(label)+' · '+(i+1)+'</span></div>'+deepContents(item,depth+1)+'</div>').join('');
+  return '<details><summary>'+esc(label)+' ('+value.length+')</summary><div class="items" style="margin-top:10px">'+rows+'</div></details>';
+ }
+ if(typeof value==='object'){
+  return '<details><summary>'+esc(label)+'</summary><div style="padding:8px 0">'+deepContents(value,depth+1)+'</div></details>';
+ }
+ return metric(label,value);
+}
+function deepContents(obj,depth=0){
+ if(obj===null||obj===undefined)return metric('Значение','—');
+ if(typeof obj!=='object')return metric('Значение',obj);
+ let out='';
+ for(const [key,value] of Object.entries(obj)){
+  if(value===null||value===undefined||typeof value!=='object')out+=metric(key,value);
+  else if(depth<3)out+=deepBlock(key,value,depth);
+  else out+=metric(key,Array.isArray(value)?'Элементов: '+value.length:'Вложенные данные');
+ }
+ return out||metric('Данные','Нет данных');
+}
+
 function draw(data){
  const cpu=data.cpu||{},ram=data.ram||{},gpu=data.gpu||{},system=data.system||{},os=system.os||{},net=data.network||{};
  let cards='';
@@ -52,6 +77,13 @@ function draw(data){
  cards+=card('Батарея',pill(bat.available)+metric('Наличие',bat.present===true?'Есть':bat.present===false?'Нет':'Не определено')+metric('Заряд',fmt(bat.percent,'%'))+metric('Питание',bat.plugged===true?'От сети':bat.plugged===false?'От батареи':'—')+metric('Осталось секунд',bat.secondsLeft));
  cards+=card('Сетевой трафик · всего',pill(net.available)+metric('Отправлено',bytes(net.bytesSent))+metric('Получено',bytes(net.bytesReceived))+metric('Пакеты отправлены',fmt(net.packetsSent))+metric('Пакеты получены',fmt(net.packetsReceived)));
  cards+=card('Служебные сведения',metric('Время сбора',data.timestamp)+metric('Источник',data.collection&&data.collection.source)+metric('Доп. зависимость',data.collection&&data.collection.optionalDependency)+metric('Обновление',fmt(data.collection&&data.collection.refreshHintSeconds,' сек.')),'full');
+ cards+=card('CPU · ядра, процессы и системные счётчики',deepContents(data.cpuDetails||{}),'full');
+ cards+=card('RAM · кэш и память процессов',deepContents(data.memoryDetails||{}),'full');
+ cards+=card('GPU · адаптеры, движки и процессы',deepContents(data.gpuDetails||{}),'full');
+ cards+=card('Диски · скорость, IOPS, устройства и папки',deepContents(data.diskDetails||{}),'full');
+ cards+=card('Сеть · скорость, DNS, шлюз и доступность сервисов',deepContents(data.networkDetails||{}),'full');
+ cards+=card('Windows · службы, автозагрузка, защита и события',deepContents(data.windows||{}),'full');
+ cards+=card('AI runtime · загруженные модели, агенты, задачи и события',deepContents(data.aiRuntime||{}),'full');
  $('grid').innerHTML=cards;
  $('raw').textContent=JSON.stringify(data,null,2);
  $('updated').textContent=new Date().toLocaleTimeString('ru-RU');
