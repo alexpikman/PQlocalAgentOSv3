@@ -1,6 +1,6 @@
 /* Semantic design tokens and theme values. */
 :root{
-  color-scheme:dark;
+  color-scheme:light dark;
   --bg:#101018;
   --panel:#171720;
   --panel2:#1d1d29;
@@ -35,6 +35,12 @@
   --btn-soft-danger-bg:#fbe0e0;
   --btn-soft-danger-fg:#8d3333;
   --btn-soft-danger-border:#f3c1c1;
+  --sysmon-icon-purple-bg:#2b2448;
+  --sysmon-icon-purple-fg:#bdb4ff;
+  --sysmon-icon-green-bg:#173c31;
+  --sysmon-icon-green-fg:#80e0b5;
+  --sysmon-icon-amber-bg:#46361c;
+  --sysmon-icon-amber-fg:#f0c674;
 }
 
 :root[data-theme="light"]{
@@ -63,4 +69,10 @@
   --btn-soft-danger-bg:#fbe0e0;
   --btn-soft-danger-fg:#8d3333;
   --btn-soft-danger-border:#f3c1c1;
+  --sysmon-icon-purple-bg:#ede4ff;
+  --sysmon-icon-purple-fg:#6a4fb8;
+  --sysmon-icon-green-bg:#e0f7ec;
+  --sysmon-icon-green-fg:#2d7a4f;
+  --sysmon-icon-amber-bg:#fdf3d8;
+  --sysmon-icon-amber-fg:#8a6a1f;
 }
