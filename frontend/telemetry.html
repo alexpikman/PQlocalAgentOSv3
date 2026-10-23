@@ -39,7 +39,7 @@
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
-let lastData=null, busy=false;
+let lastData=null, busy=false, apiMode='stats';
 const esc=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const fmt=(value,unit='')=>value===null||value===undefined||value===''?'—':(typeof value==='number'?new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(value):String(value))+unit;
 const bytes=value=>{if(value===null||value===undefined||!Number.isFinite(Number(value)))return '—';let n=Number(value),units=['Б','КБ','МБ','ГБ','ТБ'],i=0;while(n>=1024&&i<units.length-1){n/=1024;i++}return fmt(n)+' '+units[i]};
@@ -122,7 +122,7 @@ function draw(data){
  cards+=card('Windows · службы, автозагрузка, защита и события',deepContents(data.windows||{}),'full');
  cards+=card('AI runtime · загруженные модели, агенты, задачи и события',deepContents(data.aiRuntime||{}),'full');
  $('grid').innerHTML=cards;
- $('raw').textContent=JSON.stringify(data,null,2);if($('apiRaw'))$('apiRaw').textContent=JSON.stringify(data,null,2);
+ $('raw').textContent=JSON.stringify(data,null,2);if($('apiRaw')&&apiMode==='stats')$('apiRaw').textContent=JSON.stringify(data,null,2);
  $('updated').textContent=new Date().toLocaleTimeString('ru-RU');
 }
 async function refresh(){if(busy)return;busy=true;try{const response=await fetch('/api/system/stats',{cache:'no-store'});let payload;try{payload=await response.json()}catch(_){payload=null}if(!response.ok)throw new Error(payload&&payload.error?payload.error+' ('+(payload.errorType||response.status)+')':'HTTP '+response.status);if(!payload||payload.ok===false)throw new Error(payload&&payload.error?payload.error:'Ответ API имеет неверный формат');lastData=payload;draw(lastData);$('status').className='status';$('status').textContent='API подключён'}catch(error){$('status').className='status error';$('status').textContent='Ошибка API: '+error.message;if(!lastData)$('grid').innerHTML=card('Нет данных',metric('Причина',error.message),'full')}finally{busy=false}}
@@ -134,14 +134,14 @@ function showView(api){
  $('viewToggle').textContent=api?'Визуальная телеметрия':'API интерфейс';
 }
 $('dashboardTab').addEventListener('click',()=>showView(false));
-$('apiTab').addEventListener('click',()=>showView(true));
+$('apiTab').addEventListener('click',()=>{apiMode='stats';if(lastData)$('apiRaw').textContent=JSON.stringify(lastData,null,2);showView(true)});
 $('viewToggle').addEventListener('click',()=>showView(!$('apiPanel').classList.contains('active')));
 $('refresh').addEventListener('click',refresh);
 $('copy').addEventListener('click',async()=>{if(!lastData)return;try{await navigator.clipboard.writeText(JSON.stringify(lastData,null,2));$('copy').textContent='Скопировано';setTimeout(()=>$('copy').textContent='Копировать JSON',1300)}catch(e){$('raw').parentElement.open=true}});
 $('copyApiUrl').addEventListener('click',async()=>{const url=new URL('/api/system/stats',location.href).href;try{await navigator.clipboard.writeText(url);$('copyApiUrl').textContent='Скопировано';setTimeout(()=>$('copyApiUrl').textContent='Копировать адрес',1300)}catch(e){$('apiBase').value=url;$('apiBase').select()}});
 $('downloadJson').addEventListener('click',()=>{if(!lastData)return;const blob=new Blob([JSON.stringify(lastData,null,2)],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='pqlocal-telemetry-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';a.click();URL.revokeObjectURL(url)});
-$('loadSchema').addEventListener('click',async()=>{showView(true);$('apiResponseTitle').textContent='Схема API';$('apiRaw').textContent='Загрузка схемы…';try{const r=await fetch('/api/system/stats/schema',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);$('apiRaw').textContent=JSON.stringify(d,null,2)}catch(e){$('apiRaw').textContent='Ошибка схемы API: '+e.message}});
-$('loadHistory').addEventListener('click',async()=>{showView(true);$('apiResponseTitle').textContent='История телеметрии';$('apiRaw').textContent='Загрузка истории…';try{const r=await fetch('/api/system/stats/history?limit=60',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);$('apiRaw').textContent=JSON.stringify(d,null,2)}catch(e){$('apiRaw').textContent='Ошибка истории API: '+e.message}});
+$('loadSchema').addEventListener('click',async()=>{apiMode='schema';showView(true);$('apiResponseTitle').textContent='Схема API';$('apiRaw').textContent='Загрузка схемы…';try{const r=await fetch('/api/system/stats/schema',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);$('apiRaw').textContent=JSON.stringify(d,null,2)}catch(e){$('apiRaw').textContent='Ошибка схемы API: '+e.message}});
+$('loadHistory').addEventListener('click',async()=>{apiMode='history';showView(true);$('apiResponseTitle').textContent='История телеметрии';$('apiRaw').textContent='Загрузка истории…';try{const r=await fetch('/api/system/stats/history?limit=60',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);$('apiRaw').textContent=JSON.stringify(d,null,2)}catch(e){$('apiRaw').textContent='Ошибка истории API: '+e.message}});
 refresh();setInterval(refresh,5000);
 })();
 </script>
