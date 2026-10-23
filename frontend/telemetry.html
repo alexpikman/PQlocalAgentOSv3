@@ -30,6 +30,23 @@
       <div class="api-endpoint"><b>Структура всех полей</b><code>GET /api/system/stats/schema</code><p>Описание структуры ответа, типы полей и схема вложенных объектов/массивов.</p><a href="/api/system/stats/schema" target="_blank" rel="noopener">Открыть схему</a></div>
       <div class="api-endpoint"><b>История показателей</b><code>GET /api/system/stats/history?limit=60</code><p>До 360 последних образцов, собранных текущим процессом сервера. История сбрасывается при перезапуске.</p><a href="/api/system/stats/history?limit=60" target="_blank" rel="noopener">Открыть историю</a></div>
     </div>
+    <div class="card full" style="margin-top:14px"><h2>Примеры подключения API</h2>
+      <p class="sub">Все примеры получают актуальный снимок. Адрес локальный и доступен в пределах запущенного сервера.</p>
+      <div class="api-endpoints">
+        <div class="api-endpoint"><b>JavaScript</b><pre>const response = await fetch('/api/system/stats');
+const telemetry = await response.json();
+console.log(telemetry.cpu, telemetry.gpu, telemetry.processes);</pre></div>
+        <div class="api-endpoint"><b>Python</b><pre>import urllib.request, json
+url = 'http://127.0.0.1:8765/api/system/stats'
+with urllib.request.urlopen(url, timeout=5) as r:
+    telemetry = json.load(r)
+print(telemetry['cpu'], telemetry['gpu'])</pre></div>
+        <div class="api-endpoint"><b>PowerShell</b><pre>$telemetry = Invoke-RestMethod 'http://127.0.0.1:8765/api/system/stats'
+$telemetry.cpu
+$telemetry.gpu
+$telemetry.unavailableParameters</pre></div>
+      </div>
+    </div>
     <div class="card full" style="margin-top:14px"><h2 id="apiResponseTitle">JSON-ответ API</h2><p class="sub">Это тот же объект, который передаётся потребителям API. Обновляется автоматически вместе с телеметрией.</p><pre id="apiRaw">Ожидание данных…</pre></div>
   </section>
   <details><summary>Полный ответ API — быстрый просмотр</summary><p class="sub">Полный JSON для интеграции с другими модулями и приложениями.</p><pre id="raw">Ожидание данных…</pre></details>
