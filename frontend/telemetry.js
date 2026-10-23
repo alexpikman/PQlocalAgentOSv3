@@ -80,15 +80,8 @@
       : 'Данные GPU недоступны (требуется nvidia-smi)';
     setBar('sysmon-gpu-bar', gpu.available ? gpu.percent : null);
 
-    const diskList = document.getElementById('sysmon-disks');
-    if (diskList) {
-      const disks = Array.isArray(stats.disks) ? stats.disks : [];
-      diskList.innerHTML = disks.length ? disks.map((disk) => {
-        const level = disk.percent >= 90 ? 'danger' : disk.percent >= 70 ? 'warn' : '';
-        const mount = String(disk.mount || 'Диск').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return '<div class="sysmon-disk"><div class="sysmon-disk-head"><b>' + mount + '</b><span>' + displayPercent(disk.percent) + '</span></div><div class="sysmon-track ' + level + '"><i style="width:' + Math.min(100, Math.max(0, Number(disk.percent) || 0)) + '%"></i></div><div class="sysmon-detail">' + displayGb(disk.used, 1) + ' ГБ занято · ' + displayGb(disk.free, 1) + ' ГБ свободно</div></div>';
-      }).join('') : '<div class="sysmon-detail">Данные о дисках недоступны</div>';
-    }
+    // Компактная панель показывает только CPU, RAM и GPU; сбор дисков отключён.
+
 
     renderState(stats, null);
     const modal = document.getElementById('sysmon-chart-modal');
