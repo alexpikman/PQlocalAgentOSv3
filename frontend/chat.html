@@ -66,20 +66,5 @@
   <div class="toast" id="toast" role="status"></div>
   <script src="/chat.js" defer></script>
   <script src="/telemetry.js" defer></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      var shell = document.querySelector('.app-shell');
-      var left = document.getElementById('toggle-left-panel');
-      var right = document.getElementById('toggle-right-panel');
-      if (left) left.addEventListener('click', function () {
-        shell.classList.toggle('left-hidden');
-        left.setAttribute('aria-expanded', String(!shell.classList.contains('left-hidden')));
-      });
-      if (right) right.addEventListener('click', function () {
-        shell.classList.toggle('right-hidden');
-        right.setAttribute('aria-expanded', String(!shell.classList.contains('right-hidden')));
-      });
-    });
-  </script>
 </body>
 </html>
