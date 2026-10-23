@@ -9,7 +9,7 @@
 
 .btn.secondary:hover,.btn.ghost:hover{background:var(--line)}
 
-.btn.danger{background:var(--btn-soft-danger-bg);border-color:var(--btn-soft-danger-border);color:var(--btn-soft-danger-fg)}
+.btn.danger{background:var(--btn-danger-bg);border-color:var(--btn-danger-border);color:var(--btn-danger-fg)}
 
 .icon-btn{display:grid;place-items:center;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:8px;width:34px;height:34px;cursor:pointer}
 
