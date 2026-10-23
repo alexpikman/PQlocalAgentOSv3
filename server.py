@@ -597,24 +597,22 @@ def _network_stats():
 def _process_stats():
     try:
         import psutil
-        processes = []
-        for proc in psutil.process_iter(['pid', 'name', 'username', 'status', 'memory_info', 'cpu_percent', 'create_time']):
+        processes=[]
+        for proc in psutil.process_iter(['pid','ppid','name','exe','username','status','memory_info','memory_full_info','cpu_percent','create_time','num_threads','nice','io_counters']):
             try:
-                info = proc.info
-                mem = info.get('memory_info')
-                processes.append({'pid': info.get('pid'), 'name': info.get('name'), 'user': info.get('username'),
-                                  'status': info.get('status'), 'memoryBytes': getattr(mem, 'rss', None),
-                                  'cpuPercent': info.get('cpu_percent'),
-                                  'startedAt': datetime.datetime.fromtimestamp(info['create_time']).astimezone().isoformat(timespec='seconds')
-                                  if info.get('create_time') else None})
-            except (OSError, PermissionError):
+                info=proc.info; mem=info.get('memory_info'); full=info.get('memory_full_info'); io=info.get('io_counters')
+                started=info.get('create_time')
+                processes.append({'pid':info.get('pid'),'parentPid':info.get('ppid'),'name':info.get('name'),'path':info.get('exe'),'user':info.get('username'),'status':info.get('status'),'memoryBytes':getattr(mem,'rss',None),'virtualMemoryBytes':getattr(mem,'vms',None),'privateMemoryBytes':getattr(full,'private',None),'peakWorkingSetBytes':getattr(full,'peak_wset',None),'cpuPercent':info.get('cpu_percent'),'startedAt':datetime.datetime.fromtimestamp(started).astimezone().isoformat(timespec='seconds') if started else None,'threads':info.get('num_threads'),'priority':info.get('nice'),'diskReadBytes':getattr(io,'read_bytes',None),'diskWriteBytes':getattr(io,'write_bytes',None),'diskReadOps':getattr(io,'read_count',None),'diskWriteOps':getattr(io,'write_count',None),'diskReadBytesPerSec':_rate_snapshot('proc-read-'+str(info.get('pid')),getattr(io,'read_bytes',0)) if io else None,'diskWriteBytesPerSec':_rate_snapshot('proc-write-'+str(info.get('pid')),getattr(io,'write_bytes',0)) if io else None,'gpuPercent':None,'gpuMemoryBytes':None,'exitCode':None})
+            except (OSError,PermissionError,psutil.Error):
                 continue
-        processes.sort(key=lambda p: p.get('memoryBytes') or 0, reverse=True)
-        return {'available': True, 'count': len(processes), 'topMemory': processes[:30],
-                'note': 'Top 30 processes by resident memory; access depends on Windows permissions.'}
-    except Exception:
-        return {'available': False, 'count': None, 'topMemory': [],
-                'reason': 'Install psutil to expose detailed process metrics.'}
+        by_memory=sorted(processes,key=lambda p:p.get('memoryBytes') or 0,reverse=True)
+        by_cpu=sorted(processes,key=lambda p:p.get('cpuPercent') or 0,reverse=True)
+        by_read=sorted(processes,key=lambda p:p.get('diskReadBytesPerSec') or 0,reverse=True)
+        by_write=sorted(processes,key=lambda p:p.get('diskWriteBytesPerSec') or 0,reverse=True)
+        return {'available':True,'count':len(processes),'items':processes,'topMemory':by_memory[:30],'topCpu':by_cpu[:30],'topDiskRead':by_read[:20],'topDiskWrite':by_write[:20],
+                'note':'Per-process network and GPU counters are driver/ETW dependent and are null unless a supported collector is installed.'}
+    except Exception as exc:
+        return {'available':False,'count':None,'items':[],'topMemory':[],'topCpu':[],'topDiskRead':[],'topDiskWrite':[],'reason':'Detailed process metrics unavailable: '+str(exc)[:160]}
 
 def _battery_stats():
     try:
@@ -749,6 +747,7 @@ def _extended_gpu():
     return out
 
 def _extended_disks():
+    import time
     global _FOLDER_SIZE_CACHE_AT
     result={'io':None,'physicalDevices':[],'projectFolders':[],'note':'SMART, drive temperature and controller write endurance require vendor/driver support.'}
     try:
