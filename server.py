@@ -1435,14 +1435,7 @@ class Handler(SimpleHTTPRequestHandler):
             write_json(PAGES/'index.json',[p for p in current if p['id']!=pid]); log_event('page.delete',item['title']); return self.send_json(200, {'ok':True})
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_GET_HEAD(self): pass
-if __name__=='__main__':
-    settings(); pages(); log_event('server.start',f'http://{HOST}:{PORT}')
-    server=ThreadingHTTPServer((HOST,PORT),Handler)
-    print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
-    try: server.serve_forever()
-    except KeyboardInterrupt: print('\nServer stopped')
-    finally: server.server_close()
-):
+def _telemetry_schema_node(value, path=''):
     if isinstance(value,dict):
         return {'type':'object','properties':{str(k):_telemetry_schema_node(v,path+'.'+str(k)) for k,v in value.items()}}
     if isinstance(value,list):
