@@ -661,6 +661,8 @@ def _local_services():
 _TELEMETRY_PREVIOUS = {}
 _FOLDER_SIZE_CACHE = {}
 _FOLDER_SIZE_CACHE_AT = 0
+_WINDOWS_CACHE = None
+_WINDOWS_CACHE_AT = 0
 def _rate_snapshot(key, current):
     import time
     now=time.monotonic(); old=_TELEMETRY_PREVIOUS.get(key); _TELEMETRY_PREVIOUS[key]=(now,current)
@@ -826,6 +828,10 @@ def _extended_network():
     return out
 
 def _windows_details():
+    import time
+    global _WINDOWS_CACHE, _WINDOWS_CACHE_AT
+    if _WINDOWS_CACHE is not None and time.monotonic()-_WINDOWS_CACHE_AT<60:
+        return _WINDOWS_CACHE
     out={'timezone':datetime.datetime.now().astimezone().tzname(),'localTime':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'startupItems':[],'services':[],'events':[],'security':{},'recentShutdowns':[],'powerPlan':None,'drivers':[],'note':'Windows event logs, Defender and driver inventory may require additional permissions.'}
     try:
         import subprocess
@@ -835,6 +841,8 @@ def _windows_details():
             data=json.loads(run.stdout)
             out.update({'edition':data.get('edition'),'build':data.get('build'),'displayVersion':data.get('displayVersion'),'services':data.get('services') or [],'startupItems':data.get('startup') or [],'powerPlan':data.get('power'),'security':data.get('security') or {},'events':data.get('events') or [],'recentShutdowns':data.get('shutdowns') or []})
     except Exception as exc: out['collectionError']=str(exc)[:180]
+    _WINDOWS_CACHE=out
+    _WINDOWS_CACHE_AT=time.monotonic()
     return out
 
 def _ai_runtime_stats():
