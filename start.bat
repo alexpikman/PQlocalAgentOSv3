@@ -23,7 +23,7 @@ for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":%PQ_PORT% .*LISTENING
   taskkill /F /PID %%P >nul 2>&1
 )
 timeout /t 1 /nobreak >nul
-echo Starting server from: %CD%server.py
+echo Starting server from: %CD%\server.py
 echo Open http://127.0.0.1:%PQ_PORT%
 python "%CD%\server.py"
 echo.
