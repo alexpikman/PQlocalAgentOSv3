@@ -1534,7 +1534,6 @@ def _telemetry_unavailable_fields():
         'perTaskProviderAndModel':unavailable('Task execution history','Провайдер и модель на каждую задачу должны фиксироваться при запуске.'),
         'perTaskTokenUsage':unavailable('Inference request instrumentation','Токены на задачу требуют учёта usage со стороны модели или runtime.')
       }
-      }
     }
 
 def system_stats():
