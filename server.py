@@ -880,7 +880,7 @@ def _telemetry_snapshot():
     del _TELEMETRY_HISTORY[:-360]
     return data
 
-def _telemetry_schema_node(value, path='
+def system_stats():
     import platform
     import time
     cpu_percent = _cpu_usage()
@@ -945,6 +945,51 @@ def _telemetry_schema_node(value, path='
         'network': _network_stats(), 'networkDetails': _extended_network(),
         'processes': processes, 'battery': _battery_stats(),
         'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats(), 'unavailableParameters': _telemetry_unavailable_fields()
+    }
+
+
+
+def _telemetry_schema_node(value, path=''):
+    """Describe the shape and current availability of a telemetry value."""
+    if isinstance(value, dict):
+        return {
+            'type': 'object',
+            'path': path or '/',
+            'fields': {
+                str(key): _telemetry_schema_node(item, f"{path}/{key}")
+                for key, item in value.items()
+            }
+        }
+    if isinstance(value, list):
+        sample = value[0] if value else None
+        return {
+            'type': 'array',
+            'path': path or '/',
+            'item': _telemetry_schema_node(sample, path + '/*') if sample is not None else {
+                'type': 'unknown', 'available': False, 'value': None
+            }
+        }
+    if value is None:
+        return {'type': 'null', 'path': path, 'available': False, 'value': None}
+    if isinstance(value, bool):
+        kind = 'boolean'
+    elif isinstance(value, (int, float)):
+        kind = 'number'
+    else:
+        kind = 'string'
+    return {'type': kind, 'path': path, 'available': True, 'value': value}
+
+
+def _telemetry_api_schema():
+    """Return telemetry field metadata and sample values."""
+    sample = system_stats()
+    return {
+        'ok': True,
+        'schemaVersion': 1,
+        'source': 'GET /api/system/stats',
+        'description': 'Структура показателей телеметрии; недоступные аппаратные датчики возвращаются как null.',
+        'fields': _telemetry_schema_node(sample).get('fields', {}),
+        'unavailableParameters': _telemetry_unavailable_fields()
     }
 
 
