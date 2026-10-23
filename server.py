@@ -663,6 +663,7 @@ _FOLDER_SIZE_CACHE = {}
 _FOLDER_SIZE_CACHE_AT = 0
 _WINDOWS_CACHE = None
 _WINDOWS_CACHE_AT = 0
+_TELEMETRY_HISTORY = []
 def _rate_snapshot(key, current):
     import time
     now=time.monotonic(); old=_TELEMETRY_PREVIOUS.get(key); _TELEMETRY_PREVIOUS[key]=(now,current)
@@ -866,6 +867,558 @@ def _ai_runtime_stats():
     except Exception: pass
     return out
 
+
+
+def _telemetry_snapshot():
+    data=system_stats()
+    sample={'timestamp':data.get('timestamp'),'cpuPercent':(data.get('cpu') or {}).get('percent'),
+            'ramPercent':(data.get('ram') or {}).get('percent'),'gpuPercent':(data.get('gpu') or {}).get('percent'),
+            'gpuTemperatureC':(data.get('gpu') or {}).get('temperatureC'),
+            'ramUsedGB':(data.get('ram') or {}).get('used'),
+            'diskPercent':{str(d.get('mount')):d.get('percent') for d in data.get('disks',[]) if isinstance(d,dict)}}
+    _TELEMETRY_HISTORY.append(sample)
+    del _TELEMETRY_HISTORY[:-360]
+    return data
+
+def _telemetry_schema_node(value, path='
+    import platform
+    import time
+    cpu_percent = _cpu_usage()
+    memory = _memory_stats()
+    gpu = _gpu_stats()
+    try:
+        import psutil
+        cpu_frequency = psutil.cpu_freq()
+        boot_timestamp = psutil.boot_time()
+        cpu_physical = psutil.cpu_count(logical=False)
+        cpu_logical = psutil.cpu_count(logical=True)
+        cpu_frequency_data = {'currentMHz': round(cpu_frequency.current, 1) if cpu_frequency else None,
+                              'minMHz': round(cpu_frequency.min, 1) if cpu_frequency else None,
+                              'maxMHz': round(cpu_frequency.max, 1) if cpu_frequency else None}
+        uptime_seconds = max(0, int(time.time() - boot_timestamp))
+        process_count = len(psutil.pids())
+        thread_count = None
+        try:
+            thread_count = sum(p.info.get('num_threads') or 0 for p in psutil.process_iter(['num_threads']))
+        except Exception:
+            pass
+    except Exception:
+        cpu_physical = None
+        cpu_logical = os.cpu_count()
+        cpu_frequency_data = {'currentMHz': None, 'minMHz': None, 'maxMHz': None}
+        boot_timestamp = None
+        uptime_seconds = None
+        process_count = None
+        thread_count = None
+    os_data = {'system': platform.system(), 'release': platform.release(), 'version': platform.version(),
+               'edition': platform.win32_edition() if hasattr(platform, 'win32_edition') else None,
+               'architecture': platform.architecture()[0], 'machine': platform.machine(),
+               'hostname': platform.node(), 'pythonVersion': platform.python_version(),
+               'pythonImplementation': platform.python_implementation()}
+    try:
+        import ctypes
+        uptime_ms = ctypes.windll.kernel32.GetTickCount64()
+        if uptime_ms is not None:
+            uptime_seconds = int(uptime_ms / 1000)
+    except Exception:
+        pass
+    try:
+        boot_time = datetime.datetime.now().astimezone() - datetime.timedelta(seconds=uptime_seconds) if uptime_seconds is not None else None
+        boot_iso = boot_time.isoformat(timespec='seconds') if boot_time else None
+    except Exception:
+        boot_iso = None
+    cpu = {'available': cpu_percent is not None, 'percent': cpu_percent, 'name': _cpu_name(),
+           'physicalCores': cpu_physical, 'logicalCores': cpu_logical, 'frequency': cpu_frequency_data,
+           'processCount': process_count, 'threadCount': thread_count}
+    disks=_disk_stats()
+    processes=_process_stats()
+    return {
+        'ok': True,
+        'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+        'collection': {'source':'local Windows host','optionalDependency':'psutil + optional NVIDIA nvidia-smi; unavailable hardware sensors are returned as null','refreshHintSeconds':5},
+        'cpu': cpu, 'cpuDetails': _extended_cpu(),
+        'ram': memory, 'memoryDetails': _extended_memory(),
+        'gpu': gpu, 'gpuDetails': _extended_gpu(),
+        'disks': disks, 'diskDetails': _extended_disks(),
+        'system': {'os':os_data,'uptimeSeconds':uptime_seconds,'bootTime':boot_iso,'processCount':process_count,'threadCount':thread_count},
+        'windows': _windows_details(),
+        'network': _network_stats(), 'networkDetails': _extended_network(),
+        'processes': processes, 'battery': _battery_stats(),
+        'localAiServices': _local_services(), 'aiRuntime': _ai_runtime_stats()
+    }
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
+    def log_message(self, fmt, *args): pass
+    def send_json(self, code, data):
+        raw=json.dumps(data,ensure_ascii=False).encode(); self.send_response(code); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.send_header('Cache-Control','no-store'); self.end_headers(); self.wfile.write(raw)
+    def body(self):
+        n=int(self.headers.get('Content-Length','0'))
+        if n>1_000_000: raise ValueError('Payload too large')
+        return json.loads(self.rfile.read(n).decode('utf-8') or '{}')
+    def do_GET(self):
+        path=urlparse(self.path).path
+        if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+        if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
+        if path=='/api/system/stats':
+            try:
+                return self.send_json(200, _telemetry_snapshot())
+            except Exception as exc:
+                return self.send_json(500, {'ok':False,'error':str(exc),'errorType':type(exc).__name__})
+        if path=='/api/system/stats/schema':
+            try:
+                return self.send_json(200, _telemetry_api_schema())
+            except Exception as exc:
+                return self.send_json(500, {'ok':False,'error':str(exc),'errorType':type(exc).__name__})
+        if path=='/api/system/stats/history':
+            try:
+                query=parse_qs(urlparse(self.path).query)
+                limit=max(1,min(360,int(query.get('limit',['60'])[0])))
+                return self.send_json(200, {'ok':True,'count':min(limit,len(_TELEMETRY_HISTORY)),'maxSamples':360,'samples':_TELEMETRY_HISTORY[-limit:]})
+            except (ValueError,TypeError) as exc:
+                return self.send_json(400, {'ok':False,'error':'Параметр limit должен быть числом от 1 до 360','detail':str(exc)[:120]})
+        if path=='/api/providers':
+            items=provider_items(); models=[]
+            for p in items:
+                found=[]; connected=False
+                if p.get('kind')=='local' or p.get('api_key'):
+                    try: found=provider_models(p); connected=True
+                    except Exception: pass
+                p['connected']=connected; p['model_count']=len(found); p['api_key_set']=bool(p.get('api_key'))
+                for m in found: models.append({'provider':p.get('name',''),'provider_id':p.get('id'),'kind':p.get('kind','local'),'name':m.get('name',''),'tokens':'—','size':m.get('size',0),'connected':connected})
+            return self.send_json(200, {'providers':[public_provider(p) for p in items], 'models':models})
+        if path=='/api/models':
+            try:
+                payload=ollama_request('/api/tags',timeout=4)
+                models=[{'name':m.get('name',''),'size':m.get('size',0),'modified_at':m.get('modified_at','')} for m in payload.get('models',[]) if isinstance(m,dict) and m.get('name')]
+                return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':True,'models':models,'error':None})
+            except Exception as e: return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':False,'models':[],'error':'Не удалось подключиться к Ollama: '+str(e)[:180]})
+        if path in ('/api/agents','/api/projects','/api/tasks'):
+            kind=path.split('/')[-1]; items=domain_items(kind)
+            return self.send_json(200, {'items':items,'total':len(items)})
+        if path=='/api/settings': return self.send_json(200, settings())
+        if path=='/api/pages': return self.send_json(200, pages())
+        if path=='/api/log': return self.send_json(200, read_json(DATA/'events.json', []))
+        if path=='/api/modules':
+            return self.send_json(200, read_json(DATA/'modules.json', {'modules':[], 'connections':[]}))
+        if path=='/api/modules/runs':
+            return self.send_json(200, read_json(DATA/'module-runs.json', []))
+        if path=='/api/permissions': return self.send_json(200, permission_settings())
+        if path=='/api/github/search':
+            q=parse_qs(urlparse(self.path).query).get('q',[''])[0].strip()[:120]
+            if len(q)<2: return self.send_json(400, {'error':'Введите минимум 2 символа для поиска'})
+            try:
+                result=github_public_request('/search/repositories?q='+urllib.parse.quote(q+' in:name,description,readme')+'&sort=stars&order=desc&per_page=12')
+                items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
+                return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github': return self.send_json(200, {'repository':REPO,'configured':bool(os.environ.get('GITHUB_TOKEN')),'connected':False,'message':'Токен не задан' if not os.environ.get('GITHUB_TOKEN') else 'Токен задан; нажмите «Проверить подключение»'})
+        if path=='/api/github/check':
+            token=os.environ.get('GITHUB_TOKEN')
+            if not token: return self.send_json(200, {'ok':False,'message':'Задайте GITHUB_TOKEN в окружении перед запуском сервера.'})
+            req=urllib.request.Request('https://api.github.com/repos/'+REPO,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
+            try:
+                with urllib.request.urlopen(req,timeout=8) as res: data=json.loads(res.read())
+                log_event('github.check',REPO); return self.send_json(200, {'ok':True,'message':'Подключение успешно','repository':data.get('full_name',REPO),'private':data.get('private'),'default_branch':data.get('default_branch')})
+            except urllib.error.HTTPError as e: return self.send_json(200, {'ok':False,'message':'GitHub вернул HTTP '+str(e.code)+'. Проверьте токен и доступ к репозиторию.'})
+            except Exception as e: return self.send_json(200, {'ok':False,'message':'Не удалось подключиться к GitHub: '+str(e)[:180]})
+        if path=='/api/github/files':
+            try:
+                repo=github_request('/repos/'+REPO)
+                tree=github_request('/repos/'+REPO+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
+                files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
+                return self.send_json(200, {'repository':REPO,'branch':repo.get('default_branch','main'),'files':files})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github/file':
+            file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
+            if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
+            try:
+                f=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
+                import base64
+                content=base64.b64decode(f.get('content','')).decode('utf-8',errors='replace')
+                return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        return super().do_GET()
+    def do_POST(self):
+        path=urlparse(self.path).path
+        try: data=self.body()
+        except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/providers':
+            pid=str(data.get('id','')).strip(); name=str(data.get('name','')).strip()[:80]; kind=str(data.get('kind','local')).strip(); base=str(data.get('base_url','')).strip().rstrip('/'); fmt=str(data.get('format','openai')).strip()
+            if not name or not base or kind not in ('local','cloud'): return self.send_json(400, {'error':'Укажите имя, тип и адрес провайдера'})
+            if not re.match(r'^https?://',base): return self.send_json(400, {'error':'Адрес должен начинаться с http:// или https://'})
+            if fmt not in ('ollama','openai','anthropic','gemini'): return self.send_json(400, {'error':'Неподдерживаемый формат доступа'})
+            items=read_json(PROVIDER_FILE,[]); items=items if isinstance(items,list) else []; existing=next((x for x in items if x.get('id')==pid),None) if pid else None
+            if not pid: pid=re.sub(r'[^a-z0-9-]+','-',name.lower()).strip('-')[:48]+'-'+uuid.uuid4().hex[:6]
+            builtin=pid in {'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
+            old=existing or next((x for x in provider_items() if x.get('id')==pid),{})
+            if existing is None and builtin and pid not in {x.get('id') for x in provider_items()}: return self.send_json(400, {'error':'Неизвестный встроенный провайдер'})
+            item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(old or {}).get('created_at') or (datetime.datetime.now().astimezone().isoformat(timespec='seconds') if not existing and not builtin else '')}
+            key=str(data.get('api_key','')).strip()
+            if key: item['api_key']=key
+            elif old.get('api_key'): item['api_key']=old['api_key']
+            if existing: items=[item if x.get('id')==pid else x for x in items]
+            else: items.append(item)
+            write_json(PROVIDER_FILE,items); log_event('provider.save',name)
+            return self.send_json(200, {'ok':True,'provider':public_provider(item)})
+        if path=='/api/providers/assign':
+            aid=str(data.get('agent_id','')); pid=str(data.get('provider_id','')); model=str(data.get('model','')).strip()[:200]
+            agents=domain_items('agents'); agent=next((x for x in agents if x.get('id')==aid),None); prov=next((x for x in provider_items() if x.get('id')==pid),None)
+            if not agent or not prov or not model: return self.send_json(400, {'error':'Не удалось определить агента, провайдера или модель'})
+            agent['model']=model; agent['provider_id']=pid; save_domain('agents',agents); log_event('model.assign',agent.get('name','')+' ← '+prov.get('name','')+'/'+model)
+            return self.send_json(200, {'ok':True})
+        if path=='/api/models/test':
+            model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Проверь, что модель отвечает.')).strip()[:4000]
+            if not model: return self.send_json(400, {'error':'Выберите модель'})
+            try:
+                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':256}},timeout=180)
+                log_event('model.test',model)
+                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':result.get('response',''),'done':bool(result.get('done',False))})
+            except Exception as e: return self.send_json(502, {'error':'Ошибка запроса к локальной модели: '+str(e)[:200]})
+        if path in ('/api/agents','/api/projects','/api/tasks'):
+            kind=path.split('/')[-1]; items=domain_items(kind); field='title' if kind=='tasks' else 'name'
+            name=str(data.get(field,'')).strip()[:160]
+            if not name: return self.send_json(400, {'error':'Укажите название'})
+            item={'id':uuid.uuid4().hex[:12],field:name,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if kind=='agents':
+                role=str(data.get('role','ANALYST')).upper()
+                if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
+                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
+            elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
+            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'team_mode':bool(data.get('team_mode',False)),'status':'pending','result':'','error':'','team_result':[]})
+            items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
+            return self.send_json(201,item)
+        if path.startswith('/api/tasks/') and (path.endswith('/run') or path.endswith('/run-team')):
+            task_id=path.split('/')[-2]; items=domain_items('tasks'); item=next((x for x in items if x.get('id')==task_id),None)
+            if not item: return self.send_json(404, {'error':'Задача не найдена'})
+            agents=domain_items('agents')
+            agent=next((x for x in agents if x.get('id')==item.get('agent_id')),None)
+            model=item.get('model') or (agent or {}).get('model') or str(data.get('model','')).strip()
+            if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи или назначьте модель агенту'})
+            project=next((x for x in domain_items('projects') if x.get('id')==item.get('project_id')),None)
+            item['status']='running'; item['model']=model; item['started_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items)
+            role=(agent or {}).get('role','ANALYST')
+            system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
+            if agent:
+                system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
+                memory=str(agent.get('memory','')).strip()
+                if memory: system_prompt += '\n\nДолговременная память агента (пользовательские заметки):\n'+memory[:8000]
+            prompt='Выполни задачу. Отвечай на русском языке. Разделяй подтверждённые факты и предположения. Если не хватает данных, явно укажи ограничения.\n\nНазвание задачи: '+item.get('title','')+'\n\nОписание и инструкции:\n'+item.get('description','')
+            if project:
+                prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
+            try:
+                team_mode=path.endswith('/run-team') or bool(item.get('team_mode'))
+                result=run_agent_team(model,item,agent,project) if team_mode else run_agent_task(model,item,agent,project)
+                item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['team_result']=result.get('team_result',[]); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                if agent:
+                    agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
+                log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
+            except Exception as e:
+                item['status']='failed'; item['error']=str(e)[:300]; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items); log_event('task.failed',item.get('title',''))
+                return self.send_json(502, {'error':'Не удалось выполнить задачу через Ollama: '+str(e)[:180],'task':item})
+        if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
+            parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
+            if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
+            items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
+            if not item: return self.send_json(404, {'error':'Запись не найдена'})
+            if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
+            for key in allowed:
+                if key not in data: continue
+                if kind=='agents' and key=='permissions':
+                    if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
+                    item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
+                elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
+                elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
+                else: item[key]=str(data[key]).strip()[:5000]
+            save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
+            return self.send_json(200,item)
+        if path=='/api/permissions':
+            current=permission_settings()
+            if 'local_files' in data:
+                if not isinstance(data.get('local_files'),bool): return self.send_json(400, {'error':'local_files должен быть логическим значением'})
+                current['local_files']=data['local_files']
+            if current['local_files'] and not current['roots']: return self.send_json(409, {'error':'Сначала добавьте хотя бы одну разрешённую папку.'})
+            write_json(DATA/'permissions.json',current); log_event('permissions.global',str(current['local_files']))
+            return self.send_json(200,current)
+        if path=='/api/permissions/roots':
+            current=permission_settings(); raw_path=str(data.get('path','')).strip().strip('"'); action=str(data.get('action','add'))
+            if action=='remove':
+                current['roots']=[p for p in current['roots'] if p!=raw_path]
+                if not current['roots']: current['local_files']=False
+                write_json(DATA/'permissions.json',current); log_event('permissions.root.remove',raw_path); return self.send_json(200,current)
+            if action!='add' or not raw_path: return self.send_json(400, {'error':'Укажите путь к папке'})
+            try:
+                from agent_tools import _contains_reparse
+                raw_root=Path(raw_path).expanduser()
+                if _contains_reparse(raw_root): return self.send_json(400, {'error':'Символические ссылки и junction нельзя добавлять в разрешённые папки.'})
+                root=raw_root.resolve(strict=True)
+                if not root.is_dir() or root.parent==root or _contains_reparse(root): return self.send_json(400, {'error':'Нужно выбрать существующую папку, не корень диска и без символических ссылок.'})
+            except Exception as e: return self.send_json(400, {'error':'Папка недоступна: '+str(e)[:160]})
+            normalized=str(root)
+            if normalized not in current['roots']: current['roots'].append(normalized)
+            write_json(DATA/'permissions.json',current); log_event('permissions.root.add',normalized)
+            return self.send_json(200,current)
+        if path=='/api/settings':
+            allowed={'appearance','header','navigation'}; current=settings()
+            for k,v in data.items():
+                if k in allowed and isinstance(v,dict):
+                    if k=='navigation' and isinstance(v.get('menu'),list):
+                        menu=[]
+                        for item in v['menu'][:100]:
+                            if not isinstance(item,dict): continue
+                            pid=str(item.get('page_id','')).strip()[:80]
+                            if pid and not re.fullmatch(r'[a-zA-Z0-9_-]+',pid): continue
+                            menu.append({'id':str(item.get('id') or uuid.uuid4().hex[:10])[:40],'label':str(item.get('label') or '')[:100],'icon':str(item.get('icon') or 'file-text')[:40],'page_id':pid,'visible':item.get('visible') is not False,'parent_id':str(item.get('parent_id') or '')[:40]})
+                        v={**v,'menu':menu}
+                    current[k]={**current.get(k,{}),**v}
+            write_json(DATA/'settings.json',current); log_event('settings.save','Настройки интерфейса сохранены'); return self.send_json(200,current)
+        if path=='/api/pages':
+            title=str(data.get('title','')).strip()[:100]; desc=str(data.get('description','')).strip()[:300]; content=str(data.get('content','')).strip()[:20000]
+            if not title: return self.send_json(400, {'error':'Укажите название страницы'})
+            slug=re.sub(r'[^a-z0-9-]+','-',str(data.get('id') or title.lower())).strip('-')[:60] or uuid.uuid4().hex[:8]
+            current=pages()
+            if any(p['id']==slug for p in current): return self.send_json(409, {'error':'Страница с таким идентификатором уже существует'})
+            item={'id':slug,'title':title,'description':desc,'icon':'file-text','content':content,'system':False,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}; current.append(item); write_json(PAGES/'index.json',current); log_event('page.create',title); return self.send_json(201,item)
+        if path.startswith('/api/pages/') and path.endswith('/update'):
+            pid=path.split('/')[-2]; current=pages(); item=next((p for p in current if p['id']==pid),None)
+            if not item: return self.send_json(404, {'error':'Страница не найдена'})
+            for k,limit in [('title',100),('description',300),('content',20000)]:
+                if k in data: item[k]=str(data[k]).strip()[:limit]
+            write_json(PAGES/'index.json',current); log_event('page.update',item['title']); return self.send_json(200,item)
+        if path=='/api/modules':
+            raw_id=str(data.get('id','')).strip().lower()
+            module_id=re.sub(r'[^a-z0-9._-]+','-',raw_id).strip('-')[:80]
+            name=str(data.get('name','')).strip()[:120]
+            description=str(data.get('description','')).strip()[:1000]
+            version=str(data.get('version','1.0.0')).strip()[:40] or '1.0.0'
+            if not module_id or not re.fullmatch(r'[a-z0-9][a-z0-9._-]{1,79}',module_id): return self.send_json(400, {'error':'ID: 2–80 символов, латиница, цифры, точка, дефис или подчёркивание'})
+            if not name: return self.send_json(400, {'error':'Укажите название модуля'})
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'Модуль с таким ID уже существует'})
+            inputs=[{'name':x.strip(),'type':'text','required':False} for x in str(data.get('inputs','')).split(',') if x.strip()][:30]
+            outputs=[{'name':x.strip(),'type':'text'} for x in str(data.get('outputs','')).split(',') if x.strip()][:30]
+            if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',p['name']) for p in inputs+outputs): return self.send_json(400, {'error':'Имена портов должны содержать латинские буквы, цифры, точку, дефис или подчёркивание.'})
+            if len({p['name'] for p in inputs})!=len(inputs) or len({p['name'] for p in outputs})!=len(outputs): return self.send_json(400, {'error':'Имена портов должны быть уникальными.'})
+            runtime_kind=str(data.get('runtime_kind','input')).strip()
+            if runtime_kind not in MODULE_RUNTIME_KINDS: return self.send_json(400, {'error':'Неизвестный встроенный тип модуля'})
+            runtime={'kind':runtime_kind}
+            if runtime_kind=='template': runtime['template']=str(data.get('template') or '{input}')[:12000]
+            if runtime_kind=='transform':
+                operation=str(data.get('operation','strip'))
+                if operation not in {'uppercase','lowercase','strip','json_parse','json_pretty'}: return self.send_json(400, {'error':'Неизвестная операция преобразования'})
+                runtime['operation']=operation
+            if runtime_kind=='ollama':
+                runtime['system_prompt']=str(data.get('system_prompt',''))[:4000]
+                runtime['model']=str(data.get('model',''))[:160]
+                try: max_tokens=int(data.get('max_tokens',1024))
+                except (TypeError,ValueError): max_tokens=1024
+                runtime['max_tokens']=min(max(max_tokens,64),4096)
+            manifest={'id':module_id,'name':name,'version':version,'description':description,'api_version':'1.0','inputs':inputs,'outputs':outputs,'runtime':runtime,'capabilities':[],'permissions':[],'dependencies':[]}
+            folder=MODULES/module_id
+            if folder.exists(): return self.send_json(409, {'error':'Папка модуля уже существует; проверьте каталог modules/'})
+            folder.mkdir(parents=True,exist_ok=False)
+            write_json(folder/'module.json',manifest)
+            (folder/'README.md').write_text('# '+name+'\n\n'+description+'\n\nЛокальный каркас модуля PQlocalAgentOSv3. Добавьте реализацию после определения входов, выходов и разрешений. Код не запускается автоматически.\n',encoding='utf-8')
+            module={'id':module_id,'name':name,'description':description,'version':version,'source':'local','url':'','stars':0,'license':'Не указана','status':'draft','trusted':False,'manifest':manifest,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Локальный каркас создан. Реализация не запускается автоматически.'}
+            current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); log_event('module.create',module_id)
+            return self.send_json(201, {'ok':True,'module':module})
+        if path=='/api/modules/update':
+            module_id=str(data.get('id','')).strip()
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            module=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not module: return self.send_json(404, {'error':'Модуль не найден'})
+            if module.get('source')!='local': return self.send_json(403, {'error':'Редактирование runtime доступно для локальных модулей. Для GitHub-модулей нужен проверенный адаптер.'})
+            runtime_kind=str(data.get('runtime_kind','')).strip()
+            if runtime_kind not in MODULE_RUNTIME_KINDS: return self.send_json(400, {'error':'Неизвестный встроенный тип модуля'})
+            def parse_port_names(raw):
+                names=[x.strip() for x in str(raw or '').split(',') if x.strip()][:30]
+                if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,79}',name) for name in names): raise ValueError('Имена портов должны содержать латинские буквы, цифры, точку, дефис или подчёркивание.')
+                if len(names)!=len(set(names)): raise ValueError('Имена портов должны быть уникальными.')
+                return names
+            try:
+                input_names=parse_port_names(data.get('inputs','')); output_names=parse_port_names(data.get('outputs',''))
+            except ValueError as e: return self.send_json(400, {'error':str(e)})
+            manifest=module_runtime_manifest(module).copy()
+            runtime={'kind':runtime_kind}
+            if runtime_kind=='template': runtime['template']=str(data.get('template','{input}'))[:12000]
+            if runtime_kind=='transform':
+                operation=str(data.get('operation','strip'))
+                if operation not in {'uppercase','lowercase','strip','json_parse','json_pretty'}: return self.send_json(400, {'error':'Неизвестная операция преобразования'})
+                runtime['operation']=operation
+            if runtime_kind=='ollama':
+                runtime['system_prompt']=str(data.get('system_prompt',''))[:4000]
+                runtime['model']=str(data.get('model',''))[:160]
+                try: max_tokens=int(data.get('max_tokens',1024))
+                except (TypeError,ValueError): max_tokens=1024
+                runtime['max_tokens']=min(max(max_tokens,64),4096)
+            manifest.update({'inputs':[{'name':name,'type':'text','required':False} for name in input_names],'outputs':[{'name':name,'type':'text'} for name in output_names],'runtime':runtime})
+            manifest['version']=str(data.get('version',module.get('version','1.0.0')).strip()[:40] or '1.0.0')
+            manifest['description']=str(data.get('description',module.get('description','')).strip()[:1000])
+            folder=MODULES/module_id
+            if not folder.is_dir() or folder.resolve().parent!=MODULES.resolve(): return self.send_json(400, {'error':'Не найдена локальная папка модуля'})
+            previous_manifest=module_runtime_manifest(module)
+            module.update({'version':manifest['version'],'description':manifest['description'],'manifest':manifest,'status':'draft','note':'Настройки runtime сохранены. Модуль выполняется только через встроенный безопасный исполнитель.'})
+            try: current['connections']=validate_module_connections(current,current.get('connections',[]))
+            except ValueError as e:
+                module['manifest']=previous_manifest; module['version']=previous_manifest.get('version',module.get('version','1.0.0')); module['description']=previous_manifest.get('description',module.get('description',''))
+                return self.send_json(400, {'error':'Изменение портов нарушит существующие связи: '+str(e)})
+            write_json(folder/'module.json',manifest)
+            write_json(DATA/'modules.json',current); log_event('module.update',module_id)
+            return self.send_json(200, {'ok':True,'module':module})
+        if path=='/api/modules/install':
+            full_name=str(data.get('full_name','')).strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',full_name): return self.send_json(400, {'error':'Некорректное имя репозитория'})
+            try:
+                repo_data=github_public_request('/repos/'+full_name)
+                if repo_data.get('archived') or repo_data.get('disabled'): return self.send_json(400, {'error':'Архивный или отключённый репозиторий нельзя добавить'})
+                current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+                if any(m.get('source')==full_name for m in current.get('modules',[])): return self.send_json(409, {'error':'Этот репозиторий уже добавлен'})
+                module_id=re.sub(r'[^a-z0-9_-]+','-',full_name.split('/')[-1].lower()).strip('-')[:60] or uuid.uuid4().hex[:8]
+                if len(module_id)<2: module_id='m-'+module_id
+                if any(m.get('id')==module_id for m in current.get('modules',[])): return self.send_json(409, {'error':'ID модуля уже занят другим источником'})
+                manifest={'id':module_id,'name':full_name.split('/')[-1],'version':'0.0.0','description':repo_data.get('description') or 'Модуль из GitHub','author':full_name.split('/')[0],'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','repository':repo_data.get('html_url',''),'api_version':'1.0','inputs':[],'outputs':[],'capabilities':[],'permissions':[],'dependencies':[]}
+                module={'id':module_id,'name':full_name.split('/')[-1],'description':repo_data.get('description') or 'Модуль из GitHub','created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'source':full_name,'url':repo_data.get('html_url',''),'stars':repo_data.get('stargazers_count',0),'license':(repo_data.get('license') or {}).get('spdx_id') or 'Не указана','default_branch':repo_data.get('default_branch','main'),'status':'registered','trusted':False,'manifest':manifest,'installed_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'note':'Добавлен в каталог. Код не скачан и не запускается автоматически.'}
+                current.setdefault('modules',[]).append(module); current.setdefault('connections',[]); write_json(DATA/'modules.json',current); write_json(MODULES/module['id']/'module.json',manifest); log_event('module.register',full_name)
+                return self.send_json(201, {'ok':True,'module':module,'message':'Репозиторий добавлен в каталог. Перед установкой кода проверьте содержимое, лицензию и зависимости.'})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/modules/download':
+            module_id=str(data.get('id','')).strip()
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            module=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not module: return self.send_json(404, {'error':'Модуль не найден'})
+            source=str(module.get('source',''))
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',source): return self.send_json(400, {'error':'Для этого локального модуля исходники из GitHub недоступны'})
+            request_github=github_request if os.environ.get('GITHUB_TOKEN') else github_public_request
+            try:
+                branch=str(module.get('default_branch') or 'main')
+                tree=request_github('/repos/'+source+'/git/trees/'+urllib.parse.quote(branch,safe='')+'?recursive=1')
+                if tree.get('truncated'): return self.send_json(400, {'error':'Репозиторий слишком велик для безопасной загрузки одним запросом'})
+                allowed={'.py','.js','.mjs','.cjs','.ts','.json','.md','.txt','.yaml','.yml','.toml','.html','.css','.sh','.bat','.ps1','.go','.rs','.java','.c','.h','.cpp','.xml','.svg'}
+                blocked={'node_modules','.git','.github','.venv','venv','dist','build','vendor','__pycache__'}
+                candidates=[]
+                for entry in tree.get('tree',[]):
+                    rel=entry.get('path',''); parts=Path(rel).parts
+                    if entry.get('type')!='blob' or not rel or len(parts)>8 or any(part in blocked for part in parts) or '..' in parts or rel.startswith('/') or any(re.search(r'[<>:"|?*]',part) or part.split('.')[0].upper() in {'CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9'} for part in parts): continue
+                    if Path(rel).suffix.lower() not in allowed or int(entry.get('size',0))>200000: continue
+                    candidates.append(entry)
+                if len(candidates)>100: return self.send_json(400, {'error':'В репозитории больше 100 текстовых файлов-кандидатов; загрузка ограничена'})
+                if sum(int(entry.get('size',0)) for entry in candidates)>2_000_000: return self.send_json(400, {'error':'Исходники превышают лимит загрузки 2 МБ'})
+                folder=(MODULES/module_id/'source').resolve(); folder.mkdir(parents=True,exist_ok=True)
+                total=0; saved=[]
+                for entry in candidates:
+                    blob=request_github('/repos/'+source+'/git/blobs/'+entry['sha'])
+                    if blob.get('encoding')!='base64': continue
+                    raw=base64.b64decode(blob.get('content',''))
+                    total+=len(raw)
+                    if total>2_000_000: return self.send_json(400, {'error':'Исходники превышают лимит загрузки 2 МБ'})
+                    try: text_content=raw.decode('utf-8')
+                    except UnicodeDecodeError: continue
+                    target=(folder/entry['path']).resolve()
+                    if not target.is_relative_to(folder): continue
+                    target.parent.mkdir(parents=True,exist_ok=True); target.write_text(text_content,encoding='utf-8'); saved.append(entry['path'])
+                module['status']='downloaded_unverified'; module['downloaded_files']=len(saved); module['note']='Исходники скачаны в папку source и не запускаются. Проверьте код, зависимости, лицензию и разрешения.'
+                write_json(DATA/'modules.json',current); log_event('module.download',source)
+                return self.send_json(200, {'ok':True,'module':module,'files':saved,'total_bytes':total,'message':'Исходники загружены и оставлены неисполняемыми для проверки.'})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/modules/run':
+            try: return self.send_json(200, execute_module_graph(data))
+            except ValueError as e:
+                failed={'ok':False,'start_id':str(data.get('start_id','')),'error':str(e),'finished_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                runs=read_json(DATA/'module-runs.json',[]); runs=runs if isinstance(runs,list) else []; write_json(DATA/'module-runs.json',([failed]+runs)[:100]); log_event('module.graph.failed',str(e))
+                return self.send_json(400, {'error':str(e),'run':failed})
+            except Exception as e:
+                failed={'ok':False,'start_id':str(data.get('start_id','')),'error':str(e)[:240],'finished_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                runs=read_json(DATA/'module-runs.json',[]); runs=runs if isinstance(runs,list) else []; write_json(DATA/'module-runs.json',([failed]+runs)[:100]); log_event('module.graph.failed',str(e))
+                return self.send_json(502, {'error':'Ошибка выполнения схемы: '+str(e)[:240],'run':failed})
+        if path=='/api/modules/connections':
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            try: current['connections']=validate_module_connections(current,data.get('connections',[]))
+            except ValueError as e: return self.send_json(400, {'error':str(e)})
+            write_json(DATA/'modules.json',current); log_event('module.connections','Связи модулей обновлены'); return self.send_json(200,current)
+        if path=='/api/github/file':
+            file_path=str(data.get('path','')).strip(); content=str(data.get('content','')); message=str(data.get('message','').strip() or 'Update '+file_path)[:200]
+            if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
+            if len(content)>800000: return self.send_json(400, {'error':'Файл слишком большой (максимум 800 КБ)'})
+            try:
+                existing=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
+                expected_sha=str(data.get('sha',''))
+                if expected_sha and expected_sha != existing.get('sha'): return self.send_json(409, {'error':'Файл изменился в GitHub после загрузки. Перечитайте его перед сохранением.'})
+                import base64
+                branch=github_request('/repos/'+REPO).get('default_branch','main')
+                result=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'),'PUT',{'message':message,'content':base64.b64encode(content.encode()).decode(),'sha':existing['sha'],'branch':branch})
+                log_event('github.file.save',file_path)
+                return self.send_json(200, {'ok':True,'path':file_path,'commit':result.get('commit',{}).get('html_url'),'message':'Изменения сохранены в GitHub'})
+            except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github/check':
+            self.path='/api/github/check'; return self.do_GET()
+        return self.send_json(404, {'error':'API endpoint not found'})
+    def do_DELETE(self):
+        path=urlparse(self.path).path
+        if path.startswith('/api/providers/'):
+            pid=urllib.parse.unquote(path.split('/')[-1]); protected={'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
+            if pid in protected: return self.send_json(403, {'error':'Встроенный провайдер не удаляется; его можно настроить'})
+            items=read_json(PROVIDER_FILE,[]); items=items if isinstance(items,list) else []; updated=[x for x in items if x.get('id')!=pid]
+            if len(updated)==len(items): return self.send_json(404, {'error':'Провайдер не найден'})
+            write_json(PROVIDER_FILE,updated); log_event('provider.delete',pid); return self.send_json(200, {'ok':True})
+
+        if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
+            parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
+            if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
+            items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
+            if not item: return self.send_json(404, {'error':'Запись не найдена'})
+            if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системного агента нельзя удалить'})
+            items.remove(item); save_domain(kind,items); log_event(kind[:-1]+'.delete',item.get('name',item.get('title','')))
+            return self.send_json(200, {'ok':True})
+        if path.startswith('/api/modules/'):
+            module_id=path.split('/')[-1]
+            if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{1,79}',module_id): return self.send_json(400, {'error':'Некорректный ID модуля'})
+            current=read_json(DATA/'modules.json', {'modules':[], 'connections':[]})
+            item=next((m for m in current.get('modules',[]) if m.get('id')==module_id),None)
+            if not item: return self.send_json(404, {'error':'Модуль не найден'})
+            current['modules']=[m for m in current.get('modules',[]) if m.get('id')!=module_id]
+            current['connections']=[x for x in current.get('connections',[]) if x.get('from')!=module_id and x.get('to')!=module_id]
+            write_json(DATA/'modules.json',current)
+            folder=MODULES/module_id
+            if folder.exists() and folder.resolve().parent==MODULES.resolve(): shutil.rmtree(folder)
+            log_event('module.remove',module_id); return self.send_json(200, {'ok':True})
+        if path.startswith('/api/pages/'):
+            pid=path.split('/')[-1]; current=pages(); item=next((p for p in current if p['id']==pid),None)
+            if not item: return self.send_json(404, {'error':'Страница не найдена'})
+            if item.get('system'): return self.send_json(403, {'error':'Системные страницы нельзя удалить'})
+            write_json(PAGES/'index.json',[p for p in current if p['id']!=pid]); log_event('page.delete',item['title']); return self.send_json(200, {'ok':True})
+        return self.send_json(404, {'error':'API endpoint not found'})
+    def do_GET_HEAD(self): pass
+if __name__=='__main__':
+    settings(); pages(); log_event('server.start',f'http://{HOST}:{PORT}')
+    server=ThreadingHTTPServer((HOST,PORT),Handler)
+    print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
+    try: server.serve_forever()
+    except KeyboardInterrupt: print('\nServer stopped')
+    finally: server.server_close()
+):
+    if isinstance(value,dict):
+        return {'type':'object','properties':{str(k):_telemetry_schema_node(v,path+'.'+str(k)) for k,v in value.items()}}
+    if isinstance(value,list):
+        item_schema=_telemetry_schema_node(value[0],path+'[]') if value else {'type':'unknown','description':'Пустой массив; схема элемента определяется по фактическому ответу API.'}
+        return {'type':'array','items':item_schema}
+    if value is None: return {'type':'null','nullable':True}
+    if isinstance(value,bool): return {'type':'boolean'}
+    if isinstance(value,int): return {'type':'integer'}
+    if isinstance(value,float): return {'type':'number'}
+    return {'type':'string'}
+
+def _telemetry_api_schema():
+    sample=_telemetry_snapshot()
+    return {'ok':True,'apiVersion':'1.0','service':'PQlocalAgentOSv3 system telemetry',
+            'description':'Все собираемые параметры возвращаются как JSON. Недоступные значения обозначаются null или available=false; поля note/reason объясняют ограничения.',
+            'endpoints':[
+                {'method':'GET','path':'/api/system/stats','description':'Полный актуальный снимок телеметрии: оборудование, Windows, процессы, сеть, диски и AI runtime. Обновление по запросу.'},
+                {'method':'GET','path':'/api/system/stats/schema','description':'JSON Schema-подобное описание структуры полей полного ответа.'},
+                {'method':'GET','path':'/api/system/stats/history?limit=60','description':'История снятых образцов телеметрии; до 360 последних образцов в памяти текущего процесса сервера.'}
+            ],
+            'refreshHintSeconds':5,'historyMaxSamples':360,'schema':_telemetry_schema_node(sample)}
 
 def system_stats():
     import platform
