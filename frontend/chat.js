@@ -142,10 +142,10 @@
     const workspace = createElement('section', 'sidebar-chat-workspace');
     workspace.id = 'chat-workspace';
     const actions = createElement('div', 'sidebar-chat-actions');
-    const newChat = createElement('button', '', '＋ Новый чат');
+    const newChat = createElement('button', 'btn primary', '＋ Новый чат');
     newChat.type = 'button';
     newChat.addEventListener('click', () => createConversation(state.activeProjectId));
-    const newProject = createElement('button', '', '＋ Проект');
+    const newProject = createElement('button', 'btn secondary', '＋ Проект');
     newProject.type = 'button';
     newProject.addEventListener('click', createProject);
     actions.append(newChat, newProject);
