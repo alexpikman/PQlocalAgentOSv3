@@ -9,9 +9,9 @@
 
 .brand-copy b{display:block;font-size:14px;letter-spacing:-.4px}
 
-.brand-copy small{display:block;color:var(--muted);font-size:9px;letter-spacing:1.2px;margin-top:4px}
+.brand-copy small{display:block;color:var(--muted);font-size:11px;letter-spacing:1.2px;margin-top:4px}
 
-.nav-caption{font-size:9px;font-weight:700;letter-spacing:1.2px;color:var(--muted);padding:0 10px 12px}
+.nav-caption{font-size:11px;font-weight:700;letter-spacing:1.2px;color:var(--muted);padding:0 10px 12px}
 
 .primary-nav{display:grid;gap:4px}
 
@@ -71,7 +71,7 @@ body:not(.chat-page) .topbar{display:none}
 
 .content{padding:var(--pad);flex:1;min-height:0;max-height:none;max-width:1500px;width:100%;overflow-y:auto;scrollbar-gutter:stable;margin:0 auto;box-sizing:border-box}
 
-.footer{display:flex;justify-content:space-between;padding:16px var(--pad);border-top:1px solid var(--line);font-size:9px;color:var(--muted);letter-spacing:.7px}
+.footer{display:flex;justify-content:space-between;padding:16px var(--pad);border-top:1px solid var(--line);font-size:11px;color:var(--muted);letter-spacing:.7px}
 
 .footer i{width:5px;height:5px;margin:0 5px}
 
