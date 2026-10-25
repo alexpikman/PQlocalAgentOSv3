@@ -181,19 +181,11 @@
 .sysmon-updated{font-size:9px;color:var(--muted);text-align:right;margin-top:-4px}
 .sysmon-card{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px;cursor:pointer;transition:border-color .15s;display:grid;gap:6px}
 .sysmon-card:hover{border-color:var(--accent)}
-.sysmon-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;background:var(--accent-soft);color:var(--accent);flex:0 0 22px;position:relative}
+.sysmon-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;flex:0 0 22px;background:var(--accent-soft);color:var(--accent)}
 .sysmon-icon.purple{background:var(--sysmon-icon-purple-bg);color:var(--sysmon-icon-purple-fg)}
 .sysmon-icon.green{background:var(--sysmon-icon-green-bg);color:var(--sysmon-icon-green-fg)}
 .sysmon-icon.amber{background:var(--sysmon-icon-amber-bg);color:var(--sysmon-icon-amber-fg)}
-.sysmon-icon img{display:block;width:18px;height:18px;opacity:0}
-.sysmon-icon:has(> img[src="/icons/cpu.svg"])::after,
-.sysmon-icon:has(> img[src="/icons/ram.svg"])::after,
-.sysmon-icon:has(> img[src="/icons/video.svg"])::after,
-.sysmon-icon:has(> img[src="/icons/hdd.svg"])::after{content:"";position:absolute;inset:2px;background:currentColor;mask-position:center;mask-repeat:no-repeat;mask-size:18px 18px;-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:18px 18px;pointer-events:none}
-.sysmon-icon:has(> img[src="/icons/cpu.svg"])::after{mask-image:url("/icons/cpu.svg");-webkit-mask-image:url("/icons/cpu.svg")}
-.sysmon-icon:has(> img[src="/icons/ram.svg"])::after{mask-image:url("/icons/ram.svg");-webkit-mask-image:url("/icons/ram.svg")}
-.sysmon-icon:has(> img[src="/icons/video.svg"])::after{mask-image:url("/icons/video.svg");-webkit-mask-image:url("/icons/video.svg")}
-.sysmon-icon:has(> img[src="/icons/hdd.svg"])::after{mask-image:url("/icons/hdd.svg");-webkit-mask-image:url("/icons/hdd.svg")}
+.sysmon-icon svg{display:block;width:18px;height:18px;flex:0 0 18px}
 .sysmon-card-row{display:flex;align-items:center;gap:7px;min-width:0}
 .sysmon-card-row>div{min-width:0}
 .sysmon-card-row b{font-size:10px;display:block;line-height:1.2}
