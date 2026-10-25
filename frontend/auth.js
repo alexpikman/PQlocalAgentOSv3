@@ -28,7 +28,10 @@
     .pq-auth-panel b{font-size:12px}.pq-auth-panel button{text-align:left;font-size:12px}
     .pq-auth-notice{margin-top:12px;color:var(--muted,#68758a);font-size:11px;line-height:1.5}
     .pq-auth-toast{position:fixed;z-index:100001;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border:1px solid var(--line,#dce3ed);border-radius:10px;background:var(--panel,#fff);color:var(--text,#182235);box-shadow:0 8px 30px #0002;font-size:12px}
-    @media(max-width:640px){.pq-auth-card{padding:20px}.pq-auth-panel{position:fixed;left:12px;bottom:12px}}
+    @media(max-width:720px){
+      .pq-auth-widget{position:fixed!important;top:12px!important;right:12px!important;z-index:9999!important;margin:0!important;background:var(--panel);padding:6px;border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 16px #0003;width:auto!important}
+    }
+    @media(max-width:640px){.pq-auth-card{padding:20px}.pq-auth-panel{position:fixed;left:12px;right:12px;top:auto;bottom:calc(42px + 12px);width:auto;box-sizing:border-box}}
   `;
   document.head.appendChild(style);
 
@@ -60,15 +63,31 @@
       <b id="pq-auth-user-label">Вход выполнен</b>
       <button type="button" id="pq-auth-change">Сменить пароль</button>
     </div>`;
-  const rightSidebar = document.querySelector('.right-sidebar');
-  if (rightSidebar) {
-    rightSidebar.insertBefore(widget, rightSidebar.firstChild);
-  } else {
-    widget.style.position = 'fixed';
-    widget.style.top = '12px';
-    widget.style.right = '12px';
-    widget.style.zIndex = '9999';
-    document.body.appendChild(widget);
+  const authViewport = window.matchMedia('(max-width:720px)');
+  function placeAuthWidget() {
+    const isMobile = authViewport.matches;
+    const rightSidebar = document.querySelector('.right-sidebar');
+    if (isMobile || !rightSidebar) {
+      if (widget.parentElement !== document.body) document.body.appendChild(widget);
+      widget.style.position = 'fixed';
+      widget.style.top = '12px';
+      widget.style.right = '12px';
+      widget.style.zIndex = '9999';
+      widget.style.width = 'auto';
+    } else {
+      if (widget.parentElement !== rightSidebar) rightSidebar.insertBefore(widget, rightSidebar.firstChild);
+      widget.style.position = '';
+      widget.style.top = '';
+      widget.style.right = '';
+      widget.style.zIndex = '';
+      widget.style.width = '';
+    }
+  }
+  placeAuthWidget();
+  if (typeof authViewport.addEventListener === 'function') {
+    authViewport.addEventListener('change', placeAuthWidget);
+  } else if (typeof authViewport.addListener === 'function') {
+    authViewport.addListener(placeAuthWidget);
   }
 
   const passwordOverlay = document.createElement('div');
