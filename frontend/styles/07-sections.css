@@ -225,3 +225,11 @@ td{border-color:var(--line)}
 /* Chat-only agent settings dialog. */
 .chat-agent-settings{width:30px;height:30px;min-width:30px;padding:6px;display:inline-grid;place-items:center}.chat-agent-settings svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.chat-agent-modal[hidden]{display:none!important}.chat-agent-modal{position:fixed;inset:0;z-index:1250;display:grid;place-items:center;padding:20px}.chat-agent-modal .modal-card{width:min(680px,100%);max-height:min(88vh,860px);overflow:auto}.chat-agent-modal .modal-card-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.chat-agent-modal .field{min-width:0}.chat-agent-modal textarea{width:100%;min-width:0;box-sizing:border-box;resize:vertical}.chat-agent-permissions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px}.chat-agent-permissions label{display:flex;align-items:center;gap:7px;font-size:12px}.chat-agent-permissions input{width:auto}.chat-agent-modal .modal-card-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-agent-modal #chat-agent-settings-status{font-size:11px;color:var(--muted)}.chat-nav-empty[hidden]{display:none!important}
 @media(max-width:620px){.chat-agent-modal .modal-card-body{grid-template-columns:minmax(0,1fr)}.chat-agent-permissions{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep the selected-agent label/name stacked, with settings beside them horizontally. */
+.chat-model-info{display:grid;grid-template-columns:minmax(0,1fr) 1px 30px;grid-template-rows:auto auto;align-items:center;column-gap:12px;row-gap:3px;}
+.chat-model-info .chat-model-label{grid-column:1;grid-row:1;}
+.chat-model-info .chat-model-name{grid-column:1;grid-row:2;min-width:0;}
+.chat-model-info .chat-agent-settings{grid-column:3;grid-row:1 / span 2;align-self:center;justify-self:center;margin:0;}
+.chat-model-info::after{content:"";grid-column:2;grid-row:1 / span 2;align-self:stretch;width:1px;background:var(--line);}
+@media(max-width:480px){.chat-model-info{column-gap:8px;}}
