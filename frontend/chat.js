@@ -148,6 +148,7 @@
     if (!sidebar || !nav || document.getElementById('chat-workspace')) return;
     const workspace = createElement('section', 'sidebar-chat-workspace');
     workspace.id = 'chat-workspace';
+    const workspaceTitle = createElement('div', 'sidebar-chat-section-title sidebar-chat-workspace-title', 'РАБОЧЕЕ ПРОСТРАНСТВО');
     const actions = createElement('div', 'sidebar-chat-actions');
     const newChat = createElement('button', 'btn primary', '＋ Новый чат');
     newChat.type = 'button';
@@ -162,7 +163,7 @@
     const historyTitle = createElement('div', 'sidebar-chat-section-title', 'История чатов');
     const historyList = createElement('div', 'sidebar-chat-list');
     historyList.id = 'chat-history-list';
-    workspace.append(actions, projectsTitle, projectsList, historyTitle, historyList);
+    workspace.append(workspaceTitle, actions, projectsTitle, projectsList, historyTitle, historyList);
     nav.insertAdjacentElement('afterend', workspace);
     elements.workspace = workspace;
     elements.projectsList = projectsList;
