@@ -188,13 +188,13 @@
 .sysmon-card-row{display:flex;align-items:center;gap:7px;min-width:0}
 .sysmon-card-row>div{min-width:0}
 .sysmon-card-row b{font-size:10px;display:block;line-height:1.2}
-.sysmon-card-row small{font-size:8px;color:var(--muted);display:block}
+.sysmon-card-row small{font-size:10px;color:var(--muted);display:block}
 .sysmon-val{font-size:14px;font-weight:700;margin-left:auto;letter-spacing:-.3px}
 .sysmon-track{height:5px;border-radius:4px;background:var(--line);overflow:hidden}
 .sysmon-track i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#238be8,#20b9ce);transition:width .6s ease}
 .sysmon-track.warn i{background:linear-gradient(90deg,#e6a23c,#f0c674)}
 .sysmon-track.danger i{background:linear-gradient(90deg,#d9534f,#f38b88)}
-.sysmon-detail{font-size:9px;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+.sysmon-detail{font-size:11px;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
 .sysmon-disks{display:grid;gap:6px}
 .sysmon-disk{display:grid;gap:3px;padding-top:6px;border-top:1px solid var(--line)}
 .sysmon-disk:first-child{border-top:0;padding-top:0}
