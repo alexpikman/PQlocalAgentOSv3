@@ -6,10 +6,31 @@
   const history = { cpu: [], ram: [], gpu: [] };
   let currentChart = 'cpu';
 
+  function setConnectionStatus(online, port) {
+    const server = document.getElementById('server-status');
+    const serverDot = document.getElementById('server-running-dot');
+    const apiDot = document.getElementById('api-connection-dot');
+    [serverDot, apiDot].forEach(dot => {
+      if (!dot) return;
+      dot.classList.toggle('is-online', online);
+      dot.classList.toggle('is-offline', !online);
+    });
+    if (server) server.textContent = online ? 'Работает · :' + (port || window.location.port || '8765') : 'Нет соединения';
+    const api = document.getElementById('footer-status');
+    if (api) api.textContent = online ? 'API подключён' : 'API недоступен';
+  }
+
   async function fetchStats() {
-    const response = await fetch('/api/system/stats', { cache: 'no-store' });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    return response.json();
+    try {
+      const response = await fetch('/api/system/stats', { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      setConnectionStatus(true, window.location.port || '8765');
+      return data;
+    } catch (error) {
+      setConnectionStatus(false);
+      throw error;
+    }
   }
 
   function setBar(id, percent) {
