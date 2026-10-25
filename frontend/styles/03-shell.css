@@ -144,7 +144,7 @@
 .chat-access-caption{padding-top:2px;padding-bottom:12px;color:var(--accent);font-size:10px;letter-spacing:1.1px}
 .sidebar-chat-workspace{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;min-height:0}
 .sidebar-chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.sidebar-chat-actions button{min-width:0;padding:9px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--text);font-size:11px;cursor:pointer}
+.sidebar-chat-actions button{min-width:0;font-size:11px}
 .sidebar-chat-actions button:hover{border-color:var(--accent);color:var(--accent)}
 .sidebar-chat-section-title{padding:6px 8px 2px;color:var(--muted);font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
 .sidebar-chat-list{display:grid;gap:3px;overflow-y:auto;min-height:0}
