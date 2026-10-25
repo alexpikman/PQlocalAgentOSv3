@@ -164,4 +164,4 @@ body:not(.chat-page) .topbar{display:none}
 .footer .connection-dot{display:inline-block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;margin:0;box-shadow:0 0 0 2px color-mix(in srgb,currentColor 12%,transparent)}
 .footer .connection-dot.is-online{background:#22c55e;color:#22c55e}
 .footer .connection-dot.is-offline{background:#ef4444;color:#ef4444}
-@media(max-width:620px){.footer-statusline{flex-wrap:wrap;justify-content:flex-start;white-space:normal}}
+
