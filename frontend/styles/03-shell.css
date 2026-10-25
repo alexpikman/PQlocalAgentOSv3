@@ -37,6 +37,8 @@
 
 .topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--line);background:var(--bg);gap:12px;position:relative;backdrop-filter:blur(16px)}
 
+body:not(.chat-page) .topbar{display:none}
+
 .topbar-path{display:flex;gap:11px;align-items:center;color:var(--muted);font-size:12px;min-width:0;flex:1;position:absolute;left:50%;transform:translateX(-50%);flex:none;max-width:calc(100% - 48px);justify-content:center;white-space:nowrap}
 
 .topbar-path b{color:var(--text);font-weight:500}
@@ -140,7 +142,6 @@
 .content{padding-bottom:66px}
 .sidebar{overflow-y:auto}
 .chat-access-caption{padding-top:2px;padding-bottom:12px;color:var(--accent);font-size:10px;letter-spacing:1.1px}
-@media(max-width:720px){.footer{left:0;right:0}}
 .main:has(#chat-root){height:100vh;min-height:0;overflow:hidden;padding-bottom:42px;box-sizing:border-box}
 .main:has(#chat-root) .content{padding-bottom:12px;max-height:none}
 
@@ -163,4 +164,4 @@
 .footer .connection-dot{display:inline-block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;margin:0;box-shadow:0 0 0 2px color-mix(in srgb,currentColor 12%,transparent)}
 .footer .connection-dot.is-online{background:#22c55e;color:#22c55e}
 .footer .connection-dot.is-offline{background:#ef4444;color:#ef4444}
-@media(max-width:620px){.footer{align-items:flex-start;flex-direction:column;gap:8px}.footer-statusline{flex-wrap:wrap;justify-content:flex-start;white-space:normal}}
+@media(max-width:620px){.footer-statusline{flex-wrap:wrap;justify-content:flex-start;white-space:normal}}
