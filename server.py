@@ -7,14 +7,15 @@ from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
+ICONS_DIR = FRONTEND / 'icons'
 DATA = ROOT / 'data'
 MODULES = ROOT / 'modules'
 PAGES = DATA / 'pages'
 PORT = int(os.environ.get('PQ_PORT', '8765'))
 HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
-for p in (FRONTEND, DATA, PAGES, MODULES): p.mkdir(parents=True, exist_ok=True)
-DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}}
+for p in (FRONTEND, DATA, PAGES, MODULES, ICONS_DIR): p.mkdir(parents=True, exist_ok=True)
+DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}, 'icons': {}}
 DEFAULT_PAGES = [{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'chat','title':'Чат','description':'Общение с локальными моделями Ollama.','icon':'file-text','content':'Диалог с выбранной локальной моделью.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True}]
 def read_json(path, fallback):
     try: return json.loads(path.read_text(encoding='utf-8'))
@@ -1440,9 +1441,20 @@ class Handler(SimpleHTTPRequestHandler):
             write_json(DATA/'permissions.json',current); log_event('permissions.root.add',normalized)
             return self.send_json(200,current)
         if path=='/api/settings':
-            allowed={'appearance','header','navigation'}; current=settings()
+            allowed={'appearance','header','navigation','icons'}; current=settings()
             for k,v in data.items():
                 if k in allowed and isinstance(v,dict):
+                    if k=='icons':
+                        cleaned={}
+                        for key,val in list(v.items())[:100]:
+                            if not isinstance(key,str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}',key): continue
+                            if not isinstance(val,dict): continue
+                            try: size=int(val.get('size'))
+                            except (TypeError,ValueError): continue
+                            if size<12 or size>64: continue
+                            cleaned[key]={'size':size}
+                        current['icons']=cleaned
+                        continue
                     if k=='navigation' and isinstance(v.get('menu'),list):
                         menu=[]
                         for item in v['menu'][:100]:
@@ -1453,6 +1465,58 @@ class Handler(SimpleHTTPRequestHandler):
                         v={**v,'menu':menu}
                     current[k]={**current.get(k,{}),**v}
             write_json(DATA/'settings.json',current); log_event('settings.save','Настройки интерфейса сохранены'); return self.send_json(200,current)
+        if path == '/api/icons':
+            icon_id = str(data.get('id', '')).strip()
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', icon_id):
+                return self.send_json(400, {'error': 'Некорректный id иконки'})
+            if icon_id in {'cpu', 'hdd', 'monitor', 'ram', 'video'}:
+                return self.send_json(403, {'error': 'Эта иконка зарезервирована для системной телеметрии'})
+            svg = data.get('svg')
+            if not isinstance(svg, str) or not svg.strip():
+                return self.send_json(400, {'error': 'Пустой SVG'})
+            if len(svg.encode('utf-8')) > 256 * 1024:
+                return self.send_json(413, {'error': 'SVG слишком большой (макс. 256 КБ)'})
+            svg_lower = svg.lower()
+            forbidden = [
+                '<!doctype', '<?xml', '<script', '<iframe', '<object',
+                '<embed', '<foreignobject', 'javascript:', 'data:text/html'
+            ]
+            for token in forbidden:
+                if token in svg_lower:
+                    return self.send_json(400, {'error': 'SVG содержит запрещённые элементы'})
+            if re.search(r'\son[a-z]+\s*=', svg_lower):
+                return self.send_json(400, {'error': 'SVG содержит inline-обработчики'})
+            stripped = svg.lstrip()
+            if not stripped.lower().startswith('<svg') or not re.match(r'<svg(?:\s|>)', stripped, re.IGNORECASE):
+                return self.send_json(400, {'error': 'Файл не является SVG'})
+            target = ICONS_DIR / f'{icon_id}.svg'
+            try:
+                target.write_text(svg, encoding='utf-8')
+            except OSError as e:
+                return self.send_json(500, {'error': f'Не удалось сохранить: {e}'})
+            saved_size = None
+            size = data.get('size')
+            if size is not None:
+                try:
+                    parsed_size = int(size)
+                except (TypeError, ValueError):
+                    parsed_size = None
+                if parsed_size is not None and 12 <= parsed_size <= 64:
+                    current = settings()
+                    icons = current.get('icons')
+                    if not isinstance(icons, dict):
+                        icons = {}
+                    icons[icon_id] = {'size': parsed_size}
+                    current['icons'] = icons
+                    write_json(DATA / 'settings.json', current)
+                    saved_size = parsed_size
+            log_event('icons.upload', f'Иконка {icon_id} сохранена')
+            return self.send_json(200, {
+                'ok': True,
+                'id': icon_id,
+                'path': f'/icons/{icon_id}.svg',
+                'size': saved_size
+            })
         if path=='/api/pages':
             title=str(data.get('title','')).strip()[:100]; desc=str(data.get('description','')).strip()[:300]; content=str(data.get('content','')).strip()[:20000]
             if not title: return self.send_json(400, {'error':'Укажите название страницы'})
@@ -1636,6 +1700,26 @@ class Handler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         path=urlparse(self.path).path
         if path.startswith('/api/') and not self.require_auth(): return
+        if path.startswith('/api/icons/'):
+            icon_id = urllib.parse.unquote(path[len('/api/icons/'):])
+            if not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', icon_id):
+                return self.send_json(400, {'error': 'Некорректный id'})
+            if icon_id in {'cpu', 'hdd', 'monitor', 'ram', 'video'}:
+                return self.send_json(403, {'error': 'Эта иконка зарезервирована для системной телеметрии'})
+            target = ICONS_DIR / f'{icon_id}.svg'
+            if target.exists():
+                try:
+                    target.unlink()
+                except OSError as e:
+                    return self.send_json(500, {'error': f'Не удалось удалить: {e}'})
+            current = settings()
+            icons = current.get('icons')
+            if isinstance(icons, dict) and icon_id in icons:
+                del icons[icon_id]
+                current['icons'] = icons
+                write_json(DATA / 'settings.json', current)
+            log_event('icons.delete', f'Иконка {icon_id} удалена')
+            return self.send_json(200, {'ok': True, 'id': icon_id})
         if path.startswith('/api/providers/'):
             pid=urllib.parse.unquote(path.split('/')[-1]); protected={'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
             if pid in protected: return self.send_json(403, {'error':'Встроенный провайдер не удаляется; его можно настроить'})
