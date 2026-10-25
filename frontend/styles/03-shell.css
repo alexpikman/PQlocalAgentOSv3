@@ -143,6 +143,7 @@
 .sidebar{overflow-y:auto}
 .chat-access-caption{padding-top:2px;padding-bottom:12px;color:var(--accent);font-size:10px;letter-spacing:1.1px}
 .sidebar-chat-workspace{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;min-height:0}
+.sidebar-chat-nav{display:grid;gap:4px;margin-bottom:4px}.sidebar-chat-nav-item{display:flex;align-items:center;gap:11px;text-decoration:none;font-size:12px}.sidebar-chat-nav-item svg{width:17px;height:17px;flex:0 0 17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.sidebar-chat-nav-item span{min-width:0}
 .sidebar-chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sidebar-chat-actions button{min-width:0;font-size:11px}
 
