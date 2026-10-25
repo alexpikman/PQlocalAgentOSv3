@@ -1,7 +1,8 @@
 (function () {
   'use strict';
 
-  const state = { agents: [], agent: '', messages: [], sending: false };
+  const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], conversations: [], activeConversationId: '', activeProjectId: '' };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -83,6 +84,206 @@
     elements.send = send;
     elements.clear = clearButton;
     elements.typing = typing;
+    buildChatWorkspace();
+  }
+
+  function readWorkspace() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      state.projects = Array.isArray(saved.projects) ? saved.projects : [];
+      state.conversations = Array.isArray(saved.conversations) ? saved.conversations : [];
+      state.activeConversationId = saved.activeConversationId || '';
+      state.activeProjectId = saved.activeProjectId || '';
+    } catch (_) {
+      state.projects = [];
+      state.conversations = [];
+    }
+  }
+
+  function saveWorkspace() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        projects: state.projects,
+        conversations: state.conversations,
+        activeConversationId: state.activeConversationId,
+        activeProjectId: state.activeProjectId
+      }));
+    } catch (_) {
+      showNotice('Браузер не разрешил сохранить историю чатов. Проверьте настройки хранилища сайта.', 'warning');
+    }
+  }
+
+  function activeConversation() {
+    return state.conversations.find((item) => item.id === state.activeConversationId) || null;
+  }
+
+  function persistActiveConversation() {
+    const conversation = activeConversation();
+    if (!conversation) return;
+    conversation.messages = state.messages;
+    conversation.agentId = state.agent;
+    conversation.updatedAt = new Date().toISOString();
+    const firstUser = state.messages.find((message) => message.role === 'user');
+    if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
+      conversation.title = firstUser.content.trim().replace(/\\s+/g, ' ').slice(0, 48) || 'Новый чат';
+    }
+    saveWorkspace();
+    renderChatWorkspace();
+  }
+
+  function makeId(prefix) {
+    return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function buildChatWorkspace() {
+    const sidebar = document.getElementById('sidebar');
+    const nav = document.getElementById('nav');
+    if (!sidebar || !nav || document.getElementById('chat-workspace')) return;
+    const workspace = createElement('section', 'sidebar-chat-workspace');
+    workspace.id = 'chat-workspace';
+    const actions = createElement('div', 'sidebar-chat-actions');
+    const newChat = createElement('button', '', '＋ Новый чат');
+    newChat.type = 'button';
+    newChat.addEventListener('click', () => createConversation(state.activeProjectId));
+    const newProject = createElement('button', '', '＋ Проект');
+    newProject.type = 'button';
+    newProject.addEventListener('click', createProject);
+    actions.append(newChat, newProject);
+    const projectsTitle = createElement('div', 'sidebar-chat-section-title', 'Проекты');
+    const projectsList = createElement('div', 'sidebar-chat-list');
+    projectsList.id = 'chat-project-list';
+    const historyTitle = createElement('div', 'sidebar-chat-section-title', 'История чатов');
+    const historyList = createElement('div', 'sidebar-chat-list');
+    historyList.id = 'chat-history-list';
+    workspace.append(actions, projectsTitle, projectsList, historyTitle, historyList);
+    nav.insertAdjacentElement('afterend', workspace);
+    elements.workspace = workspace;
+    elements.projectsList = projectsList;
+    elements.historyList = historyList;
+  }
+
+  function createProject() {
+    const name = window.prompt('Название проекта');
+    if (!name || !name.trim()) return;
+    const project = { id: makeId('project'), name: name.trim().slice(0, 80), createdAt: new Date().toISOString(), expanded: true };
+    state.projects.unshift(project);
+    state.activeProjectId = project.id;
+    saveWorkspace();
+    renderChatWorkspace();
+    createConversation(project.id);
+  }
+
+  function createConversation(projectId) {
+    if (state.sending) return;
+    const conversation = {
+      id: makeId('chat'),
+      title: 'Новый чат',
+      projectId: projectId || '',
+      agentId: state.agent,
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    state.conversations.unshift(conversation);
+    state.activeConversationId = conversation.id;
+    state.activeProjectId = conversation.projectId;
+    state.messages = [];
+    renderHistory();
+    saveWorkspace();
+    renderChatWorkspace();
+    elements.input.value = '';
+    resizeInput();
+    elements.input.focus();
+  }
+
+  function openConversation(id) {
+    if (state.sending || id === state.activeConversationId) return;
+    const conversation = state.conversations.find((item) => item.id === id);
+    if (!conversation) return;
+    state.activeConversationId = id;
+    state.activeProjectId = conversation.projectId || '';
+    state.messages = Array.isArray(conversation.messages) ? conversation.messages.slice() : [];
+    if (conversation.agentId && state.agents.some((agent) => agent.id === conversation.agentId)) {
+      state.agent = conversation.agentId;
+      elements.agent.value = state.agent;
+      const selected = state.agents.find((agent) => agent.id === state.agent);
+      elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+    }
+    renderHistory();
+    saveWorkspace();
+    renderChatWorkspace();
+    elements.input.value = '';
+    resizeInput();
+  }
+
+  function deleteConversation(id) {
+    if (state.sending) return;
+    state.conversations = state.conversations.filter((item) => item.id !== id);
+    if (state.activeConversationId === id) {
+      state.activeConversationId = '';
+      state.messages = [];
+      const next = state.conversations[0];
+      if (next) openConversation(next.id);
+      else createConversation(state.activeProjectId);
+    }
+    saveWorkspace();
+    renderChatWorkspace();
+  }
+
+  function renderChatWorkspace() {
+    if (!elements.projectsList || !elements.historyList) return;
+    elements.projectsList.replaceChildren();
+    if (!state.projects.length) {
+      elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Создайте проект, чтобы группировать диалоги.'));
+    }
+    state.projects.forEach((project) => {
+      const row = createElement('div', 'sidebar-chat-item sidebar-chat-project' + (state.activeProjectId === project.id ? ' active' : ''));
+      const label = createElement('button', 'sidebar-chat-item-label', (project.expanded ? '▾ ' : '▸ ') + project.name);
+      label.type = 'button';
+      label.addEventListener('click', () => {
+        project.expanded = !project.expanded;
+        state.activeProjectId = project.id;
+        saveWorkspace();
+        renderChatWorkspace();
+      });
+      const add = createElement('button', 'sidebar-chat-item-delete', '+');
+      add.type = 'button';
+      add.title = 'Новый чат в проекте';
+      add.setAttribute('aria-label', 'Новый чат в проекте ' + project.name);
+      add.addEventListener('click', () => createConversation(project.id));
+      row.append(label, add);
+      elements.projectsList.append(row);
+      if (project.expanded) {
+        const nested = createElement('div', 'sidebar-chat-project-chats');
+        state.conversations.filter((chat) => chat.projectId === project.id).forEach((chat) => {
+          nested.append(makeConversationRow(chat));
+        });
+        if (!nested.childElementCount) nested.append(createElement('div', 'sidebar-chat-empty', 'Пока нет чатов'));
+        elements.projectsList.append(nested);
+      }
+    });
+
+    elements.historyList.replaceChildren();
+    const ungrouped = state.conversations.filter((chat) => !chat.projectId).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    if (!ungrouped.length) elements.historyList.append(createElement('div', 'sidebar-chat-empty', 'Новые диалоги появятся здесь.'));
+    ungrouped.forEach((chat) => elements.historyList.append(makeConversationRow(chat)));
+  }
+
+  function makeConversationRow(chat) {
+    const row = createElement('div', 'sidebar-chat-item' + (chat.id === state.activeConversationId ? ' active' : ''));
+    const label = createElement('button', 'sidebar-chat-item-label', chat.title || 'Новый чат');
+    label.type = 'button';
+    label.title = chat.title || 'Новый чат';
+    label.addEventListener('click', () => openConversation(chat.id));
+    const remove = createElement('button', 'sidebar-chat-item-delete', '×');
+    remove.type = 'button';
+    remove.title = 'Удалить чат';
+    remove.setAttribute('aria-label', 'Удалить чат ' + (chat.title || 'Новый чат'));
+    remove.addEventListener('click', () => {
+      if (window.confirm('Удалить этот чат и его историю?')) deleteConversation(chat.id);
+    });
+    row.append(label, remove);
+    return row;
   }
 
   function clearNotice() {
@@ -196,6 +397,7 @@
     clearNotice();
     const userMessage = { role: 'user', content, time: formatTime(new Date()) };
     state.messages.push(userMessage);
+    persistActiveConversation();
     elements.messages.querySelector('.chat-empty')?.remove();
     renderMessage(userMessage);
     elements.input.value = '';
@@ -220,6 +422,7 @@
         time: formatTime(new Date())
       };
       state.messages.push(assistantMessage);
+      persistActiveConversation();
       renderMessage(assistantMessage);
     } catch (error) {
       showNotice(error.message || 'Не удалось получить ответ модели.', 'warning');
@@ -237,6 +440,7 @@
   function clearChat() {
     if (state.sending) return;
     state.messages = [];
+    persistActiveConversation();
     clearNotice();
     renderHistory();
     elements.input.value = '';
@@ -290,9 +494,18 @@
   function init() {
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
+    readWorkspace();
     buildUI();
     bindShellEvents();
     bindEvents();
+    renderChatWorkspace();
+    const existing = state.conversations.find((item) => item.id === state.activeConversationId);
+    if (existing) {
+      state.messages = Array.isArray(existing.messages) ? existing.messages.slice() : [];
+      state.agent = existing.agentId || '';
+    } else {
+      createConversation('');
+    }
     renderHistory();
     loadAgents();
   }
