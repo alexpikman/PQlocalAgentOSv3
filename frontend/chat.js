@@ -125,7 +125,7 @@
     conversation.updatedAt = new Date().toISOString();
     const firstUser = state.messages.find((message) => message.role === 'user');
     if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
-      conversation.title = firstUser.content.trim().replace(/\\s+/g, ' ').slice(0, 48) || 'Новый чат';
+      conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').slice(0, 48) || 'Новый чат';
     }
     saveWorkspace();
     renderChatWorkspace();
