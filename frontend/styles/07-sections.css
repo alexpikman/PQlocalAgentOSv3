@@ -209,3 +209,15 @@ td{border-color:var(--line)}
 .chat-layout .notice{margin:0 0 6px}
 .chat-layout .notice.warning{grid-column:1/-1}
 @media(max-width:720px){.chat-layout{height:calc(100vh - 185px);min-height:300px;padding:10px;gap:9px}.chat-messages{padding:10px}.chat-msg{max-width:95%}.chat-toolbar{align-items:flex-start}.chat-toolbar-controls{width:100%}.chat-toolbar select{flex:1;max-width:none;min-width:0}.chat-input-row{grid-template-columns:minmax(0,1fr)}.chat-input-row .btn{justify-self:end}}
+
+/* Chat-only viewport layout: the composer stays anchored while only message history scrolls. */
+.main:has(#chat-root){height:100vh;min-height:0;overflow:hidden}
+.main:has(#chat-root) .content{flex:1;min-height:0;max-height:none;overflow:hidden;display:flex;flex-direction:column;padding:14px}
+.main:has(#chat-root) .footer{display:none}
+.main:has(#chat-root) .chat-layout{height:100%;min-height:0;flex:1;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
+.main:has(#chat-root) .chat-messages{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.main:has(#chat-root) .chat-composer{position:relative;z-index:2;background:var(--panel);padding-top:4px}
+@media(max-width:720px){
+  .main:has(#chat-root) .content{padding:10px}
+  .main:has(#chat-root) .chat-layout{height:100%;min-height:0}
+}
