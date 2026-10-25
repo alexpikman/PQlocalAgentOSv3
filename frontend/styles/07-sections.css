@@ -19,7 +19,7 @@
 .activity-icon{width:30px;height:30px;border-radius:9px;background:var(--sysmon-icon-purple-bg);color:var(--sysmon-icon-purple-fg);display:grid;place-items:center;flex-shrink:0}
 .activity-item b{font-size:11px;display:block}
 .activity-item small{font-size:10px;color:var(--muted);display:block;margin-top:5px;overflow-wrap:anywhere}
-.activity-time{font-size:9px;color:#77758c;margin-left:auto;white-space:nowrap}
+.activity-time{font-size:11px;color:#77758c;margin-left:auto;white-space:nowrap}
 .feature-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 .feature-icon{width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:17px;margin-bottom:18px}
 .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
