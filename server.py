@@ -2,7 +2,8 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets
+from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
@@ -21,6 +22,31 @@ def read_json(path, fallback):
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8'); tmp.replace(path)
+AUTH_FILE = DATA/'auth.json'
+AUTH_ITERATIONS = 310000
+AUTH_SESSIONS = {}
+AUTH_SESSIONS_LOCK = threading.Lock()
+
+def _password_hash(password, salt):
+    return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, AUTH_ITERATIONS).hex()
+
+def _ensure_auth_config():
+    if AUTH_FILE.exists():
+        current = read_json(AUTH_FILE, None)
+        if not isinstance(current, dict) or not all(k in current for k in ('username', 'salt', 'password_hash', 'iterations')):
+            raise RuntimeError('Файл data/auth.json повреждён или имеет неверный формат; восстановите его из резервной копии.')
+        return
+    salt = secrets.token_bytes(16)
+    write_json(AUTH_FILE, {
+        'username': 'root',
+        'salt': salt.hex(),
+        'password_hash': _password_hash('IamRootUser', salt),
+        'iterations': AUTH_ITERATIONS,
+        'must_change_password': True
+    })
+
+_ensure_auth_config()
+
 def settings():
     p=DATA/'settings.json'
     if not p.exists(): write_json(p, DEFAULT_SETTINGS)
@@ -101,8 +127,17 @@ AGENT_ROLE_PROMPTS = {
     'DEVOPS':'Ты инженер инфраструктуры. Учитывай воспроизводимые сборки, конфигурацию окружения, логи, мониторинг, откат и минимальные привилегии.'
 }
 def domain_items(kind):
-    fallback=[{'id':'manager','name':'Менеджер проекта','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
-    return read_json(DOMAIN_FILES[kind],fallback)
+    fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
+    items = read_json(DOMAIN_FILES[kind],fallback)
+    if kind == 'agents' and isinstance(items, list):
+        changed = False
+        for item in items:
+            if isinstance(item, dict) and item.get('id') == 'manager' and item.get('name') == 'Менеджер проекта':
+                item['name'] = 'Агент №1'
+                changed = True
+        if changed:
+            write_json(DOMAIN_FILES[kind], items)
+    return items
 def save_domain(kind, items): write_json(DOMAIN_FILES[kind],items)
 def ollama_request(path, payload=None, timeout=8):
     req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
@@ -1055,15 +1090,43 @@ def system_stats():
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs): super().__init__(*args,directory=str(FRONTEND),**kwargs)
     def log_message(self, fmt, *args): pass
-    def send_json(self, code, data):
-        raw=json.dumps(data,ensure_ascii=False).encode(); self.send_response(code); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.send_header('Cache-Control','no-store'); self.end_headers(); self.wfile.write(raw)
+    def send_json(self, code, data, headers=None):
+        raw=json.dumps(data,ensure_ascii=False).encode(); self.send_response(code); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.send_header('Cache-Control','no-store')
+        for key, value in (headers or {}).items(): self.send_header(key, value)
+        self.end_headers(); self.wfile.write(raw)
+    def auth_session(self):
+        cookie = SimpleCookie()
+        try: cookie.load(self.headers.get('Cookie', ''))
+        except Exception: return None
+        morsel = cookie.get('pq_session')
+        if not morsel: return None
+        token = morsel.value
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with AUTH_SESSIONS_LOCK:
+            session = AUTH_SESSIONS.get(token)
+            if not session: return None
+            if session['expires'] <= now:
+                AUTH_SESSIONS.pop(token, None)
+                return None
+            return session
+    def require_auth(self):
+        if self.auth_session(): return True
+        self.send_json(401, {'error':'Требуется вход в систему', 'auth_required':True})
+        return False
+    def auth_cookie(self, token, max_age):
+        return {'Set-Cookie': 'pq_session=' + token + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=' + str(max_age)}
     def body(self):
         n=int(self.headers.get('Content-Length','0'))
         if n>1_000_000: raise ValueError('Payload too large')
         return json.loads(self.rfile.read(n).decode('utf-8') or '{}')
     def do_GET(self):
         path=urlparse(self.path).path
+        if path == '/api/auth/status':
+            session = self.auth_session()
+            config = read_json(AUTH_FILE, {})
+            return self.send_json(200, {'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+        if path.startswith('/api/') and not self.require_auth(): return
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
         if path=='/api/system/stats':
             try:
@@ -1148,11 +1211,61 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         try: data=self.body()
         except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path == '/api/auth/login':
+            config = read_json(AUTH_FILE, {})
+            username = str(data.get('username', '')).strip()
+            password = str(data.get('password', ''))
+            try:
+                salt = bytes.fromhex(config.get('salt', ''))
+                supplied = _password_hash(password, salt)
+            except Exception:
+                supplied = ''
+            if username != config.get('username') or not hmac.compare_digest(supplied, str(config.get('password_hash', ''))):
+                return self.send_json(401, {'error':'Неверный логин или пароль'})
+            token = secrets.token_urlsafe(32)
+            with AUTH_SESSIONS_LOCK:
+                AUTH_SESSIONS[token] = {'username':config['username'], 'expires':datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=8)}
+            log_event('auth.login', config['username'])
+            return self.send_json(200, {'ok':True,'username':config['username'],'must_change_password':bool(config.get('must_change_password', False))}, self.auth_cookie(token, 28800))
+        if path == '/api/auth/logout':
+            session = self.auth_session()
+            if session:
+                cookie = SimpleCookie()
+                try:
+                    cookie.load(self.headers.get('Cookie', ''))
+                    token = cookie.get('pq_session').value if cookie.get('pq_session') else ''
+                    with AUTH_SESSIONS_LOCK: AUTH_SESSIONS.pop(token, None)
+                except Exception: pass
+            return self.send_json(200, {'ok':True}, self.auth_cookie('', 0))
+        if path == '/api/auth/change-password':
+            if not self.require_auth(): return
+            new_password = str(data.get('new_password', ''))
+            if len(new_password) < 12:
+                return self.send_json(400, {'error':'Новый пароль должен содержать не менее 12 символов'})
+            config = read_json(AUTH_FILE, {})
+            salt = secrets.token_bytes(16)
+            config.update({'salt':salt.hex(),'password_hash':_password_hash(new_password, salt),'iterations':AUTH_ITERATIONS,'must_change_password':False})
+            write_json(AUTH_FILE, config)
+            log_event('auth.password_change', config.get('username', 'root'))
+            return self.send_json(200, {'ok':True,'must_change_password':False})
+        if path.startswith('/api/') and not self.require_auth(): return
         if path == '/api/chat':
+            agent_id = str(data.get('agent_id', '')).strip()[:160]
             model = str(data.get('model', '')).strip()[:160]
             messages = data.get('messages')
+            agent = None
+            if agent_id:
+                agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
+                if not agent: return self.send_json(404, {'error':'Выбранный агент не найден'})
+                model = str(agent.get('model', '')).strip()[:160] or model
             if not model:
-                return self.send_json(400, {'error': 'Выберите модель'})
+                try:
+                    available = ollama_request('/api/tags', timeout=4).get('models', [])
+                    model = next((str(x.get('name','')).strip() for x in available if isinstance(x,dict) and x.get('name')), '')
+                except Exception:
+                    model = ''
+            if not model:
+                return self.send_json(400, {'error': 'У выбранного агента не назначена модель, а локальные модели недоступны. Откройте настройки агента и назначьте модель.'})
             if not isinstance(messages, list) or not messages:
                 return self.send_json(400, {'error': 'Передайте историю сообщений'})
             validated_messages = []
@@ -1164,6 +1277,21 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in ('system', 'user', 'assistant') or not isinstance(content, str):
                     return self.send_json(400, {'error': 'У сообщения некорректная роль или содержимое'})
                 validated_messages.append({'role': role, 'content': content})
+            if agent:
+                system_prompt = str(agent.get('system_prompt', '')).strip()
+                role_prompt = {
+                    'MANAGER':'Ты Агент №1 — координатор проекта. Помогай пользователю управлять проектом, уточняй цели и предлагай проверяемые следующие шаги.',
+                    'ARCHITECT':'Ты системный архитектор. Учитывай структуру, зависимости, масштабируемость и безопасность.',
+                    'ANALYST':'Ты аналитик. Разделяй факты и предположения, проверяй данные и объясняй выводы.',
+                    'DESIGNER':'Ты дизайнер интерфейсов. Учитывай доступность, адаптивность, иерархию и единообразие.',
+                    'COPYWRITER':'Ты редактор и технический автор. Пиши ясно, конкретно и без выдуманных фактов.',
+                    'CODER':'Ты инженер-программист. Предлагай проверяемые решения и учитывай безопасность, тесты и сопровождение.',
+                    'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии и воспроизводимые критерии приёмки.',
+                    'DEVOPS':'Ты инженер инфраструктуры. Учитывай конфигурацию, логи, мониторинг и откат.'
+                }.get(str(agent.get('role','')).upper(), '')
+                instruction = system_prompt or role_prompt
+                if instruction and not any(m.get('role') == 'system' for m in validated_messages):
+                    validated_messages.insert(0, {'role':'system','content':instruction})
             request_body = json.dumps({
                 'model': model,
                 'messages': validated_messages,
@@ -1274,7 +1402,6 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системный агент нельзя редактировать в этой версии API'})
             allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
             for key in allowed:
                 if key not in data: continue
@@ -1508,6 +1635,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_DELETE(self):
         path=urlparse(self.path).path
+        if path.startswith('/api/') and not self.require_auth(): return
         if path.startswith('/api/providers/'):
             pid=urllib.parse.unquote(path.split('/')[-1]); protected={'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
             if pid in protected: return self.send_json(403, {'error':'Встроенный провайдер не удаляется; его можно настроить'})
