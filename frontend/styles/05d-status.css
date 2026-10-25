@@ -11,3 +11,7 @@
 :root[data-theme="dark"] .badge.danger{color:#ff9ba7;background:#3c2027;border-color:#713440}
 
 .provider-row .badge{white-space:nowrap}
+.status-indicator{display:inline-block;width:7px;height:7px;border-radius:50%;flex:0 0 7px;margin:0 4px;vertical-align:middle}
+.status-indicator.is-online{background:#22c55e;box-shadow:0 0 0 2px #22c55e33}
+.status-indicator.is-offline{background:#ef4444;box-shadow:0 0 0 2px #ef444433}
+.status-indicator.is-unknown{background:var(--muted);opacity:.5}
