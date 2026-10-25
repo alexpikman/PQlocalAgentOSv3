@@ -173,3 +173,7 @@
 .main:has(#chat-root){height:100vh;min-height:0;overflow:hidden;padding-bottom:42px}
 .main:has(#chat-root) .content{padding-bottom:12px;max-height:none}
 .main:has(#chat-root) .footer{display:flex!important}
+
+/* Keep page content within the viewport while the status footer stays fixed. */
+.main{height:100vh;min-height:0;overflow:hidden}
+.content{flex:1;min-height:0;max-height:none;overflow-y:auto}
