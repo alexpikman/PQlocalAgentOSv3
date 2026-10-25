@@ -15,14 +15,14 @@
     .pq-auth-card h2{margin:0 0 8px;font-size:22px}.pq-auth-card p{margin:0 0 20px;color:var(--muted,#68758a);font-size:13px;line-height:1.5}
     .pq-auth-card form{display:grid;gap:12px}.pq-auth-card label{display:grid;gap:6px;font-size:12px;font-weight:600}
     .pq-auth-card input{box-sizing:border-box;width:100%;padding:11px 12px;border:1px solid var(--line,#dce3ed);border-radius:9px;background:var(--bg,#f7f9fc);color:inherit;font:inherit}
-    .pq-auth-card button,.pq-auth-trigger,.pq-auth-panel button{border:1px solid var(--line,#dce3ed);border-radius:9px;padding:10px 12px;background:var(--panel2,#f4f7fb);color:inherit;font:inherit;cursor:pointer}
+    .pq-auth-card button,.pq-auth-panel button{border:1px solid var(--line,#dce3ed);border-radius:9px;padding:10px 12px;background:var(--panel2,#f4f7fb);color:inherit;font:inherit;cursor:pointer}
     .pq-auth-card button[type=submit]{background:var(--accent,#3b9dff);border-color:var(--accent,#3b9dff);color:#fff;font-weight:700}
     .pq-auth-error{min-height:18px;color:#c24141;font-size:12px}
     .pq-auth-widget{display:flex;align-items:center;gap:8px;margin:0 0 18px;padding:0 2px;width:100%;box-sizing:border-box}
     .pq-auth-user-icon{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border:1px solid var(--line,#dce3ed);border-radius:10px;background:var(--panel2,#f4f7fb);color:var(--accent,#3b9dff)}
     .pq-auth-user-icon svg{width:17px;height:17px}
-    .pq-auth-trigger{flex:1;min-width:0;text-align:left;font-size:12px;font-weight:600;color:var(--text,#182235);padding:9px 10px}
-    .pq-auth-logout-inline{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;font-size:11px;padding:9px 10px}
+    .pq-auth-trigger{flex:1;min-width:0;text-align:left;font-size:11px;font-weight:600;padding:10px 12px}
+    .pq-auth-logout-inline{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;font-size:11px;padding:10px 12px}
     .pq-auth-logout-inline svg{width:14px;height:14px}
     .pq-auth-panel{position:absolute;top:calc(100% + 6px);right:0;width:220px;padding:12px;display:grid;gap:8px;border:1px solid var(--line,#dce3ed);border-radius:12px;background:var(--panel,#fff);box-shadow:0 12px 40px #0002;z-index:1000}
     .pq-auth-panel b{font-size:12px}.pq-auth-panel button{text-align:left;font-size:12px}
@@ -54,8 +54,8 @@
   widget.className = 'pq-auth-widget';
   widget.innerHTML = `
     <span class="pq-auth-user-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg></span>
-    <button type="button" class="pq-auth-trigger" id="pq-auth-trigger">Войти</button>
-    <button type="button" class="pq-auth-logout-inline" id="pq-auth-logout" hidden aria-label="Выйти из системы" title="Выйти из системы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"></path></svg><span>Выйти</span></button>
+    <button type="button" class="pq-auth-trigger btn secondary" id="pq-auth-trigger">Войти</button>
+    <button type="button" class="pq-auth-logout-inline btn soft-secondary" id="pq-auth-logout" hidden aria-label="Выйти из системы" title="Выйти из системы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"></path></svg><span>Выйти</span></button>
     <div class="pq-auth-panel" id="pq-auth-panel" hidden>
       <b id="pq-auth-user-label">Вход выполнен</b>
       <button type="button" id="pq-auth-change">Сменить пароль</button>
