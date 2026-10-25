@@ -17,9 +17,14 @@
     .pq-auth-card input{box-sizing:border-box;width:100%;padding:11px 12px;border:1px solid var(--line,#dce3ed);border-radius:9px;background:var(--bg,#f7f9fc);color:inherit;font:inherit}
     .pq-auth-card button,.pq-auth-trigger,.pq-auth-panel button{border:1px solid var(--line,#dce3ed);border-radius:9px;padding:10px 12px;background:var(--panel2,#f4f7fb);color:inherit;font:inherit;cursor:pointer}
     .pq-auth-card button[type=submit]{background:var(--accent,#3b9dff);border-color:var(--accent,#3b9dff);color:#fff;font-weight:700}
-    .pq-auth-error{min-height:18px;color:#c24141;font-size:12px}.pq-auth-widget{position:relative;margin:0 4px 10px}
-    .pq-auth-trigger{width:100%;text-align:left;font-size:11px;color:var(--muted,#68758a);padding:9px 10px}
-    .pq-auth-panel{position:absolute;bottom:calc(100% + 8px);left:0;width:220px;padding:12px;display:grid;gap:8px;border:1px solid var(--line,#dce3ed);border-radius:12px;background:var(--panel,#fff);box-shadow:0 12px 40px #0002;z-index:1000}
+    .pq-auth-error{min-height:18px;color:#c24141;font-size:12px}
+    .pq-auth-widget{display:flex;align-items:center;gap:8px;margin:0 0 18px;padding:0 2px;width:100%;box-sizing:border-box}
+    .pq-auth-user-icon{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border:1px solid var(--line,#dce3ed);border-radius:10px;background:var(--panel2,#f4f7fb);color:var(--accent,#3b9dff)}
+    .pq-auth-user-icon svg{width:17px;height:17px}
+    .pq-auth-trigger{flex:1;min-width:0;text-align:left;font-size:12px;font-weight:600;color:var(--text,#182235);padding:9px 10px}
+    .pq-auth-logout-inline{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;font-size:11px;padding:9px 10px}
+    .pq-auth-logout-inline svg{width:14px;height:14px}
+    .pq-auth-panel{position:absolute;top:calc(100% + 6px);right:0;width:220px;padding:12px;display:grid;gap:8px;border:1px solid var(--line,#dce3ed);border-radius:12px;background:var(--panel,#fff);box-shadow:0 12px 40px #0002;z-index:1000}
     .pq-auth-panel b{font-size:12px}.pq-auth-panel button{text-align:left;font-size:12px}
     .pq-auth-notice{margin-top:12px;color:var(--muted,#68758a);font-size:11px;line-height:1.5}
     .pq-auth-toast{position:fixed;z-index:100001;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 14px;border:1px solid var(--line,#dce3ed);border-radius:10px;background:var(--panel,#fff);color:var(--text,#182235);box-shadow:0 8px 30px #0002;font-size:12px}
@@ -48,16 +53,16 @@
   const widget = document.createElement('div');
   widget.className = 'pq-auth-widget';
   widget.innerHTML = `
-    <button type="button" class="pq-auth-trigger" id="pq-auth-trigger">Доступ: root</button>
+    <span class="pq-auth-user-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20a7.5 7.5 0 0 1 15 0"></path></svg></span>
+    <button type="button" class="pq-auth-trigger" id="pq-auth-trigger">Войти</button>
+    <button type="button" class="pq-auth-logout-inline" id="pq-auth-logout" hidden aria-label="Выйти из системы" title="Выйти из системы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"></path><path d="M15 12H3"></path><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"></path></svg><span>Выйти</span></button>
     <div class="pq-auth-panel" id="pq-auth-panel" hidden>
       <b id="pq-auth-user-label">Вход выполнен</b>
       <button type="button" id="pq-auth-change">Сменить пароль</button>
-      <button type="button" id="pq-auth-logout">Выйти из системы</button>
     </div>`;
-  const sidebar = document.querySelector('.sidebar');
-  if (sidebar) {
-    const bottom = sidebar.querySelector('.sidebar-bottom');
-    sidebar.insertBefore(widget, bottom || null);
+  const rightSidebar = document.querySelector('.right-sidebar');
+  if (rightSidebar) {
+    rightSidebar.insertBefore(widget, rightSidebar.firstChild);
   } else {
     widget.style.position = 'fixed';
     widget.style.top = '12px';
@@ -87,20 +92,24 @@
   function resetReady() {
     ready = new Promise((resolve) => { readyResolve = resolve; });
   }
-  function showLogin(message) {
-    overlay.hidden = false;
+  function showLogin(message, forceModal) {
     passwordOverlay.hidden = true;
-    widget.hidden = true;
+    widget.hidden = false;
+    document.getElementById('pq-auth-trigger').textContent = 'Войти';
+    document.getElementById('pq-auth-logout').hidden = true;
+    document.getElementById('pq-auth-panel').hidden = true;
+    overlay.hidden = !forceModal;
     const error = document.getElementById('pq-auth-error');
     if (error) error.textContent = message || '';
-    setTimeout(() => document.getElementById('pq-auth-password')?.focus(), 0);
+    if (forceModal) setTimeout(() => document.getElementById('pq-auth-password')?.focus(), 0);
   }
   function setAuthenticated(user) {
     authenticated = true;
     username = user || 'root';
     overlay.hidden = true;
     widget.hidden = false;
-    document.getElementById('pq-auth-trigger').textContent = 'Доступ: ' + username;
+    document.getElementById('pq-auth-trigger').textContent = username;
+    document.getElementById('pq-auth-logout').hidden = false;
     document.getElementById('pq-auth-user-label').textContent = 'Вход выполнен: ' + username;
     if (readyResolve) readyResolve();
   }
@@ -143,6 +152,10 @@
   });
 
   document.getElementById('pq-auth-trigger').addEventListener('click', () => {
+    if (!authenticated) {
+      showLogin('', true);
+      return;
+    }
     const panel = document.getElementById('pq-auth-panel');
     panel.hidden = !panel.hidden;
   });
@@ -184,9 +197,10 @@
   document.getElementById('pq-auth-logout').addEventListener('click', async () => {
     try { await rawFetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch (_) {}
     authenticated = false;
+    username = '';
     resetReady();
     document.getElementById('pq-auth-panel').hidden = true;
-    showLogin('');
+    showLogin('', false);
   });
 
   window.fetch = async function (input, init) {
@@ -202,7 +216,7 @@
       if (authenticated) {
         authenticated = false;
         resetReady();
-        showLogin('Сеанс завершён. Войдите повторно.');
+        showLogin('Сеанс завершён. Войдите повторно.', true);
       }
       await ready;
       response = await rawFetch(input, init);
@@ -215,9 +229,9 @@
       const response = await rawFetch('/api/auth/status', { cache: 'no-store' });
       const data = await readJson(response);
       if (data.authenticated) setAuthenticated(data.username);
-      else showLogin('');
+      else showLogin('', false);
     } catch (_) {
-      showLogin('Не удалось связаться с сервером авторизации.');
+      showLogin('Не удалось связаться с сервером авторизации.', true);
     }
   })();
 
