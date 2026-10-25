@@ -569,10 +569,30 @@
     }
   }
 
-  function init() {
+  async function applySidebarWidthFromApi() {
+    let panelWidth = 322;
+    try {
+      const settings = await chatApi('/settings');
+      const configuredWidth = Number(settings?.appearance?.sidebarWidth);
+      if (Number.isFinite(configuredWidth) && configuredWidth > 0) panelWidth = Math.round(configuredWidth);
+    } catch (_) {
+      // Keep the shared 322px default if settings cannot be loaded.
+    }
+    const root = document.documentElement;
+    if (window.matchMedia('(max-width:720px)').matches) {
+      root.style.removeProperty('--sidebar');
+      root.style.removeProperty('--right-sidebar');
+      return;
+    }
+    root.style.setProperty('--sidebar', panelWidth + 'px');
+    root.style.setProperty('--right-sidebar', panelWidth + 'px');
+  }
+
+  async function init() {
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
+    await applySidebarWidthFromApi();
     buildUI();
     bindShellEvents();
     bindEvents();
