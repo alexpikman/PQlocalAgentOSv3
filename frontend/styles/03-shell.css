@@ -135,7 +135,6 @@
 
 /* Workspace shell adjustments requested across all pages. */
 .topbar{display:none!important}
-.page-head{padding-left:4px!important;padding-right:4px!important;border-radius:0!important}
 .footer{position:fixed!important;left:var(--left-panel-width, var(--sidebar));right:var(--right-sidebar);bottom:0;z-index:30;min-height:42px;align-items:center;margin:0;background:var(--panel);padding-top:10px;padding-bottom:10px}
 .app-shell.left-hidden .footer{left:0}
 .app-shell.right-hidden .footer{right:0}
@@ -177,3 +176,6 @@
 /* Keep page content within the viewport while the status footer stays fixed. */
 .main{height:100vh;min-height:0;overflow:hidden}
 .content{flex:1;min-height:0;max-height:none;overflow-y:auto}
+
+/* Grouped primary navigation and the system-log / SSH controls. */
+.nav-group{display:grid;gap:4px;margin:0 0 12px}.nav-group-label{font-size:9px;font-weight:700;letter-spacing:1.15px;color:var(--muted);padding:10px 10px 5px}.primary-nav{align-content:start;gap:0}.nav-item{min-width:0}.log-pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding-top:18px;margin-top:14px;border-top:1px solid var(--line)}.log-pagination span{font-size:11px;color:var(--muted)}.log-pagination button:disabled{opacity:.45;cursor:not-allowed}.ssh-form-wrap{margin:0 0 16px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2)}.ssh-form-wrap[hidden]{display:none!important}.ssh-form-wrap .field-grid{margin:0}.ssh-form-wrap input,.ssh-form-wrap select{width:100%;min-width:0;box-sizing:border-box}
