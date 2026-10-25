@@ -149,6 +149,15 @@
     const workspace = createElement('section', 'sidebar-chat-workspace');
     workspace.id = 'chat-workspace';
     const workspaceTitle = createElement('div', 'sidebar-chat-section-title sidebar-chat-workspace-title', 'РАБОЧЕЕ ПРОСТРАНСТВО');
+    const workspaceNav = createElement('div', 'sidebar-chat-nav');
+    const dashboardLink = createElement('a', 'nav-item sidebar-chat-nav-item', 'Рабочий стол');
+    dashboardLink.href = '/';
+    dashboardLink.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg><span>Рабочий стол</span>';
+    const chatLink = createElement('a', 'nav-item sidebar-chat-nav-item active', 'Чат');
+    chatLink.href = '/chat.html';
+    chatLink.setAttribute('aria-current', 'page');
+    chatLink.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l1.6-3.2A7.5 7.5 0 1 1 20 11.5Z"></path></svg><span>Чат</span>';
+    workspaceNav.append(dashboardLink, chatLink);
     const actions = createElement('div', 'sidebar-chat-actions');
     const newChat = createElement('button', 'btn primary', '＋ Новый чат');
     newChat.type = 'button';
@@ -163,7 +172,7 @@
     const historyTitle = createElement('div', 'sidebar-chat-section-title', 'История чатов');
     const historyList = createElement('div', 'sidebar-chat-list');
     historyList.id = 'chat-history-list';
-    workspace.append(workspaceTitle, actions, projectsTitle, projectsList, historyTitle, historyList);
+    workspace.append(workspaceTitle, workspaceNav, actions, projectsTitle, projectsList, historyTitle, historyList);
     nav.insertAdjacentElement('afterend', workspace);
     elements.workspace = workspace;
     elements.projectsList = projectsList;
