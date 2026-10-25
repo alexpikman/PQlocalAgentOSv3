@@ -593,6 +593,8 @@
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
     await applySidebarWidthFromApi();
+    const chatSidebarWidthMediaQuery = window.matchMedia('(max-width:720px)');
+    chatSidebarWidthMediaQuery.addEventListener('change', () => { void applySidebarWidthFromApi(); });
     buildUI();
     bindShellEvents();
     bindEvents();
