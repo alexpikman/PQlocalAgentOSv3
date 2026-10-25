@@ -1402,7 +1402,7 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
             for key in allowed:
                 if key not in data: continue
                 if kind=='agents' and key=='permissions':
