@@ -68,4 +68,11 @@
 
 @media(max-width:760px){.domain-row{grid-template-columns:28px 24px minmax(0,1fr)}.domain-row .row-actions{grid-column:3;justify-content:flex-start}.domain-info:after{left:auto;right:-12px;transform:none}}
 
-@media(max-width:720px){.main:has(#chat-root) .page-head{display:none}}
+@media(max-width:720px){
+  .main:has(#chat-root) .page-head{display:none}
+  .footer{height:42px;min-height:42px;padding:0 10px;box-sizing:border-box}
+}
+@media(max-width:620px){
+  .footer{height:42px;min-height:42px;align-items:center;flex-direction:row;gap:6px;padding:0 10px}
+  .footer-statusline{flex-wrap:wrap;justify-content:center;white-space:normal;line-height:1.1}
+}
