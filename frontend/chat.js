@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const state = { models: [], model: '', messages: [], sending: false };
+  const state = { agents: [], agent: '', messages: [], sending: false };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -29,15 +29,15 @@
 
     const toolbar = createElement('div', 'chat-toolbar');
     const modelInfo = createElement('div', 'chat-model-info');
-    const label = createElement('span', 'chat-model-label', 'Текущая модель');
-    const modelName = createElement('b', 'chat-model-name', 'Загрузка моделей…');
-    modelName.id = 'chat-model-name';
+    const label = createElement('span', 'chat-model-label', 'Текущий агент');
+    const modelName = createElement('b', 'chat-model-name', 'Загрузка агентов…');
+    modelName.id = 'chat-agent-name';
     modelInfo.append(label, modelName);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modelSelect = document.createElement('select');
-    modelSelect.id = 'chat-model';
-    modelSelect.setAttribute('aria-label', 'Выбрать модель');
+    modelSelect.id = 'chat-agent';
+    modelSelect.setAttribute('aria-label', 'Выбрать агента');
     const clearButton = createElement('button', 'btn secondary', 'Очистить чат');
     clearButton.type = 'button';
     clearButton.id = 'chat-clear';
@@ -76,7 +76,7 @@
 
     elements.root = root;
     elements.modelName = modelName;
-    elements.model = modelSelect;
+    elements.agent = modelSelect;
     elements.messages = messages;
     elements.form = form;
     elements.input = input;
@@ -128,7 +128,7 @@
   function renderHistory() {
     elements.messages.replaceChildren();
     if (!state.messages.length) {
-      elements.messages.append(createElement('div', 'empty chat-empty', 'Начните диалог: задайте вопрос локальной модели.'));
+      elements.messages.append(createElement('div', 'empty chat-empty', 'Начните диалог: задайте вопрос выбранному агенту.'));
       return;
     }
     state.messages.forEach(renderMessage);
@@ -136,60 +136,62 @@
 
   function setSending(sending) {
     state.sending = sending;
-    elements.send.disabled = sending || !state.model;
-    elements.input.disabled = sending || !state.model;
-    elements.model.disabled = sending || !state.models.length;
+    elements.send.disabled = sending || !state.agent;
+    elements.input.disabled = sending || !state.agent;
+    elements.agent.disabled = sending || !state.agents.length;
     elements.clear.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
     elements.typing.hidden = !sending;
     if (sending) scrollToBottom();
   }
 
-  function renderModels() {
-    elements.model.replaceChildren();
-    state.models.forEach((model) => {
+  function renderAgents() {
+    elements.agent.replaceChildren();
+    state.agents.forEach((agent) => {
       const option = document.createElement('option');
-      option.value = model.name;
-      option.textContent = model.name;
-      elements.model.append(option);
+      option.value = agent.id;
+      option.textContent = agent.name + (agent.model ? ' · ' + agent.model : ' · модель по умолчанию');
+      elements.agent.append(option);
     });
 
-    if (state.model && state.models.some((model) => model.name === state.model)) {
-      elements.model.value = state.model;
+    if (state.agent && state.agents.some((agent) => agent.id === state.agent)) {
+      elements.agent.value = state.agent;
     } else {
-      state.model = state.models.length ? state.models[0].name : '';
-      elements.model.value = state.model;
+      const preferred = state.agents.find((agent) => agent.id === 'manager' || agent.name === 'Агент №1');
+      state.agent = preferred ? preferred.id : (state.agents.length ? state.agents[0].id : '');
+      elements.agent.value = state.agent;
     }
 
-    elements.modelName.textContent = state.model || 'Модель не выбрана';
-    elements.model.disabled = !state.models.length;
-    elements.send.disabled = !state.model;
-    elements.input.disabled = !state.model;
+    const selected = state.agents.find((agent) => agent.id === state.agent);
+    elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+    elements.agent.disabled = !state.agents.length;
+    elements.send.disabled = !state.agent;
+    elements.input.disabled = !state.agent;
   }
 
-  async function loadModels() {
+  async function loadAgents() {
     try {
-      const data = await chatApi('/models', { method: 'GET', cache: 'no-store' });
-      state.models = Array.isArray(data.models)
-        ? data.models.filter((model) => model && typeof model.name === 'string' && model.name.trim())
+      const data = await chatApi('/agents', { method: 'GET', cache: 'no-store' });
+      state.agents = Array.isArray(data.items)
+        ? data.items.filter((agent) => agent && typeof agent.id === 'string' && typeof agent.name === 'string')
         : [];
-      renderModels();
-      if (!state.models.length) {
-        showNotice('Нет доступных моделей. Подключите Ollama в разделе «Модели».', 'warning');
+      renderAgents();
+      if (!state.agents.length) {
+        showNotice('Нет доступных агентов. Создайте или настройте агента в разделе «AI-агенты».', 'warning');
       } else {
         clearNotice();
       }
     } catch (error) {
-      state.models = [];
-      state.model = '';
-      renderModels();
-      showNotice(error.message || 'Не удалось загрузить список моделей.', 'warning');
+      state.agents = [];
+      state.agent = '';
+      renderAgents();
+      showNotice(error.message || 'Не удалось загрузить список агентов.', 'warning');
     }
   }
 
   async function sendMessage() {
     const content = elements.input.value.trim();
-    if (!content || state.sending || !state.model) return;
+    if (!content || state.sending || !state.agent) return;
 
     clearNotice();
     const userMessage = { role: 'user', content, time: formatTime(new Date()) };
@@ -207,7 +209,7 @@
       }));
       const data = await chatApi('/chat', {
         method: 'POST',
-        body: JSON.stringify({ model: state.model, messages })
+        body: JSON.stringify({ agent_id: state.agent, messages })
       });
       if (typeof data.response !== 'string') {
         throw new Error('Сервер вернул пустой или некорректный ответ модели.');
@@ -254,11 +256,12 @@
       }
     });
     elements.input.addEventListener('input', resizeInput);
-    elements.model.addEventListener('change', () => {
-      state.model = elements.model.value;
-      elements.modelName.textContent = state.model || 'Модель не выбрана';
-      elements.send.disabled = state.sending || !state.model;
-      elements.input.disabled = state.sending || !state.model;
+    elements.agent.addEventListener('change', () => {
+      state.agent = elements.agent.value;
+      const selected = state.agents.find((agent) => agent.id === state.agent);
+      elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+      elements.send.disabled = state.sending || !state.agent;
+      elements.input.disabled = state.sending || !state.agent;
     });
     elements.clear.addEventListener('click', clearChat);
   }
@@ -291,7 +294,7 @@
     bindShellEvents();
     bindEvents();
     renderHistory();
-    loadModels();
+    loadAgents();
   }
 
   window.ChatPage = { init };
