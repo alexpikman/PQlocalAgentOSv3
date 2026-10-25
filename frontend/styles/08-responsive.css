@@ -67,3 +67,5 @@
 @media(max-width:620px){.provider-row{align-items:flex-start;flex-wrap:wrap}.provider-row .provider-main{flex:1 1 calc(100% - 55px)}.provider-row .badge{margin-left:44px}.provider-row .btn{margin-left:0}.modal-card{padding:15px}}
 
 @media(max-width:760px){.domain-row{grid-template-columns:28px 24px minmax(0,1fr)}.domain-row .row-actions{grid-column:3;justify-content:flex-start}.domain-info:after{left:auto;right:-12px;transform:none}}
+
+@media(max-width:720px){.main:has(#chat-root) .page-head{display:none}}
