@@ -58,14 +58,14 @@
 .task-copy-result{display:flex;align-items:center;justify-content:center;gap:8px}
 .task-copy-result svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .task-result-modal-content{padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;min-height:80px}
-.entity-row-heading>b{min-width:0;overflow-wrap:anywhere;font-size:14px;font-weight:650}
+.entity-row-heading>b{min-width:0;overflow-wrap:anywhere;word-break:break-word;font-size:14px;font-weight:650}
 .entity-row-main>p{margin:7px 0;color:var(--muted);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0;color:var(--muted);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .entity-row-main>small{display:block;color:var(--muted);font-size:11px;display:block;margin-top:7px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .task-result-modal[hidden]{display:none!important}
 .task-result-modal{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px}
 .task-result-modal .modal-card{position:relative;z-index:1;width:min(760px,100%);max-height:min(82vh,800px);overflow:auto}
 .required-mark{color:#d46d76}
-.entity-row-main>b{display:block;font-size:14px;font-weight:650;overflow-wrap:anywhere}
+.entity-row-main>b{display:block;font-size:14px;font-weight:650;overflow-wrap:anywhere;word-break:break-word}
 .menu-editor-list{display:grid;gap:9px}
 .menu-editor-row{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);min-width:0}
 .drag-handle{font-size:18px;color:var(--muted);cursor:grab}
@@ -251,12 +251,17 @@ td{border-color:var(--line)}
 @media(max-width:480px){.chat-model-info{column-gap:8px;}}
 
 
-/* Agent registry: dedicated 80px avatar and stable visual priority for Agent #1. */
-.entity-row[data-search-row="agents"]{align-items:center}
-.entity-row[data-search-row="agents"]>.av,.entity-row[data-search-row="agents"]>.agent-list-avatar-fallback{width:80px!important;height:80px!important;flex:0 0 80px!important;align-self:center}
+/* Agent registry: avatar gets its own grid column; Agent #1 remains highlighted. */
+.entity-row[data-search-row="agents"]{grid-template-columns:80px minmax(0,1fr) auto;gap:16px}
+.entity-row[data-search-row="agents"]>.av,.entity-row[data-search-row="agents"]>.agent-list-avatar-fallback{width:80px;height:80px;align-self:start}
 .agent-list-avatar-fallback{display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:var(--accent-soft);color:var(--accent);font-size:20px;font-weight:750}
 .entity-row-agent-one{background:color-mix(in srgb,#3b9dff 7%,var(--panel))!important;border-color:color-mix(in srgb,#3b9dff 22%,var(--line))!important}
 .entity-row-agent-one:hover{background:color-mix(in srgb,#3b9dff 10%,var(--panel))!important}
+@media(max-width:720px){
+  .entity-row[data-search-row="agents"]{grid-template-columns:56px minmax(0,1fr);gap:12px}
+  .entity-row[data-search-row="agents"]>.av,.entity-row[data-search-row="agents"]>.agent-list-avatar-fallback{width:56px;height:56px}
+  .entity-row[data-search-row="agents"]>.entity-row-actions{grid-column:2;justify-content:flex-start;width:100%}
+}
 
 /* Selected agent identity in the chat toolbar. */
 .chat-model-info{grid-template-columns:36px minmax(0,1fr) 1px 30px!important;grid-template-rows:auto auto!important;column-gap:10px!important}
