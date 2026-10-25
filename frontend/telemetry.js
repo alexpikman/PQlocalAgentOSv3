@@ -2,6 +2,34 @@
 (function () {
   'use strict';
 
+  const iconCache = {};
+  async function loadInlineIcons() {
+    const icons = document.querySelectorAll('[data-icon]');
+    for (const el of icons) {
+      const name = el.dataset.icon;
+      if (!name) continue;
+      if (!iconCache[name]) {
+        try {
+          const res = await fetch('/icons/' + encodeURIComponent(name) + '.svg', { cache: 'force-cache' });
+          if (!res.ok) continue;
+          const text = await res.text();
+          const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+          const svg = doc.querySelector('svg');
+          if (svg) {
+            svg.setAttribute('width', '18');
+            svg.setAttribute('height', '18');
+            svg.setAttribute('aria-hidden', 'true');
+            iconCache[name] = svg;
+          }
+        } catch (_) { continue; }
+      }
+      if (iconCache[name]) {
+        el.replaceChildren(iconCache[name].cloneNode(true));
+      }
+    }
+  }
+  document.addEventListener('DOMContentLoaded', loadInlineIcons);
+
   const HISTORY_MAX = 60;
   const history = { cpu: [], ram: [], gpu: [] };
   let currentChart = 'cpu';
