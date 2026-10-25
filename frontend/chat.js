@@ -420,20 +420,22 @@
     avatar.title = agent ? agent.name : 'Агент не выбран';
   }
 
-  function closeAgentSettings() { elements.agentModal.hidden = true; }
+  function closeAgentSettings() { elements.agentModal.hidden = true; document.body.style.overflow = ''; document.getElementById('chat-agent-settings')?.focus(); }
   function openAgentSettings() {
+    const st = document.getElementById('chat-agent-settings-status');
+    if (st) st.textContent = '';
     const agent = state.agents.find(item => item.id === state.agent);
     if (!agent) { showNotice('Сначала выберите агента.', 'warning'); return; }
     const form = elements.agentSettingsForm; form.elements.name.value=agent.name||''; form.elements.role.value=agent.role||'ANALYST'; form.elements.model.value=agent.model||''; form.elements.description.value=agent.description||''; form.elements.system_prompt.value=agent.system_prompt||''; form.elements.memory.value=agent.memory||'';
     const permissions=agent.permissions||{}; ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>{form.elements[key].checked=Boolean(permissions[key])});
-    document.getElementById('chat-agent-modal-title').textContent='Настройки агента'; document.getElementById('chat-agent-modal-subtitle').textContent=agent.name+(agent.system?' · системный агент':''); document.getElementById('chat-agent-settings-status').textContent=''; elements.agentModal.hidden=false; form.elements.name.focus();
+    document.getElementById('chat-agent-modal-title').textContent='Настройки агента'; document.getElementById('chat-agent-modal-subtitle').textContent=agent.name+(agent.system?' · системный агент':''); elements.agentModal.hidden=false; document.body.style.overflow='hidden'; form.elements.name.focus();
   }
   async function saveAgentSettings(event) {
     event.preventDefault(); const agent=state.agents.find(item=>item.id===state.agent); if(!agent)return; const form=elements.agentSettingsForm,status=document.getElementById('chat-agent-settings-status');
     const payload={name:form.elements.name.value.trim(),role:form.elements.role.value,model:form.elements.model.value.trim(),description:form.elements.description.value.trim(),system_prompt:form.elements.system_prompt.value.trim(),memory:form.elements.memory.value.trim(),permissions:{}};
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>{payload.permissions[key]=form.elements[key].checked});
     const submit=form.querySelector('[type="submit"]');submit.disabled=true;status.textContent='Сохранение…';
-    try {const updated=await chatApi('/agents/'+encodeURIComponent(agent.id),{method:'POST',body:JSON.stringify(payload)});const index=state.agents.findIndex(item=>item.id===updated.id);if(index>=0)state.agents[index]=updated;elements.modelName.textContent=updated.name||'Агент не выбран';const option=Array.from(elements.agent.options).find(item=>item.value===updated.id);if(option)option.textContent=updated.name+(updated.model?' · '+updated.model:' · модель по умолчанию');document.getElementById('chat-agent-modal-subtitle').textContent=updated.name+(updated.system?' · системный агент':'');persistActiveConversation();status.textContent='Изменения сохранены';window.setTimeout(closeAgentSettings,450)}
+    try {const updated=await chatApi('/agents/'+encodeURIComponent(agent.id),{method:'POST',body:JSON.stringify(payload)});const index=state.agents.findIndex(item=>item.id===updated.id);if(index>=0)state.agents[index]=updated;elements.modelName.textContent=updated.name||'Агент не выбран';const option=Array.from(elements.agent.options).find(item=>item.value===updated.id);if(option)option.textContent=updated.name+(updated.model?' · '+updated.model:' · модель по умолчанию');document.getElementById('chat-agent-modal-subtitle').textContent=updated.name+(updated.system?' · системный агент':'');persistActiveConversation();status.textContent='Изменения сохранены';window.setTimeout(() => { const el = document.getElementById('chat-agent-settings-status'); if (el) el.textContent = ''; closeAgentSettings(); }, 450)}
     catch(error){status.textContent=error.message||'Не удалось сохранить настройки'}finally{submit.disabled=false}
   }
 
@@ -537,6 +539,12 @@
     elements.agentSettings.addEventListener('click', openAgentSettings);
     elements.agentModal.querySelectorAll('[data-chat-agent-close]').forEach(button => button.addEventListener('click', closeAgentSettings));
     elements.agentSettingsForm.addEventListener('submit', saveAgentSettings);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && elements.agentModal && !elements.agentModal.hidden) {
+        e.preventDefault();
+        closeAgentSettings();
+      }
+    });
     elements.clear.addEventListener('click', clearChat);
   }
 
