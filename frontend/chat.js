@@ -33,11 +33,14 @@
     const label = createElement('span', 'chat-model-label', 'Текущий агент');
     const modelName = createElement('b', 'chat-model-name', 'Загрузка агентов…');
     modelName.id = 'chat-agent-name';
+    const modelAvatar = createElement('div', 'chat-current-agent-avatar', 'AI');
+    modelAvatar.id = 'chat-current-agent-avatar';
+    modelAvatar.setAttribute('aria-hidden', 'true');
     const agentSettings = createElement('button', 'btn soft-secondary chat-agent-settings', '');
     agentSettings.type = 'button'; agentSettings.id = 'chat-agent-settings';
     agentSettings.title = 'Настройки выбранного агента'; agentSettings.setAttribute('aria-label', 'Настройки выбранного агента');
     agentSettings.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.3-1-1.6-2.8-1.6.6a7.5 7.5 0 0 0-2.6-1.5L14.6 4h-3.2l-.3 1.8a7.5 7.5 0 0 0-2.6 1.5l-1.6-.6-1.6 2.8 1.3 1a7.6 7.6 0 0 0 0 3l-1.3 1 1.6 2.8 1.6-.6a7.5 7.5 0 0 0 2.6 1.5l.3 1.8h3.2l.3-1.8a7.5 7.5 0 0 0 2.6-1.5l1.6.6 1.6-2.8z"></path></svg>';
-    modelInfo.append(label, modelName, agentSettings);
+    modelInfo.append(label, modelAvatar, modelName, agentSettings);
     const agentModal = createElement('div', 'chat-agent-modal'); agentModal.id = 'chat-agent-modal'; agentModal.hidden = true;
     agentModal.innerHTML = '<div class="modal-backdrop" data-chat-agent-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-agent-modal-title"><div class="section-title modal-card-head"><div><h2 id="chat-agent-modal-title">Настройки агента</h2><p id="chat-agent-modal-subtitle">Изменение параметров выбранного агента</p></div><button type="button" class="btn secondary" data-chat-agent-close>Закрыть</button></div><form id="chat-agent-settings-form" class="field-grid modal-card-body"><div class="field"><label for="chat-agent-setting-name">Название</label><input id="chat-agent-setting-name" name="name" required maxlength="80"></div><div class="field"><label for="chat-agent-setting-role">Роль</label><select id="chat-agent-setting-role" name="role"><option>MANAGER</option><option>ARCHITECT</option><option>ANALYST</option><option>DESIGNER</option><option>COPYWRITER</option><option>CODER</option><option>TESTER</option><option>DEVOPS</option></select></div><div class="field" style="grid-column:1/-1"><label for="chat-agent-setting-model">Модель</label><input id="chat-agent-setting-model" name="model" maxlength="160" placeholder="Имя модели Ollama/совместимого провайдера"></div><div class="field" style="grid-column:1/-1"><label for="chat-agent-setting-description">Описание</label><textarea id="chat-agent-setting-description" name="description" rows="2" maxlength="1000"></textarea></div><div class="field" style="grid-column:1/-1"><label for="chat-agent-setting-prompt">Системная инструкция</label><textarea id="chat-agent-setting-prompt" name="system_prompt" rows="5" maxlength="4000"></textarea></div><div class="field" style="grid-column:1/-1"><label for="chat-agent-setting-memory">Долговременная память</label><textarea id="chat-agent-setting-memory" name="memory" rows="3" maxlength="8000"></textarea></div><div class="field" style="grid-column:1/-1"><b>Разрешения</b><div class="chat-agent-permissions"><label><input type="checkbox" name="file_loading"> Чтение и поиск файлов</label><label><input type="checkbox" name="file_saving"> Создание и изменение файлов</label><label><input type="checkbox" name="file_moving"> Перемещение файлов</label><label><input type="checkbox" name="directory_moving"> Перемещение папок</label><label><input type="checkbox" name="file_deletion"> Удаление файлов</label><label><input type="checkbox" name="directory_creation"> Создание папок</label><label><input type="checkbox" name="directory_deletion"> Удаление пустых папок</label><label><input type="checkbox" name="github_access"> Доступ к GitHub</label></div></div><div class="field modal-card-actions" style="grid-column:1/-1"><span id="chat-agent-settings-status" role="status"></span><button class="btn primary" type="submit">Сохранить изменения</button></div></form></section>';
     document.body.append(agentModal);
@@ -365,6 +368,7 @@
 
   function renderAgents() {
     elements.agent.replaceChildren();
+    state.agents.sort((a,b) => { const rank = agent => (agent.id === 'manager' || agent.name === 'Агент №1') ? 0 : 1; return rank(a) - rank(b); });
     state.agents.forEach((agent) => {
       const option = document.createElement('option');
       option.value = agent.id;
@@ -382,9 +386,20 @@
 
     const selected = state.agents.find((agent) => agent.id === state.agent);
     elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+    updateCurrentAgentAvatar(selected);
     elements.agent.disabled = !state.agents.length;
     elements.send.disabled = !state.agent;
     elements.input.disabled = !state.agent;
+  }
+
+  function updateCurrentAgentAvatar(agent) {
+    const avatar = document.getElementById('chat-current-agent-avatar');
+    if (!avatar) return;
+    avatar.textContent = agent ? String(agent.name || 'AI').trim().slice(0, 2).toUpperCase() : 'AI';
+    let accent = '#3b9dff';
+    try { const config = typeof agent?.avatar === 'string' ? JSON.parse(agent.avatar) : agent?.avatar; if (config?.accent && /^#[0-9a-f]{6}$/i.test(config.accent)) accent = config.accent; } catch (_) {}
+    avatar.style.setProperty('--agent-avatar-accent', accent);
+    avatar.title = agent ? agent.name : 'Агент не выбран';
   }
 
   function closeAgentSettings() { elements.agentModal.hidden = true; }
@@ -498,6 +513,7 @@
       state.agent = elements.agent.value;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+      updateCurrentAgentAvatar(selected);
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
     });
     elements.agentSettings.addEventListener('click', openAgentSettings);
