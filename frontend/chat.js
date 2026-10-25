@@ -573,7 +573,6 @@
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
-    if (typeof window.renderHeader === 'function') window.renderHeader('chat');
     buildUI();
     bindShellEvents();
     bindEvents();
