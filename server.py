@@ -760,7 +760,7 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
     if fmt=='anthropic':
         if not key:
             raise ValueError('У облачного провайдера не настроен API-ключ')
-        system_text='\\n\\n'.join(str(m.get('content','')) for m in messages if m.get('role')=='system')
+        system_text='\n\n'.join(str(m.get('content','')) for m in messages if m.get('role')=='system')
         chat_messages=[{'role':m['role'],'content':m['content']} for m in messages if m.get('role') in ('user','assistant')]
         headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','User-Agent':'PQlocalAgentOSv3'}
         body={'model':requested_model,'max_tokens':max_tokens,'messages':chat_messages}
@@ -780,7 +780,7 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
         endpoint=base+'/models/'+urllib.parse.quote(requested_model.removeprefix('models/'),safe='')+':generateContent?key='+urllib.parse.quote(key)
         headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
         body={'contents':contents,'generationConfig':{'maxOutputTokens':max_tokens}}
-        if system_parts: body['systemInstruction']={'parts':[{'text':'\\n\\n'.join(system_parts)}]}
+        if system_parts: body['systemInstruction']={'parts':[{'text':'\n\n'.join(system_parts)}]}
     elif fmt in ('openai','openai-compatible'):
         headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
         if key: headers['Authorization']='Bearer '+key
@@ -2591,8 +2591,8 @@ class Handler(SimpleHTTPRequestHandler):
                     transcript=[]
                     for entry in (chat_entry.get('messages') or [])[-12:]:
                         if isinstance(entry,dict) and entry.get('role') in ('user','assistant'): transcript.append(str(entry.get('role'))+': '+str(entry.get('content',''))[:1800])
-                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\\n'+'\\n'.join(transcript))
-                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\\n\\n'+'\\n\\n'.join(recent_chat_context)[-14000:]})
+                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\n'+'\n'.join(transcript))
+                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\n\n'+'\n\n'.join(recent_chat_context)[-14000:]})
             if agent:
                 system_prompt = str(agent.get('system_prompt', '').strip())
                 role_prompt = {
