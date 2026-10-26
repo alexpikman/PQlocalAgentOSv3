@@ -2,14 +2,14 @@
   'use strict';
 
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
-  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false };
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], chatGroups: [], activeConversationId: '', activeProjectId: '', modelAvailable: false, loadingChats: false };
   const elements = {};
 
   async function chatApi(path, options) {
     const settings = options || {};
     const response = await fetch('/api' + path, {
       ...settings,
-      headers: { 'Content-Type': 'application/json', ...(settings.headers || {}) }
+      headers: { ...(settings.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(settings.headers || {}) }
     });
     let data;
     try { data = await response.json(); } catch (_) { data = {}; }
@@ -46,6 +46,8 @@
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
     modelInfo.append(label, modelAvatar, modelName, availability);
 
+    const workingDir = createElement('button', 'btn secondary', 'Указать рабочую папку'); workingDir.type = 'button'; workingDir.id = 'chat-working-dir'; workingDir.title = 'Путь будет добавлен в разрешённые папки для локальных файловых инструментов';
+    modelInfo.append(workingDir);
     const controls = createElement('div', 'chat-toolbar-controls');
     const modelSelect = document.createElement('select');
     modelSelect.id = 'chat-agent';
@@ -71,6 +73,8 @@
     const form = document.createElement('form');
     form.id = 'chat-form';
     form.className = 'chat-input-row';
+    const attach = createElement('button', 'btn secondary chat-attach', 'Прикрепить файл'); attach.type = 'button'; attach.id = 'chat-attach';
+    const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.id = 'chat-file-input'; fileInput.hidden = true;
     const input = document.createElement('textarea');
     input.id = 'chat-input';
     input.rows = 2;
@@ -80,7 +84,7 @@
     const send = createElement('button', 'btn primary', 'Отправить');
     send.type = 'submit';
     send.id = 'chat-send';
-    form.append(input, send);
+    form.append(attach, input, send, fileInput);
     composer.append(typing, form);
 
     root.append(toolbar, messages, composer);
@@ -94,38 +98,68 @@
     elements.input = input;
     elements.send = send;
     elements.clear = clearButton;
-    elements.typing = typing;
+    elements.typing = typing; elements.workingDir = workingDir; elements.attach = attach; elements.fileInput = fileInput;
     buildChatWorkspace();
   }
 
   function readWorkspace() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      state.projects = Array.isArray(saved.projects) ? saved.projects : [];
-      state.conversations = Array.isArray(saved.conversations) ? saved.conversations : [];
       state.activeConversationId = saved.activeConversationId || '';
       state.activeProjectId = saved.activeProjectId || '';
     } catch (_) {
-      state.projects = [];
-      state.conversations = [];
+      state.activeConversationId = '';
+      state.activeProjectId = '';
     }
   }
 
   function saveWorkspace() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        projects: state.projects,
-        conversations: state.conversations,
         activeConversationId: state.activeConversationId,
-        activeProjectId: state.activeProjectId
+        activeProjectId: state.activeProjectId,
+        projectExpansion: state.projects.filter(p => p.expanded).map(p => p.id),
+        groupExpansion: state.chatGroups.filter(g => g.expanded).map(g => g.id)
       }));
-    } catch (_) {
-      showNotice('Браузер не разрешил сохранить историю чатов. Проверьте настройки хранилища сайта.', 'warning');
-    }
+    } catch (_) {}
   }
 
   function activeConversation() {
     return state.conversations.find((item) => item.id === state.activeConversationId) || null;
+  }
+
+  function normalizeChat(chat) {
+    return {
+      ...chat,
+      id: String(chat.id || ''),
+      title: chat.title || 'Новый чат',
+      projectId: String(chat.project_id || chat.projectId || ''),
+      groupId: String(chat.group_id || chat.groupId || ''),
+      agentId: String(chat.agent_id || chat.agentId || ''),
+      workingDir: String(chat.working_dir || chat.workingDir || ''),
+      messages: Array.isArray(chat.messages) ? chat.messages : [],
+      createdAt: chat.created_at || chat.createdAt || new Date().toISOString(),
+      updatedAt: chat.updated_at || chat.updatedAt || chat.created_at || chat.createdAt || new Date().toISOString()
+    };
+  }
+
+  async function saveConversation(conversation) {
+    if (!conversation) return;
+    const payload = {
+      id: conversation.id, title: conversation.title || 'Новый чат',
+      project_id: conversation.projectId || '', group_id: conversation.groupId || '',
+      agent_id: conversation.agentId || '', working_dir: conversation.workingDir || '',
+      messages: Array.isArray(conversation.messages) ? conversation.messages : [],
+      created_at: conversation.createdAt || new Date().toISOString(),
+      updated_at: conversation.updatedAt || new Date().toISOString()
+    };
+    try {
+      const result = await chatApi('/chats', { method: 'POST', body: JSON.stringify(payload) });
+      if (result.chat) Object.assign(conversation, normalizeChat(result.chat));
+      rebuildProjectTree();
+    } catch (error) {
+      showNotice('Не удалось сохранить историю на сервере: ' + error.message, 'warning');
+    }
   }
 
   function persistActiveConversation() {
@@ -134,11 +168,13 @@
     conversation.messages = state.messages;
     conversation.agentId = state.agent;
     conversation.updatedAt = new Date().toISOString();
-    const firstUser = state.messages.find((message) => message.role === 'user');
+    const firstUser = state.messages.find((message) => message.role === 'user' && message.content);
     if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
-      conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').split(' ').slice(0,3).join(' ').slice(0,48) || 'Новый чат';
+      conversation.title = firstUser.content.trim().replace(/\\s+/g, ' ').split(' ').slice(0, 3).join(' ').slice(0, 48) || 'Новый чат';
     }
-    saveWorkspace();renderChatWorkspace();syncProjectChatMemory(conversation);
+    saveWorkspace();
+    renderChatWorkspace();
+    void saveConversation(conversation);
   }
 
   function makeId(prefix) {
@@ -152,172 +188,301 @@
     const group = createElement('section', 'nav-group nav-group-fixed'); group.dataset.navGroup = 'group-0';
     const title = createElement('div', 'nav-group-label', 'РАБОЧЕЕ ПРОСТРАНСТВО');
     const items = createElement('div', 'nav-group-items');
-    const dashboard = createElement('button', 'nav-item', ''); dashboard.type='button'; dashboard.dataset.go='dashboard';
-    dashboard.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg></span>');dashboard.append(createElement('span','nav-label','Рабочий стол'));
-    const chatLink = createElement('button','nav-item active',''); chatLink.type='button'; chatLink.dataset.go='chat'; chatLink.setAttribute('aria-current','page');
-    chatLink.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h8"/></svg></span>');chatLink.append(createElement('span','nav-label','Чат'));
-    dashboard.onclick=()=>{window.location.href='/'}; chatLink.onclick=()=>{window.location.href='/chat.html'};
-    items.append(dashboard,chatLink); group.append(title,items);
-    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','Новый чат'),newProject=createElement('button','btn secondary','Проект');
-    newChat.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>');newProject.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6m-3-3h6"/></svg>');
-    newChat.type='button';newChat.onclick=()=>createConversation(state.activeProjectId);newProject.type='button';newProject.onclick=openProjectModal;actions.append(newChat,newProject);
-    const projectsTitle=createElement('div','nav-group-label','ПРОЕКТЫ'),projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
-    const historyToggle=createElement('button','btn secondary chat-history-toggle','');historyToggle.type='button';historyToggle.id='chat-history-toggle';
-    historyToggle.innerHTML='<span>История чатов</span><svg class="nav-group-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"></path></svg>';
-    const historyList=createElement('div','sidebar-chat-list');historyList.id='chat-history-list';
-    const collapsed=localStorage.getItem('pqlocalagentosv3.chat-history-collapsed')==='true';historyList.hidden=collapsed;historyToggle.setAttribute('aria-expanded',String(!collapsed));historyToggle.classList.toggle('is-collapsed',collapsed);
-    historyToggle.onclick=()=>{const close=historyToggle.getAttribute('aria-expanded')==='true';historyToggle.setAttribute('aria-expanded',String(!close));historyToggle.classList.toggle('is-collapsed',close);historyList.hidden=close;localStorage.setItem('pqlocalagentosv3.chat-history-collapsed',String(close))};
-    workspace.append(group,actions,projectsTitle,projectsList,historyToggle,historyList);
-    workspace.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="chat-project-modal" hidden><div class="modal-backdrop" data-chat-project-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-project-title"><div class="section-title modal-card-head"><div><h2 id="chat-project-title">Проект для чата</h2><p>Выберите существующий или создайте новый.</p></div><button type="button" class="btn secondary" data-chat-project-close>Закрыть</button></div><div class="modal-card-body"><div class="field"><label for="chat-project-select">Существующий проект</label><select id="chat-project-select"><option value="">— Не выбран —</option></select></div><div class="divider"></div><div class="field"><label for="chat-project-name">Новый проект</label><input id="chat-project-name" maxlength="120" placeholder="Название нового проекта"></div><div class="field"><label for="chat-project-path">Путь (необязательно)</label><input id="chat-project-path" maxlength="1000" placeholder="C:\\Projects\\MyProject"></div><div class="field"><label for="chat-project-description">Описание (необязательно)</label><textarea id="chat-project-description" rows="2" maxlength="1000"></textarea></div><div class="notice" id="chat-project-status" hidden></div></div><div class="modal-card-actions"><button type="button" class="btn secondary" data-chat-project-close>Отмена</button><button type="button" class="btn primary" id="chat-project-submit">Добавить в чат</button></div></section></div>');
-    document.body.append(document.getElementById('chat-project-modal'));
-    nav.replaceChildren(workspace);elements.workspace=workspace;elements.projectsList=projectsList;elements.historyList=historyList;bindProjectModal();
+    const dashboard = createElement('button', 'nav-item', ''); dashboard.type = 'button'; dashboard.dataset.go = 'dashboard';
+    dashboard.insertAdjacentHTML('beforeend', '<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg></span>');
+    dashboard.append(createElement('span', 'nav-label', 'Рабочий стол'));
+    const chatLink = createElement('button', 'nav-item active', ''); chatLink.type = 'button'; chatLink.dataset.go = 'chat'; chatLink.setAttribute('aria-current', 'page');
+    chatLink.insertAdjacentHTML('beforeend', '<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h8"/></svg></span>');
+    chatLink.append(createElement('span', 'nav-label', 'Чат'));
+    dashboard.onclick = () => { window.location.href = '/'; }; chatLink.onclick = () => { window.location.href = '/chat.html'; };
+    items.append(dashboard, chatLink); group.append(title, items);
+
+    const actions = createElement('div', 'sidebar-chat-actions');
+    const newChat = createElement('button', 'btn primary', '+ Новый чат');
+    const newProject = createElement('button', 'btn secondary', '+ Проект');
+    const newGroup = createElement('button', 'btn secondary', '+ Папка');
+    [newChat, newProject, newGroup].forEach(button => { button.type = 'button'; });
+    newChat.onclick = openNewChatModal; newProject.onclick = openProjectModal; newGroup.onclick = () => { void createChatGroup(); };
+    actions.append(newChat, newProject, newGroup);
+
+    const projectsTitle = createElement('div', 'nav-group-label', 'ПРОЕКТЫ');
+    const projectsList = createElement('div', 'sidebar-chat-list'); projectsList.id = 'chat-project-list';
+    const groupsTitle = createElement('div', 'nav-group-label', 'ПАПКИ');
+    const groupsList = createElement('div', 'sidebar-chat-list'); groupsList.id = 'chat-group-list';
+    const historyToggle = createElement('button', 'btn secondary chat-history-toggle', '');
+    historyToggle.type = 'button'; historyToggle.id = 'chat-history-toggle';
+    historyToggle.innerHTML = '<span>ЧАТЫ БЕЗ ПРОЕКТА</span><svg class="nav-group-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"></path></svg>';
+    const historyList = createElement('div', 'sidebar-chat-list'); historyList.id = 'chat-history-list';
+    historyToggle.setAttribute('aria-expanded', 'true');
+    historyToggle.onclick = () => { const open = historyToggle.getAttribute('aria-expanded') === 'true'; historyToggle.setAttribute('aria-expanded', String(!open)); historyToggle.classList.toggle('is-collapsed', open); historyList.hidden = open; };
+    workspace.append(group, actions, projectsTitle, projectsList, groupsTitle, groupsList, historyToggle, historyList);
+    workspace.insertAdjacentHTML('beforeend', '<div class="modal-overlay" id="chat-new-modal" hidden><div class="modal-backdrop" data-chat-new-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-new-title"><div class="section-title modal-card-head"><div><h2 id="chat-new-title">Новый чат</h2><p>Выберите проект или папку. Можно оставить чат в корне.</p></div><button type="button" class="btn secondary" data-chat-new-close>Закрыть</button></div><div class="modal-card-body"><div class="field"><label for="chat-new-project">Проект</label><select id="chat-new-project"><option value="">Без проекта</option></select></div><div class="field"><label for="chat-new-group">Папка для чатов</label><select id="chat-new-group"><option value="">Без папки</option><option value="__new_group__">+ Создать папку…</option></select></div><div class="notice" id="chat-new-status" hidden></div></div><div class="modal-card-actions"><button type="button" class="btn secondary" data-chat-new-close>Отмена</button><button type="button" class="btn primary" id="chat-new-submit">Создать чат</button></div></section></div>');
+    workspace.insertAdjacentHTML('beforeend', '<div class="modal-overlay" id="chat-project-modal" hidden><div class="modal-backdrop" data-chat-project-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-project-title"><div class="section-title modal-card-head"><div><h2 id="chat-project-title">Создать проект</h2><p>Проект появится в дереве после добавления в него чата.</p></div><button type="button" class="btn secondary" data-chat-project-close>Закрыть</button></div><div class="modal-card-body"><div class="field"><label for="chat-project-name">Название проекта</label><input id="chat-project-name" maxlength="120" placeholder="Название проекта"></div><div class="field"><label for="chat-project-path">Рабочий путь (необязательно)</label><input id="chat-project-path" maxlength="1000" placeholder="C:\\Projects\\MyProject"></div><div class="field"><label for="chat-project-description">Описание (необязательно)</label><textarea id="chat-project-description" rows="2" maxlength="1000"></textarea></div><div class="notice" id="chat-project-status" hidden></div></div><div class="modal-card-actions"><button type="button" class="btn secondary" data-chat-project-close>Отмена</button><button type="button" class="btn primary" id="chat-project-submit">Создать проект и чат</button></div></section></div>');
+    document.body.append(document.getElementById('chat-new-modal'), document.getElementById('chat-project-modal'));
+    nav.replaceChildren(workspace);
+    elements.workspace = workspace; elements.projectsList = projectsList; elements.groupsList = groupsList; elements.historyList = historyList;
+    bindNewChatModal(); bindProjectModal();
+  }
+
+  async function openNewChatModal() {
+    const modal = document.getElementById('chat-new-modal');
+    const projects = document.getElementById('chat-new-project');
+    const groups = document.getElementById('chat-new-group');
+    const status = document.getElementById('chat-new-status');
+    status.hidden = true; status.textContent = '';
+    projects.replaceChildren(new Option('Без проекта', ''));
+    state.systemProjects.forEach(project => projects.add(new Option(project.name || 'Без названия', project.id)));
+    groups.replaceChildren(new Option('Без папки', ''), new Option('+ Создать папку…', '__new_group__'));
+    state.chatGroups.forEach(group => groups.add(new Option(group.name, group.id)));
+    projects.value = state.activeProjectId || '';
+    modal.hidden = false;
+    document.getElementById('chat-new-submit').focus();
+  }
+
+  function bindNewChatModal() {
+    const modal = document.getElementById('chat-new-modal');
+    modal.querySelectorAll('[data-chat-new-close]').forEach(button => button.onclick = () => { modal.hidden = true; });
+    document.getElementById('chat-new-submit').onclick = async () => {
+      const projectId = document.getElementById('chat-new-project').value;
+      let groupId = document.getElementById('chat-new-group').value;
+      const status = document.getElementById('chat-new-status');
+      const submit = document.getElementById('chat-new-submit');
+      status.hidden = true; submit.disabled = true;
+      try {
+        if (groupId === '__new_group__') {
+          const name = window.prompt('Название новой папки');
+          if (name === null) return;
+          const result = await chatApi('/chat-groups', { method: 'POST', body: JSON.stringify({ name }) });
+          if (result.group) state.chatGroups.unshift({ ...result.group, expanded: true });
+          groupId = result.group?.id || '';
+        }
+        modal.hidden = true;
+        await createConversation(projectId, groupId);
+      } catch (error) {
+        status.textContent = error.message || 'Не удалось создать чат.';
+        status.hidden = false;
+      } finally { submit.disabled = false; }
+    };
   }
 
   async function openProjectModal() {
-    const modal=document.getElementById('chat-project-modal'),select=document.getElementById('chat-project-select'),status=document.getElementById('chat-project-status');if(!modal||!select)return;
-    status.hidden=true;status.textContent='';select.replaceChildren(new Option('— Не выбран —',''));
-    try{const result=await chatApi('/projects');state.systemProjects=Array.isArray(result.items)?result.items:[];state.systemProjects.forEach(p=>select.add(new Option(p.name||'Без названия',p.id)))}catch(e){state.systemProjects=[];status.textContent='Не удалось загрузить проекты: '+e.message;status.hidden=false}
-    modal.hidden=false;document.getElementById('chat-project-name')?.focus();
+    const modal = document.getElementById('chat-project-modal');
+    const status = document.getElementById('chat-project-status');
+    status.hidden = true; status.textContent = '';
+    modal.hidden = false;
+    document.getElementById('chat-project-name').focus();
   }
 
   function bindProjectModal() {
-    const modal=document.getElementById('chat-project-modal');if(!modal||modal.dataset.bound==='true')return;modal.dataset.bound='true';
-    modal.querySelectorAll('[data-chat-project-close]').forEach(b=>b.onclick=()=>{modal.hidden=true});
-    document.getElementById('chat-project-submit').onclick=async()=>{
-      const select=document.getElementById('chat-project-select'),nameInput=document.getElementById('chat-project-name'),pathInput=document.getElementById('chat-project-path'),descInput=document.getElementById('chat-project-description'),status=document.getElementById('chat-project-status'),submit=document.getElementById('chat-project-submit'),name=nameInput.value.trim();
-      status.hidden=true;status.textContent='';submit.disabled=true;
-      try{let project;if(name){project=await chatApi('/projects',{method:'POST',body:JSON.stringify({name:name.slice(0,120),path:pathInput.value.trim(),description:descInput.value.trim()})});state.systemProjects=[project,...(state.systemProjects||[]).filter(p=>p.id!==project.id)]}else if(select.value){project=(state.systemProjects||[]).find(p=>p.id===select.value);if(!project)throw new Error('Выбранный проект больше не найден. Откройте список заново.')}else throw new Error('Выберите проект или введите название');
-      if(!state.projects.some(p=>p.id===project.id))state.projects.unshift({id:project.id,name:project.name||'Без названия',createdAt:project.created_at||new Date().toISOString(),expanded:true});
-      state.activeProjectId=project.id;saveWorkspace();renderChatWorkspace();modal.hidden=true;nameInput.value='';pathInput.value='';descInput.value='';select.value='';createConversation(project.id)
-      }catch(e){status.textContent=e.message||'Не удалось добавить проект.';status.hidden=false}finally{submit.disabled=false}
+    const modal = document.getElementById('chat-project-modal');
+    modal.querySelectorAll('[data-chat-project-close]').forEach(button => button.onclick = () => { modal.hidden = true; });
+    document.getElementById('chat-project-submit').onclick = async () => {
+      const nameInput = document.getElementById('chat-project-name');
+      const pathInput = document.getElementById('chat-project-path');
+      const descInput = document.getElementById('chat-project-description');
+      const status = document.getElementById('chat-project-status');
+      const submit = document.getElementById('chat-project-submit');
+      status.hidden = true; submit.disabled = true;
+      try {
+        const name = nameInput.value.trim();
+        if (!name) throw new Error('Укажите название проекта.');
+        const result = await chatApi('/projects', { method: 'POST', body: JSON.stringify({ name, path: pathInput.value.trim(), description: descInput.value.trim() }) });
+        const project = result.item || result.project || result;
+        if (!project.id) throw new Error('Сервер не вернул созданный проект.');
+        state.systemProjects = [project, ...state.systemProjects.filter(item => item.id !== project.id)];
+        modal.hidden = true; nameInput.value = ''; pathInput.value = ''; descInput.value = '';
+        await createConversation(project.id, '');
+      } catch (error) {
+        status.textContent = error.message || 'Не удалось создать проект.';
+        status.hidden = false;
+      } finally { submit.disabled = false; }
     };
   }
-  function createConversation(projectId) {
+
+  async function createChatGroup() {
+    const name = window.prompt('Название папки для чатов');
+    if (name === null) return;
+    const result = await chatApi('/chat-groups', { method: 'POST', body: JSON.stringify({ name }) });
+    if (result.group) state.chatGroups.unshift({ ...result.group, expanded: true });
+    saveWorkspace(); renderChatWorkspace();
+  }
+
+  async function createConversation(projectId, groupId) {
     if (state.sending) return;
     const conversation = {
-      id: makeId('chat'),
-      title: 'Новый чат',
-      projectId: projectId || '',
-      agentId: state.agent,
-      messages: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      id: makeId('chat'), title: 'Новый чат', projectId: projectId || '', groupId: groupId || '',
+      agentId: state.agent, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workingDir: ''
     };
     state.conversations.unshift(conversation);
-    state.activeConversationId = conversation.id;
-    state.activeProjectId = conversation.projectId;
-    state.messages = [];
-    renderHistory();
-    saveWorkspace();
-    renderChatWorkspace();
-    syncProjectChatMemory(conversation);
-    elements.input.value = '';
-    resizeInput();
-    elements.input.focus();
+    state.activeConversationId = conversation.id; state.activeProjectId = conversation.projectId;
+    state.messages = []; renderHistory(); saveWorkspace(); renderChatWorkspace();
+    try { await saveConversation(conversation); } catch (_) {}
+    elements.input.value = ''; resizeInput(); elements.input.focus();
   }
 
-  function openConversation(id) {
-    if (state.sending || id === state.activeConversationId) return;
-    const conversation = state.conversations.find((item) => item.id === id);
-    if (!conversation) return;
-    state.activeConversationId = id;
-    state.activeProjectId = conversation.projectId || '';
-    state.messages = Array.isArray(conversation.messages) ? conversation.messages.slice() : [];
-    if (conversation.agentId && state.agents.some((agent) => agent.id === conversation.agentId)) {
-      state.agent = conversation.agentId;
-      elements.agent.value = state.agent;
-      const selected = state.agents.find((agent) => agent.id === state.agent);
-      elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-    }
-    renderHistory();
-    saveWorkspace();
-    renderChatWorkspace();
-    elements.input.value = '';
-    resizeInput();
-  }
-
-  function renameConversation(id) {
-    const conversation=state.conversations.find(item=>item.id===id);if(!conversation)return;
-    const next=window.prompt('Название чата',conversation.title||'Новый чат');if(next===null)return;
-    const title=next.trim().replace(/\s+/g,' ').slice(0,120);if(!title){showNotice('Название чата не может быть пустым.','warning');return}
-    conversation.title=title;conversation.updatedAt=new Date().toISOString();saveWorkspace();renderChatWorkspace();syncProjectChatMemory(conversation);
-  }
-  async function syncProjectChatMemory(conversation) {
-    if(!conversation?.projectId)return;
-    try{const projectChats=state.conversations.filter(item=>item.projectId===conversation.projectId).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,40).map(item=>({id:item.id,title:item.title||'Новый чат',updated_at:item.updatedAt||'',agent_id:item.agentId||'',messages:(item.messages||[]).slice(-30).map(m=>({role:m.role,content:String(m.content||'').slice(0,3000),time:m.time||''}))}));await chatApi('/projects/'+encodeURIComponent(conversation.projectId)+'/memory',{method:'POST',body:JSON.stringify({chats:projectChats})})}catch(error){showNotice('История сохранена в браузере, но память проекта не обновилась: '+error.message,'warning')}
-  }
-
-  function deleteConversation(id) {
+  async function openConversation(id) {
     if (state.sending) return;
-    state.conversations = state.conversations.filter((item) => item.id !== id);
+    try {
+      const result = await chatApi('/chats/' + encodeURIComponent(id), { cache: 'no-store' });
+      const conversation = normalizeChat(result.chat || {});
+      const index = state.conversations.findIndex(item => item.id === conversation.id);
+      if (index >= 0) state.conversations[index] = conversation; else state.conversations.unshift(conversation);
+      state.activeConversationId = conversation.id; state.activeProjectId = conversation.projectId;
+      state.messages = conversation.messages.slice();
+      if (conversation.agentId && state.agents.some(agent => agent.id === conversation.agentId)) {
+        state.agent = conversation.agentId; elements.agent.value = state.agent;
+        const selected = state.agents.find(agent => agent.id === state.agent);
+        elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+        updateCurrentAgentAvatar(selected); void updateModelAvailability(selected);
+      }
+      renderHistory(); saveWorkspace(); renderChatWorkspace();
+      elements.input.value = ''; resizeInput();
+    } catch (error) { showNotice('Не удалось загрузить историю чата: ' + error.message, 'warning'); }
+  }
+
+  async function renameConversation(id) {
+    const conversation = state.conversations.find(item => item.id === id); if (!conversation) return;
+    const next = window.prompt('Название чата', conversation.title || 'Новый чат'); if (next === null) return;
+    const title = next.trim().replace(/\\s+/g, ' ').slice(0, 120);
+    if (!title) { showNotice('Название чата не может быть пустым.', 'warning'); return; }
+    conversation.title = title; conversation.updatedAt = new Date().toISOString();
+    await saveConversation(conversation); renderChatWorkspace();
+  }
+
+  async function syncProjectChatMemory(conversation) {
+    if (!conversation?.projectId) return;
+    try {
+      const projectChats = state.conversations.filter(item => item.projectId === conversation.projectId).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, 40).map(item => ({ id: item.id, title: item.title || 'Новый чат', updated_at: item.updatedAt || '', agent_id: item.agentId || '', messages: (item.messages || []).slice(-30).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 3000), time: m.time || '' })) }));
+      await chatApi('/projects/' + encodeURIComponent(conversation.projectId) + '/memory', { method: 'POST', body: JSON.stringify({ chats: projectChats }) });
+    } catch (_) {}
+  }
+
+  async function deleteConversation(id) {
+    if (state.sending) return;
+    try { await chatApi('/chats/' + encodeURIComponent(id), { method: 'DELETE' }); }
+    catch (error) { showNotice('Не удалось удалить чат: ' + error.message, 'warning'); return; }
+    state.conversations = state.conversations.filter(item => item.id !== id);
     if (state.activeConversationId === id) {
-      state.activeConversationId = '';
-      state.messages = [];
-      const next = state.conversations[0];
-      if (next) openConversation(next.id);
-      else createConversation(state.activeProjectId);
+      state.activeConversationId = ''; state.messages = [];
+      if (state.conversations.length) await openConversation(state.conversations[0].id);
+      else await createConversation('', '');
     }
-    saveWorkspace();
+    saveWorkspace(); renderChatWorkspace();
+  }
+
+  function rebuildProjectTree() {
+    const projectIds = new Set(state.conversations.map(chat => chat.projectId).filter(Boolean));
+    const expanded = new Map(state.projects.map(project => [project.id, !!project.expanded]));
+    state.projects = state.systemProjects.filter(project => projectIds.has(project.id)).map(project => ({ id: project.id, name: project.name || 'Без названия', createdAt: project.created_at || '', expanded: expanded.has(project.id) ? expanded.get(project.id) : true }));
     renderChatWorkspace();
+  }
+
+  async function loadChatWorkspaceFromServer() {
+    const [chatsResult, groupsResult, projectsResult] = await Promise.all([
+      chatApi('/chats', { cache: 'no-store' }),
+      chatApi('/chat-groups', { cache: 'no-store' }),
+      chatApi('/projects', { cache: 'no-store' })
+    ]);
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) {}
+    const expandedProjects = new Set(saved.projectExpansion || []);
+    const expandedGroups = new Set(saved.groupExpansion || []);
+    state.conversations = (Array.isArray(chatsResult.items) ? chatsResult.items : []).map(normalizeChat);
+    state.chatGroups = (Array.isArray(groupsResult.items) ? groupsResult.items : []).map(group => ({ ...group, expanded: expandedGroups.size ? expandedGroups.has(group.id) : true }));
+    state.systemProjects = Array.isArray(projectsResult.items) ? projectsResult.items : [];
+    state.projects = [];
+    rebuildProjectTree();
+    state.projects.forEach(project => { if (expandedProjects.size) project.expanded = expandedProjects.has(project.id); });
+    if (!state.conversations.some(chat => chat.id === state.activeConversationId)) state.activeConversationId = state.conversations[0]?.id || '';
+    return state.conversations;
   }
 
   function renderChatWorkspace() {
-    if (!elements.projectsList || !elements.historyList) return;
+    if (!elements.projectsList || !elements.historyList || !elements.groupsList) return;
+    rebuildProjectTreeShallow();
     elements.projectsList.replaceChildren();
-    if (!state.projects.length) {
-      elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Создайте проект, чтобы группировать диалоги.'));
-    }
-    state.projects.forEach((project) => {
+    if (!state.projects.length) elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Проекты появятся после добавления в них чата.'));
+    state.projects.forEach(project => {
       const row = createElement('div', 'sidebar-chat-project-row' + (state.activeProjectId === project.id ? ' active' : ''));
       const label = createElement('button', 'sidebar-chat-project-label', '');
-      label.type = 'button';
-      label.title = project.name || 'Без названия';
-      label.dataset.projectToggle = project.id;
-      label.insertAdjacentHTML('beforeend','<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
-      label.append(createElement('span', 'sidebar-chat-item-title', project.name || 'Без названия'));
+      label.type = 'button'; label.title = project.name; label.draggable = true;
+      label.insertAdjacentHTML('beforeend', '<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
+      label.append(createElement('span', 'sidebar-chat-item-title', project.name));
       label.classList.toggle('is-expanded', !!project.expanded);
-      label.addEventListener('click', () => {
-        project.expanded = !project.expanded;
-        state.activeProjectId = project.id;
-        saveWorkspace();
-        renderChatWorkspace();
-      });
-      const add = createElement('button', 'icon-btn sidebar-project-add', '');
-      add.type = 'button';
-      add.dataset.projectAddChat = project.id;
-      add.title = 'Новый чат в проекте';
-      add.setAttribute('aria-label', 'Новый чат в проекте ' + project.name);
-      add.innerHTML = '<img src="/icons/start.svg" alt="">';
-      add.addEventListener('click', () => createConversation(project.id));
-      row.append(label, add);
-      elements.projectsList.append(row);
+      label.onclick = () => { project.expanded = !project.expanded; state.activeProjectId = project.id; saveWorkspace(); renderChatWorkspace(); };
+      label.ondragover = event => event.preventDefault();
+      label.ondrop = event => { event.preventDefault(); void moveChat(event.dataTransfer.getData('text/plain'), project.id, ''); };
+      const add = createElement('button', 'icon-btn sidebar-project-add', '+'); add.type = 'button'; add.title = 'Новый чат в проекте'; add.onclick = () => { void createConversation(project.id, ''); };
+      row.append(label, add); elements.projectsList.append(row);
       if (project.expanded) {
         const nested = createElement('div', 'sidebar-chat-project-chats');
-        state.conversations.filter((chat) => chat.projectId === project.id).forEach((chat) => {
-          nested.append(makeConversationRow(chat));
-        });
+        state.conversations.filter(chat => chat.projectId === project.id).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).forEach(chat => nested.append(makeConversationRow(chat)));
         if (!nested.childElementCount) nested.append(createElement('div', 'sidebar-chat-empty', 'Пока нет чатов'));
+        nested.ondragover = event => event.preventDefault();
+        nested.ondrop = event => { event.preventDefault(); void moveChat(event.dataTransfer.getData('text/plain'), project.id, ''); };
         elements.projectsList.append(nested);
       }
     });
 
+    elements.groupsList.replaceChildren();
+    if (!state.chatGroups.length) elements.groupsList.append(createElement('div', 'sidebar-chat-empty', 'Создайте папку, чтобы группировать чаты.'));
+    state.chatGroups.forEach(group => {
+      const row = createElement('div', 'sidebar-chat-project-row');
+      const label = createElement('button', 'sidebar-chat-project-label', '');
+      label.type = 'button'; label.title = group.name; label.classList.toggle('is-expanded', !!group.expanded);
+      label.insertAdjacentHTML('beforeend', '<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
+      label.append(createElement('span', 'sidebar-chat-item-title', group.name));
+      label.onclick = () => { group.expanded = !group.expanded; saveWorkspace(); renderChatWorkspace(); };
+      label.ondragover = event => event.preventDefault();
+      label.ondrop = event => { event.preventDefault(); void moveChat(event.dataTransfer.getData('text/plain'), '', group.id); };
+      const remove = createElement('button', 'icon-btn sidebar-project-add', '×'); remove.type = 'button'; remove.title = 'Удалить папку'; remove.onclick = async () => { if (!window.confirm('Удалить папку? Чаты останутся и переместятся в корень.')) return; try { await chatApi('/chat-groups/' + encodeURIComponent(group.id), { method: 'DELETE' }); state.chatGroups = state.chatGroups.filter(item => item.id !== group.id); state.conversations.forEach(chat => { if (chat.groupId === group.id) chat.groupId = ''; }); renderChatWorkspace(); } catch (error) { showNotice(error.message, 'warning'); } };
+      row.append(label, remove); elements.groupsList.append(row);
+      if (group.expanded) {
+        const nested = createElement('div', 'sidebar-chat-project-chats');
+        state.conversations.filter(chat => !chat.projectId && chat.groupId === group.id).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).forEach(chat => nested.append(makeConversationRow(chat)));
+        if (!nested.childElementCount) nested.append(createElement('div', 'sidebar-chat-empty', 'Перетащите сюда чат'));
+        nested.ondragover = event => event.preventDefault();
+        nested.ondrop = event => { event.preventDefault(); void moveChat(event.dataTransfer.getData('text/plain'), '', group.id); };
+        elements.groupsList.append(nested);
+      }
+    });
+
     elements.historyList.replaceChildren();
-    const ungrouped = state.conversations.filter((chat) => !chat.projectId).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    elements.historyList.ondragover = event => event.preventDefault();
+    elements.historyList.ondrop = event => { event.preventDefault(); void moveChat(event.dataTransfer.getData('text/plain'), '', ''); };
+    const ungrouped = state.conversations.filter(chat => !chat.projectId && !chat.groupId).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
     if (!ungrouped.length) elements.historyList.append(createElement('div', 'sidebar-chat-empty', 'Новые диалоги появятся здесь.'));
-    ungrouped.forEach((chat) => elements.historyList.append(makeConversationRow(chat)));
+    ungrouped.forEach(chat => elements.historyList.append(makeConversationRow(chat)));
+  }
+
+  function rebuildProjectTreeShallow() {
+    const projectIds = new Set(state.conversations.map(chat => chat.projectId).filter(Boolean));
+    const known = new Map(state.projects.map(project => [project.id, project]));
+    state.projects = state.systemProjects.filter(project => projectIds.has(project.id)).map(project => ({ ...project, name: project.name || 'Без названия', expanded: known.has(project.id) ? known.get(project.id).expanded : true }));
   }
 
   function makeConversationRow(chat) {
     const row = createElement('div', 'sidebar-chat-item' + (chat.id === state.activeConversationId ? ' active' : ''));
+    row.draggable = true; row.dataset.chatId = chat.id;
+    row.ondragstart = event => { event.dataTransfer.setData('text/plain', chat.id); event.dataTransfer.effectAllowed = 'move'; };
     const label = createElement('button', 'sidebar-chat-item-label', chat.title || 'Новый чат');
-    label.type = 'button';
-    label.title = chat.title || 'Новый чат';
-    label.addEventListener('click', () => openConversation(chat.id));
-    const actions=createElement('div','sidebar-chat-item-actions');
-    const rename=createElement('button','sidebar-chat-item-action','');rename.type='button';rename.title='Переименовать чат';rename.setAttribute('aria-label','Переименовать чат '+(chat.title||'Новый чат'));rename.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19.7 7.8a2.2 2.2 0 0 0-3.1-3.1z"/><path d="m14.9 6.4 3.1 3.1"/></svg>';rename.onclick=()=>renameConversation(chat.id);
-    const remove=createElement('button','sidebar-chat-item-action is-danger','');remove.type='button';remove.title='Удалить чат';remove.setAttribute('aria-label','Удалить чат '+(chat.title||'Новый чат'));remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>';remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
-    actions.append(rename,remove);row.append(label,actions);
-    return row;
+    label.type = 'button'; label.title = chat.title || 'Новый чат'; label.onclick = () => { void openConversation(chat.id); };
+    const actions = createElement('div', 'sidebar-chat-item-actions');
+    const rename = createElement('button', 'sidebar-chat-item-action', ''); rename.type = 'button'; rename.title = 'Переименовать чат'; rename.setAttribute('aria-label', 'Переименовать чат');
+    rename.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19.7 7.8a2.2 2.2 0 0 0-3.1-3.1z"/><path d="m14.9 6.4 3.1 3.1"/></svg>';
+    rename.onclick = () => { void renameConversation(chat.id); };
+    const remove = createElement('button', 'sidebar-chat-item-action is-danger', ''); remove.type = 'button'; remove.title = 'Удалить чат'; remove.setAttribute('aria-label', 'Удалить чат');
+    remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>';
+    remove.onclick = () => { if (window.confirm('Удалить этот чат и его историю?')) void deleteConversation(chat.id); };
+    actions.append(rename, remove); row.append(label, actions); return row;
+  }
+
+  async function moveChat(chatId, projectId, groupId) {
+    const chat = state.conversations.find(item => item.id === chatId); if (!chat) return;
+    chat.projectId = projectId || ''; chat.groupId = projectId ? '' : (groupId || '');
+    chat.updatedAt = new Date().toISOString();
+    if (chat.id === state.activeConversationId) state.activeProjectId = chat.projectId;
+    await saveConversation(chat); saveWorkspace(); renderChatWorkspace();
   }
 
   function clearNotice() {
