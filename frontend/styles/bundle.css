@@ -801,7 +801,7 @@ td{border-color:var(--line)}
 
 
 /* Chat sidebar components: shell geometry and navigation typography are inherited from 03-shell.css. */
-.sidebar-chat-workspace{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px;min-height:0}
+.sidebar-chat-workspace{display:flex;flex-direction:column;gap:8px;margin:0px 0 12px;min-height:0}
 .sidebar-chat-nav-item{text-decoration:none}
 .sidebar-chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sidebar-chat-actions button{min-width:0;font-size:11px}
