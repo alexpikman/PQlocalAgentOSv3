@@ -1125,3 +1125,5 @@ td{border-color:var(--line)}
 
 /* === Agent modal: instruction links === */
 .agent-instruction-links{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+/* === Task active roles === */
+.task-active-roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-top:8px}
