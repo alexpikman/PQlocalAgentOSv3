@@ -326,7 +326,8 @@ def ensure_system_instructions():
 def save_system_instructions(items):
     write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': items})
 def system_instruction_defaults():
-    return {role: {'system_prompt': read_system_prompt_template(role), 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
+    prompts = read_all_system_prompt_templates()
+    return {role: {'system_prompt': prompts[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
 def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
         raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
