@@ -339,7 +339,7 @@ def _chat_file_upload(handler, chat_id):
         header_blob, separator, payload = part.partition(b'\r\n\r\n')
         if not separator:
             continue
-        payload = payload.removesuffix(b'\r\n').removesuffix(b'--')
+        payload = payload.removesuffix(b'\r\n')
         header_text = header_blob.decode('latin-1', 'replace')
         disposition = re.search(r'Content-Disposition:[^\r\n]*filename="([^"]*)"', header_text, re.I)
         if not disposition:
