@@ -62,7 +62,7 @@ api('/agents'),api('/projects'),api('/tasks'),api('/permissions'),api('/modules/
 ]);
 const value=(index,fallback)=>results[index].status==='fulfilled'?results[index].value:fallback;
 const loadedPages=value(0,null);
-if(Array.isArray(loadedPages))state.pages=loadedPages;
+if(Array.isArray(loadedPages)&&loadedPages.length)state.pages=loadedPages;
 else if(!state.pages.length)state.pages=fallbackPages;
 state.settings=value(1,state.settings||{});
 state.icons=state.settings?.icons||{};
