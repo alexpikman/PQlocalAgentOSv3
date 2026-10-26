@@ -147,9 +147,9 @@
     const title = createElement('div', 'nav-group-label', 'РАБОЧЕЕ ПРОСТРАНСТВО');
     const items = createElement('div', 'nav-group-items');
     const dashboard = createElement('button', 'nav-item', ''); dashboard.type='button'; dashboard.dataset.go='dashboard';
-    dashboard.append(createElement('span','nav-icon','▦'),createElement('span','nav-label','Рабочий стол'));
+    dashboard.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg></span>');dashboard.append(createElement('span','nav-label','Рабочий стол'));
     const chatLink = createElement('button','nav-item active',''); chatLink.type='button'; chatLink.dataset.go='chat'; chatLink.setAttribute('aria-current','page');
-    chatLink.append(createElement('span','nav-icon','▤'),createElement('span','nav-label','Чат'));
+    chatLink.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h8"/></svg></span>');chatLink.append(createElement('span','nav-label','Чат'));
     dashboard.onclick=()=>{window.location.href='/'}; chatLink.onclick=()=>{window.location.href='/chat.html'};
     items.append(dashboard,chatLink); group.append(title,items);
     const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','Новый чат'),newProject=createElement('button','btn secondary','Проект');
@@ -478,6 +478,7 @@
         role: message.role,
         content: message.content
       }));
+      await syncProjectChatMemory(activeConversation());
       const data = await chatApi('/chat', {
         method: 'POST',
         body: JSON.stringify({ agent_id: state.agent, project_id: activeConversation()?.projectId || '', conversation_id: state.activeConversationId, messages })
@@ -599,6 +600,7 @@
       createConversation('');
     }
     renderHistory();
+    const migratedProjects=[...new Set(state.conversations.map(chat=>chat.projectId).filter(Boolean))];migratedProjects.forEach(projectId=>{const conversation=state.conversations.find(chat=>chat.projectId===projectId);if(conversation)void syncProjectChatMemory(conversation)});
     loadAgents();
   }
 
