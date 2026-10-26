@@ -93,5 +93,56 @@ class ModuleRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'не имеет разрешённого встроенного типа'):
                     server.execute_module_graph({'start_id':'external','input':'test'})
 
+
+class ChatProviderTests(unittest.TestCase):
+    def test_provider_is_inferred_from_claude_model_name(self):
+        providers=[
+            {'id':'ollama','name':'Ollama','kind':'local','format':'ollama','base_url':'http://127.0.0.1:11434'},
+            {'id':'anthropic','name':'Anthropic','kind':'cloud','format':'anthropic','base_url':'https://api.anthropic.com/v1','api_key':'test-key'}
+        ]
+        with patch.object(server,'provider_items',return_value=providers):
+            self.assertEqual(server.provider_for_model('claude-sonnet-5')['id'],'anthropic')
+
+    def test_anthropic_request_uses_messages_api_and_parses_text(self):
+        import io
+        provider={'id':'anthropic','name':'Anthropic','kind':'cloud','format':'anthropic','base_url':'https://api.example.test/v1','api_key':'secret'}
+        response=io.BytesIO(json.dumps({'content':[{'type':'text','text':'Привет!'}]}).encode())
+        with patch.object(server.urllib.request,'urlopen',return_value=response) as mocked:
+            result=server.send_chat_request(provider,'claude-sonnet-5',[
+                {'role':'system','content':'Будь кратким.'},{'role':'user','content':'Привет'}
+            ])
+        request=mocked.call_args.args[0]
+        body=json.loads(request.data.decode())
+        self.assertEqual(request.full_url,'https://api.example.test/v1/messages')
+        self.assertEqual(request.get_header('X-api-key'),'secret')
+        self.assertEqual(request.get_header('Anthropic-version'),'2023-06-01')
+        self.assertEqual(body['system'],'Будь кратким.')
+        self.assertEqual(result['response'],'Привет!')
+
+    def test_openai_compatible_request_uses_base_url_and_bearer_key(self):
+        import io
+        provider={'id':'fastypass','name':'FastBypass','kind':'cloud','format':'openai','base_url':'https://api.fastypass.com/v1','api_key':'secret'}
+        response=io.BytesIO(json.dumps({'choices':[{'message':{'content':'Работает'}}]}).encode())
+        with patch.object(server.urllib.request,'urlopen',return_value=response) as mocked:
+            result=server.send_chat_request(provider,'claude-sonnet-5',[{'role':'user','content':'Тест'}])
+        request=mocked.call_args.args[0]
+        self.assertEqual(request.full_url,'https://api.fastypass.com/v1/chat/completions')
+        self.assertEqual(request.get_header('Authorization'),'Bearer secret')
+        self.assertEqual(result['response'],'Работает')
+
+    def test_ollama_request_still_resolves_local_model(self):
+        provider={'id':'ollama','name':'Ollama','kind':'local','format':'ollama','base_url':'http://127.0.0.1:11434'}
+        with patch.object(server,'resolve_ollama_model',return_value='qwen3:8b') as resolve, patch.object(server,'ollama_request',return_value={'model':'qwen3:8b','message':{'content':'Локальный ответ'},'done':True}) as request:
+            result=server.send_chat_request(provider,'qwen/qwen3-8b',[{'role':'user','content':'Тест'}])
+        resolve.assert_called_once_with('qwen/qwen3-8b')
+        request.assert_called_once_with('/api/chat',{'model':'qwen3:8b','messages':[{'role':'user','content':'Тест'}],'stream':False},timeout=120)
+        self.assertEqual(result['response'],'Локальный ответ')
+
+    def test_cloud_unauthorized_error_is_translated(self):
+        exc=server.urllib.error.HTTPError('https://api.example.test/v1/chat/completions',401,'Unauthorized',{},None)
+        with patch.object(server.urllib.request,'urlopen',side_effect=exc):
+            with self.assertRaisesRegex(ValueError,'неверный API-ключ'):
+                server.send_chat_request({'format':'openai','base_url':'https://api.example.test/v1','api_key':'bad'},'model-x',[{'role':'user','content':'Тест'}])
+
 if __name__=='__main__': unittest.main()
 
