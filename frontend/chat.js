@@ -36,6 +36,12 @@
     const modelAvatar = createElement('div', 'chat-current-agent-avatar', 'AI');
     modelAvatar.id = 'chat-current-agent-avatar';
     modelAvatar.setAttribute('aria-hidden', 'true');
+    modelAvatar.style.cursor = 'pointer';
+    modelAvatar.title = 'Настройки агента';
+    modelAvatar.addEventListener('click', () => {
+      if (!state.agent) return;
+      window.location.href = '/?edit_agent=' + encodeURIComponent(state.agent) + '&return_to_chat=1';
+    });
     const availability = createElement('span', 'chat-model-availability is-unavailable');
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
     modelInfo.append(label, modelAvatar, modelName, availability);
@@ -446,6 +452,12 @@
       state.agents = Array.isArray(data.items)
         ? data.items.filter((agent) => agent && typeof agent.id === 'string' && typeof agent.name === 'string')
         : [];
+      const urlParams = new URLSearchParams(window.location.search);
+      const requestedAgentId = urlParams.get('agent_id');
+      if (requestedAgentId && state.agents.some((agent) => agent.id === requestedAgentId)) {
+        state.agent = requestedAgentId;
+        if (elements.agent) elements.agent.value = requestedAgentId;
+      }
       renderAgents();
       if (!state.agents.length) {
         showNotice('Нет доступных агентов. Создайте или настройте агента в разделе «AI-агенты».', 'warning');
@@ -480,6 +492,7 @@
         content: message.content
       }));
       await syncProjectChatMemory(activeConversation());
+      const startTime = performance.now();
       const data = await chatApi('/chat', {
         method: 'POST',
         body: JSON.stringify({ agent_id: state.agent, project_id: activeConversation()?.projectId || '', conversation_id: state.activeConversationId, messages })
@@ -487,10 +500,11 @@
       if (typeof data.response !== 'string') {
         throw new Error('Сервер вернул пустой или некорректный ответ модели.');
       }
+      const duration = ((performance.now() - startTime) / 1000).toFixed(1);
       const assistantMessage = {
         role: 'assistant',
         content: data.response,
-        time: formatTime(new Date())
+        time: formatTime(new Date()) + ' · ⏱ ' + duration + ' сек'
       };
       state.messages.push(assistantMessage);
       persistActiveConversation();
