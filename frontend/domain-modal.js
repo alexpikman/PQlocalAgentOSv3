@@ -24,17 +24,25 @@ const refresh = async () => {
 };
 function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="modal-card-actions domain-modal-actions"><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
 function ensureDomainModal(){let modal=$('#domain-modal');if(!modal){document.body.insertAdjacentHTML('beforeend',domainModalMarkup());modal=$('#domain-modal')}bindDomainModal();return modal}
+function interactionPlanMarkup(rows){
+  const roles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
+  const fromOptions=(value)=>['USER','ANY',...roles].map(role=>'<option value="'+role+'" '+(role===(value||'USER')?'selected':'')+'>'+role+'</option>').join('');
+  const toOptions=(value)=>['USER',...roles].map(role=>'<option value="'+role+'" '+(role===(value||'USER')?'selected':'')+'>'+role+'</option>').join('');
+  const fallbackOptions=(value)=>['',...roles].map(role=>'<option value="'+role+'" '+(role===(value||'')?'selected':'')+'>'+(role||'Не передавать')+'</option>').join('');
+  const rowMarkup=(row={})=>'<tr data-rule-row><td><select data-rule="from" aria-label="От кого">'+fromOptions(row.from)+'</select></td><td><input data-rule="trigger" maxlength="120" value="'+esc(row.trigger||'')+'" aria-label="Тип задачи или триггер"></td><td><input data-rule="condition" maxlength="240" value="'+esc(row.condition||'')+'" aria-label="Условие или статус"></td><td><textarea data-rule="action" maxlength="1000" rows="2" aria-label="Моё действие">'+esc(row.action||'')+'</textarea></td><td><select data-rule="to" aria-label="Кому передать">'+toOptions(row.to)+'</select></td><td><select data-rule="fallback" aria-label="Fallback">'+fallbackOptions(row.fallback)+'</select></td><td><button type="button" class="rule-remove" data-rule-remove aria-label="Удалить правило" title="Удалить правило">×</button></td></tr>';
+  return '<div class="system-instruction-plan"><div class="system-instruction-plan-scroll"><table><thead><tr><th>От кого</th><th>Тип задачи / триггер</th><th>Условие / статус</th><th>Моё действие</th><th>Кому передать</th><th>Fallback</th><th></th></tr></thead><tbody id="domain-interaction-plan-rows">'+(rows||[]).map(rowMarkup).join('')+'</tbody></table></div><div class="small muted" id="domain-interaction-plan-empty" '+((rows||[]).length?'hidden':'')+'>Правил пока нет.</div></div>';
+}
 function openDomainModal(kind,id){
   const state=context.getState?context.getState():{};
-  const lists={agents:state.agents||[],projects:state.projects||[],tasks:state.tasks||[]};
+  const lists={agents:state.agents||[],projects:state.projects||[],tasks:state.tasks||[],'system-instructions':state.systemInstructions||[]};
   const item=id?lists[kind]?.find(x=>x.id===id):null;
   if(id&&!item)return;
-  if(!['agents','projects','tasks'].includes(kind))return;
+  if(!['agents','projects','tasks','system-instructions'].includes(kind))return;
   editor={kind,id:id||null};
   const modal=ensureDomainModal(),form=$('#domain-modal-form');
   // Submit handling is explicit so hidden required profile fields can be reported on either tab.
   form.noValidate=true;
-  $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу'}[kind]);
+  $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу','system-instructions':'системную инструкцию'}[kind]);
   $('#domain-modal-save').textContent=kind==='agents'?'Сохранить':(item?'Сохранить изменения':'Создать');
   $('#domain-modal-status').innerHTML='';
   const tabsEl=$('#domain-modal-tabs'),avatarEl=$('#domain-modal-avatar');
@@ -47,6 +55,13 @@ function openDomainModal(kind,id){
   let html='';
   if(kind==='agents'){
     html=field('Название','name',item?.name||'','text','required maxlength="80"')+'<div class="field"><label for="domain-role">Роль</label><select id="domain-role" name="role">'+['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].map(x=>'<option '+(x===(item?.role||'ANALYST')?'selected':'')+'>'+x+'</option>').join('')+'</select></div>'+((state.models?.models||[]).length?'<div class="field"><label for="domain-model">Модель</label><select id="domain-model" name="model"><option value="">Не назначена</option>'+state.models.models.map(x=>'<option value="'+esc(x.name)+'" '+(x.name===(item?.model||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>':field('Модель','model',item?.model||'','text','maxlength="160"'))+field('Краткое описание','description',item?.description||'','textarea','rows="2" maxlength="1000"')+field('Системная инструкция','system_prompt',item?.system_prompt||'','textarea','rows="4" maxlength="4000"')+field('Долговременная память','memory',item?.memory||'','textarea','rows="3" maxlength="8000"')+'<div class="field" style="grid-column:1/-1"><b>Разрешения агента</b><div class="agent-permission-list">'+[['file_loading','Чтение и поиск файлов'],['file_saving','Создание и изменение файлов'],['file_moving','Перемещение файлов'],['directory_moving','Перемещение папок'],['file_deletion','Удаление файлов'],['directory_creation','Создание папок'],['directory_deletion','Удаление пустых папок'],['github_access','Доступ к GitHub']].map(([key,label])=>'<label><input type="checkbox" name="perm_'+key+'" '+(item?.permissions?.[key]?'checked':'')+'> '+label+'</label>').join('')+'</div></div>';
+  }else if(kind==='system-instructions'){
+    html=field('Название инструкции','name',item?.name||'','text','required maxlength="120"')
+      +'<div class="field"><label for="domain-role">Роль агента</label><select id="domain-role" name="role" required>'+['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].map(role=>'<option value="'+role+'" '+(role===(item?.role||'ANALYST')?'selected':'')+'>'+role+'</option>').join('')+'</select></div>'
+      +field('Системная инструкция','system_prompt',item?.system_prompt||'','textarea','rows="5" maxlength="8000"')
+      +'<div class="field system-instruction-reset-wrap" style="grid-column:1/-1"><button type="button" class="btn secondary" id="domain-reset-default">По умолчанию</button></div>'
+      +field('Основная деятельность','activity',item?.activity||'','textarea','rows="3" maxlength="2000"')
+      +'<div class="field system-instruction-plan-field" style="grid-column:1/-1"><b>План взаимодействия</b>'+interactionPlanMarkup(item?.interaction_plan||[])+'<button type="button" class="btn secondary" id="domain-add-rule" style="margin-top:8px">＋ Добавить правило</button></div>';
   }else if(kind==='projects'){
     html=field('Название','name',item?.name||'','text','required maxlength="120"')+field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')+field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"');
   }else{
@@ -79,13 +94,40 @@ async function saveDomainItem(event){
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>payload.permissions[key]=fd.get('perm_'+key)==='on');
   }
   if(editor.kind==='tasks')payload.team_mode=fd.get('team_mode')==='on';
+  if(editor.kind==='system-instructions'){
+    payload.interaction_plan=[];
+    document.querySelectorAll('#domain-interaction-plan-rows tr[data-rule-row]').forEach(tr=>{
+      payload.interaction_plan.push({
+        from:tr.querySelector('[data-rule="from"]').value,
+        trigger:tr.querySelector('[data-rule="trigger"]').value.trim(),
+        condition:tr.querySelector('[data-rule="condition"]').value.trim(),
+        action:tr.querySelector('[data-rule="action"]').value.trim(),
+        to:tr.querySelector('[data-rule="to"]').value,
+        fallback:tr.querySelector('[data-rule="fallback"]').value
+      });
+    });
+  }
   const submit=$('#domain-modal-save');if(submit)submit.disabled=true;
   const savedKind=editor.kind,savedId=editor.id;
   try{
-    await api('/'+savedKind+(savedId?'/'+encodeURIComponent(savedId):''),{method:'POST',body:JSON.stringify(payload)});
-    $('#domain-modal').hidden=true;await refresh();
-    if(savedKind==='agents'&&typeof window.PQOnAgentSaved==='function')await window.PQOnAgentSaved();
-    if(typeof context.toast==='function')context.toast(savedId?'Изменения сохранены':'Элемент создан');editor=null;
+    const savedItem=await api('/'+savedKind+(savedId?'/'+encodeURIComponent(savedId):''),{method:'POST',body:JSON.stringify(payload)});
+    $('#domain-modal').hidden=true;
+    await refresh();
+    if(savedKind==='system-instructions'){
+      const validation=await api('/system-instructions/validate');
+      const warnings=validation.warnings||[];
+      if(warnings.length){
+        openDomainModal('system-instructions',savedItem.id||savedId);
+        const status=$('#domain-modal-status');
+        if(status)status.innerHTML='<div class="system-instruction-warning"><b>План взаимодействия требует внимания</b><ul>'+warnings.map(w=>'<li>'+esc(w.from)+' → '+esc(w.to)+': '+esc(w.message)+'</li>').join('')+'</ul></div>';
+      }else{
+        if(typeof context.toast==='function')context.toast(savedId?'Изменения сохранены':'Инструкция создана');
+        editor=null;
+      }
+    }else{
+      if(savedKind==='agents'&&typeof window.PQOnAgentSaved==='function')await window.PQOnAgentSaved();
+      if(typeof context.toast==='function')context.toast(savedId?'Изменения сохранены':'Элемент создан');editor=null;
+    }
   }catch(error){$('#domain-modal-status').innerHTML='<div class="notice warning">'+esc(error.message||'Не удалось сохранить')+'</div>'}
   finally{if(submit)submit.disabled=false}
 }
@@ -110,6 +152,27 @@ function bindDomainModal(){
       if(form)form.style.display=isAvatar?'none':'grid';if(avatarEl)avatarEl.style.display=isAvatar?'block':'none';
       if(!isAvatar&&form)form.querySelectorAll('[required]').forEach(field=>field.setCustomValidity?.(''));
       if(isAvatar&&avatarEl){avatarEl.innerHTML=avatarStudioMarkup();initAvatarPickers();syncAvatarState();bindAvatarControls();updateAvatarPreview()}
+      return;
+    }
+    const reset=target.closest('#domain-reset-default');if(reset){
+      const role=$('#domain-role')?.value;
+      if(!role){if(typeof context.toast==='function')context.toast('Сначала выберите роль');return}
+      reset.disabled=true;
+      try{const result=await api('/system-instructions/defaults');const value=result.defaults?.[role];if(!value)throw new Error('Встроенная инструкция для роли не найдена');const prompt=$('#domain-system_prompt'),activity=$('#domain-activity');if(prompt)prompt.value=value.system_prompt||'';if(activity)activity.value=value.activity||'';if(typeof context.toast==='function')context.toast('Встроенная инструкция загружена')}
+      catch(error){const status=$('#domain-modal-status');if(status)status.innerHTML='<div class="notice warning">'+esc(error.message)+'</div>'}
+      finally{reset.disabled=false}
+      return;
+    }
+    const addRule=target.closest('#domain-add-rule');if(addRule){
+      const rows=$('#domain-interaction-plan-rows'),empty=$('#domain-interaction-plan-empty');
+      if(rows){rows.insertAdjacentHTML('beforeend',interactionPlanMarkup([{}]).replace(/^.*<tbody[^>]*>|<\/tbody>.*$/gs,''));}
+      if(empty)empty.hidden=true;
+      return;
+    }
+    const removeRule=target.closest('[data-rule-remove]');if(removeRule){
+      removeRule.closest('tr[data-rule-row]')?.remove();
+      const rows=$('#domain-interaction-plan-rows'),empty=$('#domain-interaction-plan-empty');
+      if(empty)empty.hidden=!!rows?.querySelector('tr[data-rule-row]');
       return;
     }
     const del=target.closest('[data-domain-delete]');if(del)void deleteDomainItem(del.dataset.domainDelete,del.dataset.id);
