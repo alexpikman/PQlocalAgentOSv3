@@ -2368,8 +2368,8 @@ class Handler(SimpleHTTPRequestHandler):
                     transcript=[]
                     for entry in (chat_entry.get('messages') or [])[-12:]:
                         if isinstance(entry,dict) and entry.get('role') in ('user','assistant'): transcript.append(str(entry.get('role'))+': '+str(entry.get('content',''))[:1800])
-                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\\n'+'\\n'.join(transcript))
-                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\\n\\n'+'\\n\\n'.join(recent_chat_context)[-14000:]})
+                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\n'+'\n'.join(transcript))
+                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\n\n'+'\n\n'.join(recent_chat_context)[-14000:]})
             if agent:
                 system_prompt = str(agent.get('system_prompt', '').strip())
                 role_prompt = {
