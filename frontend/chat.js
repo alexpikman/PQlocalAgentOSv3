@@ -355,6 +355,14 @@
 
     const bubble = createElement('div', 'chat-msg-bubble', message.content);
     content.append(meta, bubble);
+    if (!isUser && Array.isArray(message.tool_calls) && message.tool_calls.length) {
+      const toolsDiv = createElement('div', 'chat-tool-calls');
+      message.tool_calls.forEach((tc) => {
+        if (!tc || typeof tc.name !== 'string') return;
+        toolsDiv.append(createElement('span', 'chat-tool-badge', '🛠 ' + tc.name + (tc.status === 'error' ? ' · ошибка' : '')));
+      });
+      if (toolsDiv.childElementCount) content.append(toolsDiv);
+    }
     row.append(avatar, content);
     elements.messages.append(row);
     scrollToBottom();
@@ -512,6 +520,7 @@
       const assistantMessage = {
         role: 'assistant',
         content: data.response,
+        tool_calls: Array.isArray(data.tool_calls) ? data.tool_calls : [],
         time: formatTime(new Date()) + ' · ⏱ ' + duration + ' сек'
       };
       state.messages.push(assistantMessage);
