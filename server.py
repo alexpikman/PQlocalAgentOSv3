@@ -2417,7 +2417,6 @@ class Handler(SimpleHTTPRequestHandler):
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
             try:
                 f=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'))
-                import base64
                 content=base64.b64decode(f.get('content','')).decode('utf-8',errors='replace')
                 return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
             except Exception as e: return self.send_json(400, {'error':str(e)})
@@ -3147,7 +3146,6 @@ class Handler(SimpleHTTPRequestHandler):
                 existing=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'))
                 expected_sha=str(data.get('sha',''))
                 if expected_sha and expected_sha != existing.get('sha'): return self.send_json(409, {'error':'Файл изменился в GitHub после загрузки. Перечитайте его перед сохранением.'})
-                import base64
                 branch=github_request('/repos/'+active_github_repository()).get('default_branch','main')
                 result=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'),'PUT',{'message':message,'content':base64.b64encode(content.encode()).decode(),'sha':existing['sha'],'branch':branch})
                 log_event('github.file.save',active_github_repository()+' · '+file_path)
