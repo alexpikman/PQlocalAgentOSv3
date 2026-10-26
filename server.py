@@ -2507,7 +2507,7 @@ class Handler(SimpleHTTPRequestHandler):
             if project:
                 prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочий путь (справочная информация, не открывай файлы автоматически): '+str(project.get('path',''))
             try:
-                team_mode=path.endswith('/run-team') or bool(item.get('team_mode'))
+                team_mode=path.endswith('/run-team') or bool(item.get('team_mode')) or bool(str(item.get('project_id','')).strip())
                 result=run_agent_team(model,item,agent,project) if team_mode else run_agent_task(model,item,agent,project)
                 item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['team_result']=result.get('team_result',[]); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 if agent:
