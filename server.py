@@ -2132,7 +2132,11 @@ class Handler(SimpleHTTPRequestHandler):
                 role=str(data.get('role','ANALYST')).upper()
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
-            elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
+            elif kind=='projects':
+                logo=str(data.get('logo','') or '')
+                if logo and (len(logo)>1400000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
+                    return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит размера'})
+                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
                 if isinstance(raw_roles, list):
@@ -2182,13 +2186,18 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description','logo'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
             for key in allowed:
                 if key not in data: continue
                 if kind=='agents' and key=='permissions':
                     if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
+                elif kind=='projects' and key=='logo':
+                    logo=str(data[key] or '')
+                    if logo and (len(logo)>1400000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
+                        return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит размера'})
+                    item[key]=logo
                 elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
                 elif kind=='tasks' and key=='active_roles':
                     if not isinstance(data[key], list): return self.send_json(400, {'error':'active_roles должен быть списком ролей'})
