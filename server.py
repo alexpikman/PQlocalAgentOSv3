@@ -2416,7 +2416,7 @@ class Handler(SimpleHTTPRequestHandler):
             if HfApi is None: return self.send_json(503, {'error':'Библиотека huggingface_hub не установлена'})
             try:
                 api = HfApi()
-                found = api.list_models(search=q, filter='gguf', sort='downloads', direction=-1, limit=limit)
+                found = api.list_models(search=q, filter='gguf', sort='downloads', limit=limit)
                 items = []
                 for info in found:
                     repo_id = str(getattr(info, 'id', '') or '')
@@ -2426,26 +2426,32 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {'items':items,'total':len(items),'query':q})
             except Exception as exc: return self.send_json(502, {'error':'Поиск Hugging Face не выполнен: '+str(exc)[:220]})
         if path == '/api/models/folders':
-            folders = read_json(DATA/'model_folders.json', [])
-            if not isinstance(folders, list): folders = []
-            return self.send_json(200, {'folders':[str(x) for x in folders if isinstance(x, str)]})
+            try:
+                folders = read_json(DATA/'model_folders.json', [])
+                if not isinstance(folders, list): folders = []
+                return self.send_json(200, {'folders':[str(x) for x in folders if isinstance(x, str)]})
+            except Exception as exc:
+                return self.send_json(500, {'error':str(exc),'errorType':type(exc).__name__})
         if path == '/api/models/local-files':
-            folders = read_json(DATA/'model_folders.json', [])
-            files = []
-            for raw in folders if isinstance(folders, list) else []:
-                try:
-                    root = Path(str(raw)).expanduser().resolve()
-                    if not root.is_dir(): continue
-                    for candidate in root.rglob('*.gguf'):
-                        try:
-                            if candidate.is_file() and not any(part.startswith('.') for part in candidate.relative_to(root).parts):
-                                files.append({'name':candidate.name,'path':str(candidate.resolve()),'size':candidate.stat().st_size})
-                        except OSError: pass
-                        if len(files) >= 1000: break
-                except (OSError, ValueError, RuntimeError): pass
-                if len(files) >= 1000: break
-            files.sort(key=lambda item:item['name'].lower())
-            return self.send_json(200, {'files':files,'total':len(files)})
+            try:
+                folders = read_json(DATA/'model_folders.json', [])
+                files = []
+                for raw in folders if isinstance(folders, list) else []:
+                    try:
+                        root = Path(str(raw)).expanduser().resolve()
+                        if not root.is_dir(): continue
+                        for candidate in root.rglob('*.gguf'):
+                            try:
+                                if candidate.is_file() and not any(part.startswith('.') for part in candidate.relative_to(root).parts):
+                                    files.append({'name':candidate.name,'path':str(candidate.resolve()),'size':candidate.stat().st_size})
+                            except OSError: pass
+                            if len(files) >= 1000: break
+                    except (OSError, ValueError, RuntimeError): pass
+                    if len(files) >= 1000: break
+                files.sort(key=lambda item:item['name'].lower())
+                return self.send_json(200, {'files':files,'total':len(files)})
+            except Exception as exc:
+                return self.send_json(500, {'error':str(exc),'errorType':type(exc).__name__})
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
