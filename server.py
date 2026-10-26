@@ -233,10 +233,24 @@ def ensure_system_instructions():
                         item['interaction_plan'] = [dict(rule) for rule in MANAGER_DEFAULT_INTERACTION_PLAN]
                         item_changed = True
                     elif isinstance(item.get('interaction_plan'), list):
+                        # Мигрируем ранее сохранённые имена полей без потери настроенных правил.
+                        legacy_keys = {'to': 'target_role', 'fallback': 'fallback_role', 'action': 'action_instruction'}
+                        migrated_plan = []
+                        for rule in item['interaction_plan']:
+                            if not isinstance(rule, dict):
+                                migrated_plan.append(rule)
+                                continue
+                            migrated_rule = dict(rule)
+                            for legacy_key, current_key in legacy_keys.items():
+                                if current_key not in migrated_rule and legacy_key in migrated_rule:
+                                    migrated_rule[current_key] = migrated_rule[legacy_key]
+                                migrated_rule.pop(legacy_key, None)
+                            migrated_rule.pop('from', None)
+                            migrated_plan.append(migrated_rule)
                         try:
-                            normalized = validate_manager_interaction_plan(item['interaction_plan'])
+                            normalized = validate_manager_interaction_plan(migrated_plan)
                         except ValueError:
-                            normalized = item['interaction_plan']
+                            normalized = migrated_plan
                         if item.get('interaction_plan') != normalized:
                             item['interaction_plan'] = normalized
                             item_changed = True
@@ -282,17 +296,18 @@ def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
         raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
     validated = []
-    allowed_roles = set(AGENT_ROLES)
     limits = {'trigger': 120, 'condition': 240, 'action_instruction': 1000}
     for index, row in enumerate(value):
         if not isinstance(row, dict):
             raise ValueError('Правило ' + str(index + 1) + ' должно быть объектом')
-        target = str(row.get('target_role', 'MANAGER')).upper().strip()
-        fallback = str(row.get('fallback_role', '')).upper().strip()
-        if target not in allowed_roles:
-            raise ValueError('Недопустимый получатель в правиле ' + str(index + 1))
-        if fallback and fallback not in allowed_roles:
-            raise ValueError('Недопустимый fallback в правиле ' + str(index + 1))
+        target = row.get('target_role', 'MANAGER')
+        fallback = row.get('fallback_role', '')
+        if not isinstance(target, str) or not isinstance(fallback, str):
+            raise ValueError('target_role и fallback_role в правиле ' + str(index + 1) + ' должны быть строками')
+        target = target.upper().strip()
+        fallback = fallback.upper().strip()
+        if len(target) > 80 or len(fallback) > 80:
+            raise ValueError('target_role и fallback_role в правиле ' + str(index + 1) + ' не должны превышать 80 символов')
         item = {'target_role': target, 'fallback_role': fallback}
         for key, limit in limits.items():
             text_value = row.get(key, '')
