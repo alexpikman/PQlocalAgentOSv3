@@ -2262,9 +2262,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not name: return self.send_json(400, {'error':'Укажите название'})
             item={'id':uuid.uuid4().hex[:12],field:name,'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
             if kind=='agents':
-                role=str(data.get('role','ANALYST')).upper()
-                if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
-                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
+                role=str(data.get('role','ANALYST')).upper().strip()
+                role_item = next((x for x in ensure_agent_roles() if str(x.get('code','')).upper() == role), None)
+                if role not in AGENT_ROLES and not role_item: return self.send_json(400, {'error':'Неизвестная роль агента'})
+                default_prompt = (role_item or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
+                item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or '').strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects':
                 try:
                     logo = save_project_logo(item['id'], data.get('logo', ''))
