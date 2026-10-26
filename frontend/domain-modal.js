@@ -33,6 +33,7 @@ function openDomainModal(kind,id){
   editor={kind,id:id||null};
   const modal=ensureDomainModal(),form=$('#domain-modal-form');
   $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу'}[kind]);
+  $('#domain-modal-save').textContent=kind==='agents'?'Сохранить':(item?'Сохранить изменения':'Создать');
   $('#domain-modal-status').innerHTML='';
   const tabsEl=$('#domain-modal-tabs'),avatarEl=$('#domain-modal-avatar');
   if(kind==='agents'){
