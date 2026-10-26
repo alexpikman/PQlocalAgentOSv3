@@ -323,6 +323,7 @@
     state.conversations.unshift(conversation);
     state.activeConversationId = conversation.id; state.activeProjectId = conversation.projectId;
     state.messages = []; renderHistory(); saveWorkspace(); renderChatWorkspace();
+    elements.workingDir.textContent = 'Указать рабочую папку'; elements.workingDir.title = 'Путь будет добавлен в разрешённые папки для локальных файловых инструментов';
     try { await saveConversation(conversation); } catch (_) {}
     elements.input.value = ''; resizeInput(); elements.input.focus();
   }
