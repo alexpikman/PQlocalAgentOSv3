@@ -122,7 +122,7 @@ function openDomainModal(kind,id){
   }else if(kind==='projects'){
     html=field('Название','name',item?.name||'','text','required maxlength="120"')+field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')+field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WebP или GIF. Максимум 700 КБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
   }else{
-    const taskRoles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
+    const taskRoles=['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS'];
     const activeRoles=Array.isArray(item?.active_roles)?item.active_roles:taskRoles;
     html=field('Название задачи','title',item?.title||'','text','required maxlength="160"')+field('Краткое описание / инструкции','description',item?.description||'','textarea','required rows="4" maxlength="5000"')+'<div class="field"><label for="domain-project_id">Проект <span class="required-mark">*</span></label><select id="domain-project_id" name="project_id" required><option value="">Выберите проект</option>'+(state.projects||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.project_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label for="domain-agent_id">Агент <span class="required-mark">*</span></label><select id="domain-agent_id" name="agent_id" required><option value="">Выберите агента</option>'+(state.agents||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.agent_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label><input type="checkbox" name="team_mode" '+(item?.team_mode?'checked':'')+'> Командный режим</label></div><div class="field" style="grid-column:1/-1"><b>Активные роли</b><div class="agent-permission-list task-active-roles">'+taskRoles.map(r=>'<label><input type="checkbox" name="role_'+r+'" '+(activeRoles.includes(r)?'checked':'')+(r==='MANAGER'?' disabled':'')+'> '+r+'</label>').join('')+'</div></div>';
   }
@@ -172,7 +172,7 @@ async function saveDomainItem(event){
   }
   if(editor.kind==='tasks'){
     payload.team_mode=fd.get('team_mode')==='on';
-    payload.active_roles=['MANAGER'].concat(['ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].filter(r=>fd.get('role_'+r)==='on'));
+    payload.active_roles=['MANAGER'].concat(['DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS'].filter(r=>fd.get('role_'+r)==='on'));
   }
   if(editor.kind==='system-instructions'){
     const role=$('#domain-role')?.value;
