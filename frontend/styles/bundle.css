@@ -1287,3 +1287,37 @@ td{border-color:var(--line)}
 .project-memory-page .project-memory-facts{display:grid;gap:10px;margin:16px 0}
 .project-memory-page .modal-card-actions{display:flex;justify-content:flex-end;position:static;padding-top:12px}
 @media(max-width:720px){.project-memory-page .project-memory-page-heading{display:block}.project-memory-page .project-memory-tabs{gap:6px}}
+
+ 
+/* Fix agent role rows: this markup has content and actions, but no leading marker. */
+.agent-role-page-row{
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:12px;
+}
+.agent-role-page-row>.entity-row-main{
+  grid-column:1;
+  min-width:0;
+  overflow:hidden;
+}
+.agent-role-page-row .entity-row-heading{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  min-width:0;
+}
+.agent-role-page-row .entity-row-heading>b{
+  min-width:0;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+.agent-role-page-row>.entity-row-actions{
+  grid-column:2;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  flex-shrink:0;
+  width:auto;
+}
