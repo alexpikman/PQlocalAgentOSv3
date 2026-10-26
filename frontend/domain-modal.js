@@ -120,7 +120,9 @@ function openDomainModal(kind,id){
   }else if(kind==='projects'){
     html=field('Название','name',item?.name||'','text','required maxlength="120"')+field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')+field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"');
   }else{
-    html=field('Название задачи','title',item?.title||'','text','required maxlength="160"')+field('Краткое описание / инструкции','description',item?.description||'','textarea','required rows="4" maxlength="5000"')+'<div class="field"><label for="domain-project_id">Проект <span class="required-mark">*</span></label><select id="domain-project_id" name="project_id" required><option value="">Выберите проект</option>'+(state.projects||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.project_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label for="domain-agent_id">Агент <span class="required-mark">*</span></label><select id="domain-agent_id" name="agent_id" required><option value="">Выберите агента</option>'+(state.agents||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.agent_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label><input type="checkbox" name="team_mode" '+(item?.team_mode?'checked':'')+'> Командный режим</label></div>';
+    const taskRoles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
+    const activeRoles=Array.isArray(item?.active_roles)?item.active_roles:taskRoles;
+    html=field('Название задачи','title',item?.title||'','text','required maxlength="160"')+field('Краткое описание / инструкции','description',item?.description||'','textarea','required rows="4" maxlength="5000"')+'<div class="field"><label for="domain-project_id">Проект <span class="required-mark">*</span></label><select id="domain-project_id" name="project_id" required><option value="">Выберите проект</option>'+(state.projects||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.project_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label for="domain-agent_id">Агент <span class="required-mark">*</span></label><select id="domain-agent_id" name="agent_id" required><option value="">Выберите агента</option>'+(state.agents||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.agent_id||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div><div class="field"><label><input type="checkbox" name="team_mode" '+(item?.team_mode?'checked':'')+'> Командный режим</label></div><div class="field" style="grid-column:1/-1"><b>Активные роли</b><div class="agent-permission-list task-active-roles">'+taskRoles.map(r=>'<label><input type="checkbox" name="role_'+r+'" '+(activeRoles.includes(r)?'checked':'')+(r==='MANAGER'?' disabled':'')+'> '+r+'</label>').join('')+'</div></div>';
   }
   const createdRaw=item&&(item.created_at||item.created||item.added_at);
   const createdMarkup=createdRaw?'<div class="domain-created-at">Создано · '+esc(new Date(createdRaw).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}))+'</div>':'';
@@ -166,7 +168,10 @@ async function saveDomainItem(event){
     payload.avatar=JSON.stringify(avatarState);payload.permissions={};
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>payload.permissions[key]=fd.get('perm_'+key)==='on');
   }
-  if(editor.kind==='tasks')payload.team_mode=fd.get('team_mode')==='on';
+  if(editor.kind==='tasks'){
+    payload.team_mode=fd.get('team_mode')==='on';
+    payload.active_roles=['MANAGER'].concat(['ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].filter(r=>fd.get('role_'+r)==='on'));
+  }
   if(editor.kind==='system-instructions'){
     const role=$('#domain-role')?.value;
     if(role==='MANAGER'){
