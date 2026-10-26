@@ -733,6 +733,15 @@ def provider_for_model(model, preferred_id=''):
         if match:
             return match
     name=str(model or '').strip().lower()
+    # File-backed GGUF models may be stored on agents by filename rather than provider ID.
+    for p in providers:
+        if str(p.get('kind') or '').lower() == 'file' or str(p.get('format') or '').lower() in ('file', 'gguf'):
+            raw_path = str(p.get('base_url') or '').strip()
+            if raw_path:
+                model_path = Path(raw_path).expanduser()
+                file_names = {model_path.name.lower(), model_path.stem.lower(), raw_path.lower()}
+                if name in file_names or name in {str(p.get('id') or '').lower(), str(p.get('name') or '').lower()}:
+                    return p
     # Provider-qualified model IDs and provider names.
     for p in providers:
         pid=str(p.get('id','')).lower()
@@ -791,25 +800,29 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
     """Send one non-streaming chat request to Ollama, OpenAI-compatible, Anthropic, or Gemini."""
     provider=provider if isinstance(provider,dict) else {}
     fmt=str(provider.get('format','ollama') or 'ollama').strip().lower()
+    kind=str(provider.get('kind') or '').strip().lower()
     base=str(provider.get('base_url') or (OLLAMA_URL if fmt=='ollama' else '')).strip().rstrip('/')
     key=str(provider.get('api_key','') or '').strip()
     requested_model=str(model or '').strip()[:200]
-    if str(provider.get('kind') or '') == 'file' or fmt == 'gguf':
+    if kind == 'file' or fmt in ('file', 'gguf'):
         model_path = str(provider.get('base_url') or '').strip()
-        model_obj = get_local_gguf(model_path, provider.get('n_ctx', 4096), provider.get('n_gpu_layers', -1))
-        with _LOCAL_GGUF_LOCK:
-            output = model_obj.create_chat_completion(
-                messages=messages,
-                max_tokens=max(1, min(int(max_tokens or 2048), 8192)),
-                temperature=float(provider.get('temperature', 0.7)),
-                top_p=float(provider.get('top_p', 0.9)),
-                repeat_penalty=float(provider.get('repeat_penalty', 1.1)),
-            )
-        choices = output.get('choices') or []
-        answer = ((choices[0].get('message') or {}).get('content') if choices else '') or ''
-        if not answer.strip():
-            raise ValueError('GGUF-модель вернула пустой ответ')
-        return {'model': Path(model_path).name, 'response': answer, 'done': True}
+        try:
+            model_obj = get_local_gguf(model_path, provider.get('n_ctx', 4096), provider.get('n_gpu_layers', -1))
+            with _LOCAL_GGUF_LOCK:
+                output = model_obj.create_chat_completion(
+                    messages=messages,
+                    max_tokens=max(1, min(int(max_tokens or provider.get('max_tokens', 2048)), 8192)),
+                    temperature=float(provider.get('temperature', 0.7)),
+                    top_p=float(provider.get('top_p', 0.9)),
+                    repeat_penalty=float(provider.get('repeat_penalty', 1.1)),
+                )
+            choices = output.get('choices') or []
+            answer = ((choices[0].get('message') or {}).get('content') if choices else '') or ''
+            if not answer.strip():
+                raise RuntimeError('GGUF-модель вернула пустой ответ')
+            return {'model': Path(model_path).name, 'response': answer, 'done': True}
+        except Exception as exc:
+            raise RuntimeError(f'Ошибка локального инференса GGUF: {exc}') from exc
     if not requested_model:
         raise ValueError('Не указана модель провайдера')
     if not base:
