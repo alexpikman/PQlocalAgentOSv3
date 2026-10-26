@@ -517,6 +517,47 @@ def domain_items(kind):
             write_json(DOMAIN_FILES[kind], items)
     return items
 def save_domain(kind, items): write_json(DOMAIN_FILES[kind],items)
+
+PROJECT_LOGO_DIR = ROOT / 'project' / 'logo'
+PROJECT_LOGO_DIR.mkdir(parents=True, exist_ok=True)
+
+def save_project_logo(project_id, value, current_logo=''):
+    value = str(value or '').strip()
+    logo_dir = PROJECT_LOGO_DIR
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    if value.startswith('/project/logo/'):
+        name = Path(urllib.parse.unquote(value)).name
+        if name.startswith(str(project_id) + '.') and (logo_dir / name).is_file():
+            return '/project/logo/' + name
+        if value == current_logo:
+            return current_logo
+        raise ValueError('Файл логотипа проекта не найден')
+    existing = list(logo_dir.glob(str(project_id) + '.*'))
+    if not value:
+        for old_file in existing:
+            try: old_file.unlink()
+            except OSError: pass
+        return ''
+    match = re.fullmatch(r'data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})', value)
+    if not match or len(value) > 980000:
+        raise ValueError('Некорректный логотип проекта или превышен лимит 700 КБ')
+    mime, encoded = match.groups()
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except Exception:
+        raise ValueError('Не удалось декодировать логотип проекта')
+    if not raw or len(raw) > 700 * 1024:
+        raise ValueError('Логотип должен быть не больше 700 КБ')
+    extension = {'jpeg': 'jpg', 'png': 'png', 'webp': 'webp', 'gif': 'gif'}[mime]
+    filename = str(project_id) + '.' + extension
+    for old_file in existing:
+        if old_file.name != filename:
+            try: old_file.unlink()
+            except OSError: pass
+    target = logo_dir / filename
+    target.write_bytes(raw)
+    return '/project/logo/' + filename
+
 def ollama_request(path, payload=None, timeout=8):
     req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
     with urllib.request.urlopen(req,timeout=timeout) as response: return json.loads(response.read().decode('utf-8'))
@@ -1762,6 +1803,22 @@ class Handler(SimpleHTTPRequestHandler):
         return json.loads(self.rfile.read(n).decode('utf-8') or '{}')
     def do_GET(self):
         path=urlparse(self.path).path
+        if path.startswith('/project/logo/'):
+            if not self.require_auth(): return
+            filename = Path(urllib.parse.unquote(path)).name
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}\.(?:png|jpg|webp|gif)', filename):
+                return self.send_json(404, {'error': 'Логотип не найден'})
+            target = PROJECT_LOGO_DIR / filename
+            if not target.is_file():
+                return self.send_json(404, {'error': 'Логотип не найден'})
+            mime = {'png':'image/png','jpg':'image/jpeg','webp':'image/webp','gif':'image/gif'}[target.suffix[1:]]
+            self.send_response(200)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(target.stat().st_size))
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(target.read_bytes())
+            return
         if path == '/api/auth/status':
             session = self.auth_session()
             config = read_json(AUTH_FILE, {})
@@ -2133,9 +2190,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects':
-                logo=str(data.get('logo','') or '')
-                if logo and (len(logo)>980000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
-                    return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит 700 КБ'})
+                try:
+                    logo = save_project_logo(item['id'], data.get('logo', ''))
+                except ValueError as exc:
+                    return self.send_json(400, {'error': str(exc)})
                 item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
@@ -2194,10 +2252,10 @@ class Handler(SimpleHTTPRequestHandler):
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
                 elif kind=='projects' and key=='logo':
-                    logo=str(data[key] or '')
-                    if logo and (len(logo)>980000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
-                        return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит размера'})
-                    item[key]=logo
+                    try:
+                        item[key] = save_project_logo(item_id, data[key], item.get('logo', ''))
+                    except ValueError as exc:
+                        return self.send_json(400, {'error': str(exc)})
                 elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
                 elif kind=='tasks' and key=='active_roles':
                     if not isinstance(data[key], list): return self.send_json(400, {'error':'active_roles должен быть списком ролей'})
