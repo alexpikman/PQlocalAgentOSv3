@@ -1455,7 +1455,6 @@ def run_agent_team(model, task, agent=None, project=None):
     """Строгая матрица: MANAGER → DISPATCHER → workers → DISPATCHER → MANAGER."""
     agents = domain_items('agents')
     task = task if isinstance(task, dict) else {}
-    manager_plan = load_manager_plan()
 
     active_roles = task.get('active_roles')
     if not isinstance(active_roles, list) or not active_roles:
@@ -1471,8 +1470,6 @@ def run_agent_team(model, task, agent=None, project=None):
         if role_agents and not any(not a.get('system') or a.get('system_enabled', True) for a in role_agents):
             continue
         worker_roles.append(role)
-    if not worker_roles:
-        worker_roles = [r for r in ('CODER', 'ANALYST', 'TESTER') if r in AGENT_ROLES]
 
     task_title = str(task.get('title', '')).strip() or 'Задача без названия'
     task_description = str(task.get('description', '')).strip()
@@ -1554,13 +1551,13 @@ def run_agent_team(model, task, agent=None, project=None):
         # Stage 2: Dispatcher breaks the approved plan into tasks for active specialist roles.
         dispatch_result = call_dispatcher(
             'распределение, цикл ' + str(cycle),
-            'Ты — Премьер. Получи утверждённый план Генерала и разбей его на конкретные подзадачи.\\n'
-            + 'Исходная задача: ' + task_title + '\\n' + task_description + '\\n'
-            + 'Инструкция Генерала: ' + current_instruction + '\\n'
-            + 'Активные роли-исполнители: ' + ', '.join(worker_roles) + '\\n'
+            'Ты — Премьер. Получи утверждённый план Генерала и разбей его на конкретные подзадачи.\n'
+            + 'Исходная задача: ' + task_title + '\n' + task_description + '\n'
+            + 'Инструкция Генерала: ' + current_instruction + '\n'
+            + 'Активные роли-исполнители: ' + ', '.join(worker_roles) + '\n'
             + 'Назначай только роли из этого списка; MANAGER и DISPATCHER не назначаются исполнителями. '
               'Для каждой задачи укажи измеримый результат, релевантный контекст и критерии приёмки. '
-              'Учитывай зависимости и не создавай дубликаты.\\n'
+              'Учитывай зависимости и не создавай дубликаты.\n'
             + 'Верни только JSON: {"tasks":[{"role":"CODER","task":"конкретная инструкция"}]}. '
               'Если исполнительские подзадачи не нужны, верни {"tasks":[]} .'
         )
