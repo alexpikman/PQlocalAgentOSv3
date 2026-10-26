@@ -204,6 +204,7 @@
     renderHistory();
     saveWorkspace();
     renderChatWorkspace();
+    syncProjectChatMemory(conversation);
     elements.input.value = '';
     resizeInput();
     elements.input.focus();
