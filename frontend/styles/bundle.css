@@ -1044,3 +1044,31 @@ td{border-color:var(--line)}
   .footer{height:42px;min-height:42px;align-items:center;flex-direction:row;gap:6px;padding:0 10px}
   .footer-statusline{flex-wrap:wrap;justify-content:center;white-space:normal;line-height:1.1}
 }
+
+
+/* === UI fixes: chat workspace navigation === */
+.sidebar-chat-workspace{gap:8px}
+.sidebar-chat-workspace .nav-group{margin:0}
+.sidebar-chat-workspace .nav-group-label{padding-left:10px}
+.sidebar-chat-workspace .nav-group-items{display:grid;gap:3px}
+.sidebar-chat-workspace .nav-item{width:100%;font:inherit;text-align:left;cursor:pointer}
+.sidebar-chat-workspace .nav-icon{flex:0 0 22px}
+.sidebar-chat-workspace .nav-label{min-width:0}
+.sidebar-chat-workspace .sidebar-chat-list{scrollbar-gutter:stable}
+
+/* === UI fixes: chat history toggle === */
+.chat-history-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:8px 0 4px;padding:9px 12px;font-size:11px;font-weight:650;text-align:left;cursor:pointer}
+.chat-history-toggle .nav-group-chevron{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:transform .16s ease}
+.chat-history-toggle[aria-expanded="false"] .nav-group-chevron{transform:rotate(-90deg)}
+.sidebar-chat-list[hidden]{display:none!important}
+
+/* === UI fixes: project link in tasks === */
+.link-project{color:var(--accent);text-decoration:none;border-bottom:1px dashed color-mix(in srgb,var(--accent) 50%,transparent)}
+.link-project:hover{border-bottom-style:solid}
+
+/* === UI fixes: project tasks button === */
+.project-tasks-btn{margin-top:8px;font-size:11px}
+#project-tasks-list{display:grid;gap:8px;max-height:60vh;overflow-y:auto}
+#project-tasks-list .entity-row{grid-template-columns:minmax(0,1fr) auto}
+.project-task-item{width:100%;text-align:left;cursor:pointer;background:var(--panel2)}
+#chat-project-modal[hidden],#project-tasks-modal[hidden]{display:none!important}
