@@ -1332,3 +1332,14 @@ td{border-color:var(--line)}
 @media(max-width:720px){.sidebar-chat-item-actions{opacity:1}.chat-model-info{grid-template-columns:auto auto minmax(0,1fr) auto}}
 
 .project-memory-chat{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;background:var(--panel)}.project-memory-chat-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline}.project-memory-chat-heading small{color:var(--muted);font-size:11px}.project-memory-chat-messages{display:grid;gap:8px;margin-top:10px}.project-memory-chat-message{border-left:3px solid var(--line);padding:7px 10px;min-width:0}.project-memory-chat-message--assistant{border-left-color:var(--accent)}.project-memory-chat-message p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.project-memory-chat-message b{font-size:11px;color:var(--muted)}
+
+/* Models page: compact provider and live-search filters. */
+.model-filters{display:grid;grid-template-columns:auto minmax(110px,.7fr) auto minmax(140px,1.3fr);align-items:center;gap:8px;margin:0 0 12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.model-provider-filter-label,.model-search-label{font-size:11px;font-weight:650;color:var(--muted);white-space:nowrap}
+.model-provider-filter,.model-search{width:100%;min-width:0;height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font:inherit;font-size:12px;outline:none}
+.model-provider-filter:focus,.model-search:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent)}
+.model-filter-card[hidden]{display:none!important}
+.model-card-footer{display:flex;justify-content:flex-end;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.model-card-footer .btn{min-width:88px}
+@media(max-width:1100px){.model-filters{grid-template-columns:auto minmax(0,1fr)}.model-search-label{grid-column:1}.model-search{grid-column:2}}
+@media(max-width:520px){.model-filters{grid-template-columns:minmax(0,1fr)}.model-provider-filter-label,.model-search-label,.model-provider-filter,.model-search{grid-column:1}}
