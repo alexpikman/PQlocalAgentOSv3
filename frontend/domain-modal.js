@@ -32,6 +32,8 @@ function openDomainModal(kind,id){
   if(!['agents','projects','tasks'].includes(kind))return;
   editor={kind,id:id||null};
   const modal=ensureDomainModal(),form=$('#domain-modal-form');
+  // Submit handling is explicit so hidden required profile fields can be reported on either tab.
+  form.noValidate=true;
   $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу'}[kind]);
   $('#domain-modal-save').textContent=kind==='agents'?'Сохранить':(item?'Сохранить изменения':'Создать');
   $('#domain-modal-status').innerHTML='';
@@ -58,6 +60,19 @@ function openDomainModal(kind,id){
 async function saveDomainItem(event){
   event.preventDefault();if(!editor)return;
   const state=context.getState?context.getState():{},form=$('#domain-modal-form'),fd=new FormData(form),payload={};
+  // Native constraint validation cannot focus required fields while the profile tab is hidden.
+  // Disable automatic submit blocking and validate explicitly so avatar-tab saves can guide the user.
+  const requiredFields=form.querySelectorAll('[required]');
+  for(const field of requiredFields){
+    if(!String(field.value||'').trim()){
+      const profileTab=document.querySelector('[data-domain-tab="profile"]');
+      if(profileTab)profileTab.click();
+      field.focus();
+      field.scrollIntoView({block:'center',behavior:'smooth'});
+      if(typeof field.reportValidity==='function')field.reportValidity();
+      return;
+    }
+  }
   for(const [key,value] of fd.entries())if(!key.startsWith('perm_'))payload[key]=value;
   if(editor.kind==='agents'){
     payload.avatar=JSON.stringify(avatarState);payload.permissions={};
@@ -82,6 +97,10 @@ async function deleteDomainItem(kind,id){
 function bindDomainModal(){
   if(domainModalBound)return;domainModalBound=true;
   document.addEventListener('submit',event=>{if(event.target?.matches('#domain-modal-form'))void saveDomainItem(event)});
+  document.addEventListener('input',event=>{
+    const field=event.target;
+    if(field instanceof Element&&field.matches('#domain-modal-form [required]'))field.setCustomValidity?.('');
+  });
   document.addEventListener('click',event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
     const close=target.closest('[data-domain-modal-close]');if(close){const modal=$('#domain-modal');if(modal)modal.hidden=true;return}
@@ -89,6 +108,7 @@ function bindDomainModal(){
       const form=$('#domain-modal-form'),avatarEl=$('#domain-modal-avatar'),isAvatar=tab.dataset.domainTab==='avatar';
       document.querySelectorAll('[data-domain-tab]').forEach(button=>{button.classList.toggle('primary',button===tab);button.classList.toggle('secondary',button!==tab)});
       if(form)form.style.display=isAvatar?'none':'grid';if(avatarEl)avatarEl.style.display=isAvatar?'block':'none';
+      if(!isAvatar&&form)form.querySelectorAll('[required]').forEach(field=>field.setCustomValidity?.(''));
       if(isAvatar&&avatarEl){avatarEl.innerHTML=avatarStudioMarkup();initAvatarPickers();syncAvatarState();bindAvatarControls();updateAvatarPreview()}
       return;
     }
