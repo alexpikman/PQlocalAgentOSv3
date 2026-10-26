@@ -605,11 +605,30 @@ def execute_module_graph(data):
     return result
 
 
+def resolve_agent_system_prompt(agent: dict | None) -> str:
+    """Промпт агента: из system_instructions.json по роли, fallback — AGENT_ROLE_PROMPTS."""
+    role = str((agent or {}).get('role', 'ANALYST')).upper()
+    if role not in AGENT_ROLES:
+        role = 'ANALYST'
+    try:
+        instructions = read_json(DATA / 'system_instructions.json', {}).get('instructions', [])
+    except Exception:
+        instructions = []
+    instr = None
+    if isinstance(instructions, list):
+        instr = next((x for x in instructions if isinstance(x, dict) and x.get('role') == role and x.get('is_default')), None)
+        if not instr:
+            instr = next((x for x in instructions if isinstance(x, dict) and x.get('role') == role), None)
+    if instr and isinstance(instr.get('system_prompt'), str) and instr['system_prompt'].strip():
+        return instr['system_prompt'].strip()
+    return AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
+
+
 def run_agent_task(model, task, agent=None, project=None):
     from agent_tools import effective_tools, execute_tool
     permissions=permission_settings()
     role=(agent or {}).get('role','ANALYST')
-    system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
+    system_prompt=resolve_agent_system_prompt(agent)
     if agent:
         system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
         memory=str(agent.get('memory','')).strip()
