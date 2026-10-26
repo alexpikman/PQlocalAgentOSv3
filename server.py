@@ -655,7 +655,7 @@ def _dpapi_crypt(value, decrypt=False):
     if decrypt:
         ok = crypt32.CryptUnprotectData(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(output))
     else:
-        ok = crypt32.CryptProtectData(ctypes.byref(source), 'PQlocalAgentOSv3 GitHub token', None, None, None, 1, ctypes.byref(output))
+        ok = crypt32.CryptProtectData(ctypes.byref(source), ctypes.c_wchar_p('PQlocalAgentOSv3 GitHub token'), None, None, None, 1, ctypes.byref(output))
     if not ok: raise OSError('Windows DPAPI не смог обработать секрет.')
     try:
         result = ctypes.string_at(output.pbData, output.cbData)
@@ -2110,7 +2110,7 @@ class Handler(SimpleHTTPRequestHandler):
             file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
             try:
-                f=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
+                f=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'))
                 import base64
                 content=base64.b64decode(f.get('content','')).decode('utf-8',errors='replace')
                 return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
