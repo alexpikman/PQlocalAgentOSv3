@@ -22,7 +22,7 @@ const refresh = async () => {
   if (typeof context.refresh === 'function') return await context.refresh();
   if (typeof window.PQRefresh === 'function') return await window.PQRefresh();
 };
-function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div><div id="domain-modal-status"></div></section></div>'}
+function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="modal-card-actions domain-modal-actions"><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
 function ensureDomainModal(){let modal=$('#domain-modal');if(!modal){document.body.insertAdjacentHTML('beforeend',domainModalMarkup());modal=$('#domain-modal')}bindDomainModal();return modal}
 function openDomainModal(kind,id){
   const state=context.getState?context.getState():{};
@@ -51,7 +51,7 @@ function openDomainModal(kind,id){
   }
   const createdRaw=item&&(item.created_at||item.created||item.added_at);
   const createdMarkup=createdRaw?'<div class="domain-created-at">Создано · '+esc(new Date(createdRaw).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}))+'</div>':'';
-  form.innerHTML=createdMarkup+html+'<div class="field modal-card-actions"><button class="btn primary" type="submit">'+(item?'Сохранить изменения':'Создать')+'</button></div>';
+  form.innerHTML=createdMarkup+html;
   modal.hidden=false;
 }
 async function saveDomainItem(event){
@@ -63,7 +63,7 @@ async function saveDomainItem(event){
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>payload.permissions[key]=fd.get('perm_'+key)==='on');
   }
   if(editor.kind==='tasks')payload.team_mode=fd.get('team_mode')==='on';
-  const submit=form.querySelector('[type="submit"]');if(submit)submit.disabled=true;
+  const submit=$('#domain-modal-save');if(submit)submit.disabled=true;
   const savedKind=editor.kind,savedId=editor.id;
   try{
     await api('/'+savedKind+(savedId?'/'+encodeURIComponent(savedId):''),{method:'POST',body:JSON.stringify(payload)});
