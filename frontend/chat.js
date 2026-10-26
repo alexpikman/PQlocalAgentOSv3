@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
-  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '' };
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -36,11 +36,9 @@
     const modelAvatar = createElement('div', 'chat-current-agent-avatar', 'AI');
     modelAvatar.id = 'chat-current-agent-avatar';
     modelAvatar.setAttribute('aria-hidden', 'true');
-    const agentSettings = createElement('button', 'btn soft-secondary chat-agent-settings', '');
-    agentSettings.type = 'button'; agentSettings.id = 'chat-agent-settings';
-    agentSettings.title = 'Настройки выбранного агента'; agentSettings.setAttribute('aria-label', 'Настройки выбранного агента');
-    agentSettings.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.3-1-1.6-2.8-1.6.6a7.5 7.5 0 0 0-2.6-1.5L14.6 4h-3.2l-.3 1.8a7.5 7.5 0 0 0-2.6 1.5l-1.6-.6-1.6 2.8 1.3 1a7.6 7.6 0 0 0 0 3l-1.3 1 1.6 2.8 1.6-.6a7.5 7.5 0 0 0 2.6 1.5l.3 1.8h3.2l.3-1.8a7.5 7.5 0 0 0 2.6-1.5l1.6.6 1.6-2.8z"></path></svg>';
-    modelInfo.append(label, modelAvatar, modelName, agentSettings);
+    const availability = createElement('span', 'chat-model-availability is-unavailable');
+    availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
+    modelInfo.append(label, modelAvatar, modelName, availability);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modelSelect = document.createElement('select');
@@ -83,7 +81,7 @@
     document.getElementById('content').replaceChildren(root);
 
     elements.root = root;
-    elements.modelName = modelName; elements.agentSettings = agentSettings;
+    elements.modelName = modelName; elements.availability = availability;
     elements.agent = modelSelect;
     elements.messages = messages;
     elements.form = form;
@@ -132,10 +130,9 @@
     conversation.updatedAt = new Date().toISOString();
     const firstUser = state.messages.find((message) => message.role === 'user');
     if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
-      conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').slice(0, 48) || 'Новый чат';
+      conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').split(' ').slice(0,3).join(' ').slice(0,48) || 'Новый чат';
     }
-    saveWorkspace();
-    renderChatWorkspace();
+    saveWorkspace();renderChatWorkspace();syncProjectChatMemory(conversation);
   }
 
   function makeId(prefix) {
@@ -155,7 +152,8 @@
     chatLink.append(createElement('span','nav-icon','▤'),createElement('span','nav-label','Чат'));
     dashboard.onclick=()=>{window.location.href='/'}; chatLink.onclick=()=>{window.location.href='/chat.html'};
     items.append(dashboard,chatLink); group.append(title,items);
-    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','＋ Новый чат'),newProject=createElement('button','btn secondary','＋ Проект');
+    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','Новый чат'),newProject=createElement('button','btn secondary','Проект');
+    newChat.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>');newProject.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6m-3-3h6"/></svg>');
     newChat.type='button';newChat.onclick=()=>createConversation(state.activeProjectId);newProject.type='button';newProject.onclick=openProjectModal;actions.append(newChat,newProject);
     const projectsTitle=createElement('div','nav-group-label','ПРОЕКТЫ'),projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
     const historyToggle=createElement('button','btn secondary chat-history-toggle','');historyToggle.type='button';historyToggle.id='chat-history-toggle';
@@ -231,6 +229,17 @@
     resizeInput();
   }
 
+  function renameConversation(id) {
+    const conversation=state.conversations.find(item=>item.id===id);if(!conversation)return;
+    const next=window.prompt('Название чата',conversation.title||'Новый чат');if(next===null)return;
+    const title=next.trim().replace(/\s+/g,' ').slice(0,120);if(!title){showNotice('Название чата не может быть пустым.','warning');return}
+    conversation.title=title;conversation.updatedAt=new Date().toISOString();saveWorkspace();renderChatWorkspace();syncProjectChatMemory(conversation);
+  }
+  async function syncProjectChatMemory(conversation) {
+    if(!conversation?.projectId)return;
+    try{const projectChats=state.conversations.filter(item=>item.projectId===conversation.projectId).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,100).map(item=>({id:item.id,title:item.title||'Новый чат',updated_at:item.updatedAt||'',agent_id:item.agentId||'',messages:(item.messages||[]).slice(-80).map(m=>({role:m.role,content:String(m.content||'').slice(0,12000),time:m.time||''}))}));await chatApi('/projects/'+encodeURIComponent(conversation.projectId)+'/memory',{method:'POST',body:JSON.stringify({chats:projectChats})})}catch(error){showNotice('История сохранена в браузере, но память проекта не обновилась: '+error.message,'warning')}
+  }
+
   function deleteConversation(id) {
     if (state.sending) return;
     state.conversations = state.conversations.filter((item) => item.id !== id);
@@ -253,15 +262,14 @@
     }
     state.projects.forEach((project) => {
       const row = createElement('div', 'sidebar-chat-item sidebar-chat-project' + (state.activeProjectId === project.id ? ' active' : ''));
-      const label = createElement('button', 'sidebar-chat-item-label', (project.expanded ? '▾ ' : '▸ ') + project.name);
-      label.type = 'button';
+      const label = createElement('button', 'sidebar-chat-item-label', '');label.type='button';label.insertAdjacentHTML('beforeend','<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');label.append(createElement('span','sidebar-chat-item-title',project.name||'Без названия'));label.classList.toggle('is-expanded',!!project.expanded);
       label.addEventListener('click', () => {
         project.expanded = !project.expanded;
         state.activeProjectId = project.id;
         saveWorkspace();
         renderChatWorkspace();
       });
-      const add = createElement('button', 'sidebar-chat-item-delete', '+');
+      const add = createElement('button', 'sidebar-chat-item-action chat-project-add', '');add.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
       add.type = 'button';
       add.title = 'Новый чат в проекте';
       add.setAttribute('aria-label', 'Новый чат в проекте ' + project.name);
@@ -290,14 +298,10 @@
     label.type = 'button';
     label.title = chat.title || 'Новый чат';
     label.addEventListener('click', () => openConversation(chat.id));
-    const remove = createElement('button', 'sidebar-chat-item-delete', '×');
-    remove.type = 'button';
-    remove.title = 'Удалить чат';
-    remove.setAttribute('aria-label', 'Удалить чат ' + (chat.title || 'Новый чат'));
-    remove.addEventListener('click', () => {
-      if (window.confirm('Удалить этот чат и его историю?')) deleteConversation(chat.id);
-    });
-    row.append(label, remove);
+    const actions=createElement('div','sidebar-chat-item-actions');
+    const rename=createElement('button','sidebar-chat-item-action','');rename.type='button';rename.title='Переименовать чат';rename.setAttribute('aria-label','Переименовать чат '+(chat.title||'Новый чат'));rename.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19.7 7.8a2.2 2.2 0 0 0-3.1-3.1z"/><path d="m14.9 6.4 3.1 3.1"/></svg>';rename.onclick=()=>renameConversation(chat.id);
+    const remove=createElement('button','sidebar-chat-item-action is-danger','');remove.type='button';remove.title='Удалить чат';remove.setAttribute('aria-label','Удалить чат '+(chat.title||'Новый чат'));remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>';remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
+    actions.append(rename,remove);row.append(label,actions);
     return row;
   }
 
@@ -381,7 +385,7 @@
 
     const selected = state.agents.find((agent) => agent.id === state.agent);
     elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-    updateCurrentAgentAvatar(selected);
+    updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
     elements.agent.disabled = !state.agents.length;
     elements.send.disabled = !state.agent;
     elements.input.disabled = !state.agent;
@@ -429,6 +433,12 @@
     } catch (_) {}
   };
 
+  async function updateModelAvailability(agent) {
+    if(!elements.availability)return;elements.availability.classList.remove('is-available','is-unavailable');elements.availability.classList.add('is-unavailable');
+    if(!agent||!agent.model){elements.availability.title='У агента не назначена модель';elements.availability.setAttribute('aria-label','Модель не назначена');return}
+    try{const [modelsResult,providersResult]=await Promise.all([chatApi('/models',{cache:'no-store'}),chatApi('/providers',{cache:'no-store'})]);const found=(modelsResult.models||[]).some(m=>m.name===agent.model)||(providersResult.models||[]).some(m=>m.name===agent.model&&m.connected);state.modelAvailable=!!found;elements.availability.classList.toggle('is-available',!!found);elements.availability.classList.toggle('is-unavailable',!found);elements.availability.title=found?'Модель доступна':'Модель не найдена или провайдер недоступен';elements.availability.setAttribute('aria-label',found?'Модель доступна':'Модель недоступна')}catch(_){state.modelAvailable=false;elements.availability.title='Не удалось проверить доступность модели';elements.availability.setAttribute('aria-label','Доступность модели не подтверждена')}
+  }
+
   async function loadAgents() {
     try {
       const data = await chatApi('/agents', { method: 'GET', cache: 'no-store' });
@@ -470,7 +480,7 @@
       }));
       const data = await chatApi('/chat', {
         method: 'POST',
-        body: JSON.stringify({ agent_id: state.agent, messages })
+        body: JSON.stringify({ agent_id: state.agent, project_id: activeConversation()?.projectId || '', conversation_id: state.activeConversationId, messages })
       });
       if (typeof data.response !== 'string') {
         throw new Error('Сервер вернул пустой или некорректный ответ модели.');
@@ -523,19 +533,8 @@
       state.agent = elements.agent.value;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-      updateCurrentAgentAvatar(selected);
+      updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
-    });
-    elements.agentSettings.addEventListener('click', () => {
-      if (!state.agent) {
-        showNotice('Сначала выберите агента.', 'warning');
-        return;
-      }
-      if (window.PQDomainModal?.open) {
-        window.PQDomainModal.open('agents', state.agent);
-      } else {
-        showNotice('Модалка настроек недоступна.', 'warning');
-      }
     });
     elements.clear.addEventListener('click', clearChat);
   }
@@ -584,6 +583,7 @@
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
+    try{const projects=await chatApi('/projects',{cache:'no-store'});state.systemProjects=Array.isArray(projects.items)?projects.items:[];state.projects=state.systemProjects.map(p=>({id:p.id,name:p.name||'Без названия',createdAt:p.created_at||'',expanded:state.projects.find(old=>old.id===p.id)?.expanded??true}));saveWorkspace()}catch(_){/* use cached project list */}
     buildUI();
     bindShellEvents();
     bindEvents();
