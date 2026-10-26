@@ -2463,7 +2463,26 @@ class Handler(SimpleHTTPRequestHandler):
             write_json(AUTH_FILE, config)
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
-        if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/terminal':
+            command=data.get('command')
+            cwd_raw=str(data.get('cwd','')).strip()
+            if not isinstance(command,str) or not command.strip() or len(command)>4000: return self.send_json(400, {'error':'Введите команду длиной от 1 до 4000 символов.'})
+            try:
+                from agent_tools import resolve_authorized_path
+                permissions=permission_settings()
+                cwd=resolve_authorized_path(cwd_raw,permissions,must_exist=True)
+                if not cwd.is_dir(): return self.send_json(400, {'error':'Рабочий путь должен указывать на существующую папку.'})
+                try:
+                    completed=subprocess.run(command,shell=True,cwd=str(cwd),capture_output=True,text=True,timeout=30,encoding='utf-8',errors='replace')
+                    result={'cwd':str(cwd),'stdout':completed.stdout[-60000:],'stderr':completed.stderr[-30000:],'exit_code':completed.returncode}
+                except subprocess.TimeoutExpired as exc:
+                    stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
+                    stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
+                    result={'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
+                log_event('terminal.command',str(cwd)+' · '+command[:120])
+                return self.send_json(200,result)
+            except (PermissionError,ValueError,OSError) as exc:
+                return self.send_json(400, {'error':'Команда не выполнена: '+str(exc)[:220]})
         if path=='/api/github/connections':
             name=str(data.get('name','')).strip()[:100]
             repository=str(data.get('repository','')).strip()
@@ -2662,9 +2681,58 @@ class Handler(SimpleHTTPRequestHandler):
             if not model:
                 return self.send_json(400, {'error': 'У выбранного агента не назначена модель. Откройте настройки агента и назначьте модель.'})
             try:
+                tool_summaries=[]
+                if agent and provider.get('format') == 'ollama':
+                    from agent_tools import effective_tools, execute_tool
+                    permission_config=permission_settings()
+                    available_tools=effective_tools(agent,permission_config)
+                    project=next((x for x in domain_items('projects') if x.get('id')==project_id),None) if project_id else None
+                    if available_tools:
+                        tool_names=[x['function']['name'] for x in available_tools]
+                        project_context=''
+                        if project:
+                            project_dir=str(project.get('path','')).strip() or 'не указана (уточните у пользователя)'
+                            project_context='\\n\\nКонтекст текущего проекта: '+str(project.get('name',''))+'; описание: '+str(project.get('description',''))+'; локальная папка: '+project_dir+'. Используй только доступные инструменты и не утверждай, что файл прочитан или изменён без результата инструмента.'
+                        tool_context='\\n\\nДоступные инструменты: '+', '.join(tool_names)+'. Если инструмента нет в списке, использовать его нельзя.'+project_context
+                        validated_messages.insert(0,{'role':'system','content':tool_context})
+                        ollama_model=resolve_ollama_model(model)
+                        total_calls=0
+                        last_payload={}
+                        for _ in range(12):
+                            last_payload=ollama_request('/api/chat',{'model':ollama_model,'messages':validated_messages,'tools':available_tools,'stream':False,'think':False,'keep_alive':'5m','options':{'num_predict':1024}},timeout=180)
+                            assistant_turn=last_payload.get('message') if isinstance(last_payload,dict) else None
+                            if not isinstance(assistant_turn,dict): break
+                            calls=assistant_turn.get('tool_calls')
+                            if not isinstance(calls,list) or not calls:
+                                response_text=assistant_turn.get('content','') if isinstance(assistant_turn.get('content',''),str) else ''
+                                log_event('chat.message',str(provider.get('name',provider.get('id','provider')))+'/'+model)
+                                return self.send_json(200,{'response':response_text,'tool_calls':tool_summaries})
+                            validated_messages.append(assistant_turn)
+                            for call in calls:
+                                total_calls+=1
+                                if total_calls>24: break
+                                function=call.get('function',{}) if isinstance(call,dict) else {}
+                                name=function.get('name') if isinstance(function,dict) else None
+                                args=function.get('arguments',{}) if isinstance(function,dict) else {}
+                                if isinstance(args,str):
+                                    try: args=json.loads(args)
+                                    except ValueError: args={}
+                                if not isinstance(args,dict) or not isinstance(name,str) or name not in tool_names:
+                                    result={'error':'Некорректный или недоступный инструмент.'}; name=str(name or 'unknown')
+                                else:
+                                    if name=='run_command' and project and project.get('path'): args.setdefault('cwd',str(project.get('path')))
+                                    result=execute_tool(name,args,agent,permission_config)
+                                status='error' if isinstance(result,dict) and result.get('error') else 'ok'
+                                tool_summaries.append({'name':name,'status':status})
+                                log_event('agent.tool_called',str(agent.get('id',''))+' · '+str(name)+' · '+status)
+                                validated_messages.append({'role':'tool','tool_name':str(name),'content':json.dumps(result,ensure_ascii=False)[:12000]})
+                            if total_calls>24: break
+                        last_message=last_payload.get('message',{}) if isinstance(last_payload,dict) else {}
+                        response_text=last_message.get('content','') if isinstance(last_message,dict) and isinstance(last_message.get('content',''),str) else ''
+                        return self.send_json(200,{'response':response_text,'tool_calls':tool_summaries,'warning':'Достигнут лимит циклов вызова инструментов.'})
                 result = send_chat_request(provider, model, validated_messages, timeout=120)
                 log_event('chat.message', str(provider.get('name',provider.get('id','provider')))+'/'+model)
-                return self.send_json(200, {'response': result['response']})
+                return self.send_json(200, {'response': result['response'],'tool_calls':tool_summaries})
             except ValueError as exc:
                 message=str(exc)
                 status=502 if ('Ошибка облачного провайдера' in message or 'Ошибка провайдера' in message or 'Провайдер недоступен' in message or 'Ошибка Ollama' in message) else 400
