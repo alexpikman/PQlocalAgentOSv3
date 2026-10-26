@@ -379,3 +379,16 @@ td{border-color:var(--line)}
 #pq-memory-nav-modal .task-context-description,#pq-memory-nav-modal .task-result{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:720px){#pq-memory-nav-modal .modal-card{width:calc(100vw - 20px);max-height:92vh}#pq-memory-nav-modal .modal-card-head,#pq-memory-nav-modal .modal-card-body{padding:12px}#pq-memory-nav-modal .modal-card-head{align-items:flex-start}#pq-memory-nav-modal .modal-card-head>[data-memory-nav-close]{flex:0 0 auto}}
 @media(max-width:720px){.project-entity-row{grid-template-columns:80px minmax(0,1fr);gap:12px}.project-entity-row>.entity-row-actions{grid-column:2}.project-card-main>.entity-row-heading{align-items:flex-start}.project-logo-editor-row{flex-direction:column}}
+
+
+/* Project task controls and visible task error details. */
+.project-card-footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;min-width:0}
+.project-tasks-btn{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;box-sizing:border-box;min-height:20px;height:20px;padding:0 8px!important;line-height:18px;white-space:nowrap}
+.project-tasks-btn svg{display:block;width:13px;height:13px;flex:0 0 13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.project-task-warning{display:flex;align-items:flex-start;gap:5px;min-width:0;max-width:100%;color:var(--text);font-size:11px;line-height:1.4}
+.project-task-warning svg{display:block;width:15px;height:15px;min-width:15px;flex:0 0 15px;fill:#facc15;stroke:#a16207;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.project-task-warning span{min-width:0;overflow-wrap:anywhere}
+.task-error-button{display:inline-flex;align-items:center;gap:5px}
+.task-error-button svg{display:block;width:14px;height:14px;flex:0 0 14px;fill:#facc15;stroke:#a16207;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.task-error-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+@media(max-width:640px){.project-card-footer{align-items:flex-start}.project-task-warning{flex-basis:100%}}
