@@ -144,75 +144,77 @@ SYSTEM_INSTRUCTION_ROLE_NAMES = {
     'MANAGER': 'Менеджер проекта', 'ARCHITECT': 'Архитектор',
     'ANALYST': 'Аналитик', 'DESIGNER': 'Дизайнер',
     'COPYWRITER': 'Копирайтер', 'CODER': 'Инженер-программист',
-    'TESTER': 'Тестировщик', 'DEVOPS': 'Инженер DevOps'
+    'TESTER': 'Тестировщик', 'DEVOPS': 'DevOps-инженер'
 }
+def system_instruction_agent_plan():
+    return [
+        {'from':'MANAGER','trigger':'task_received','condition':'Задача получена','action':'Выполнить работу и вернуть результат','to':'MANAGER','fallback':''},
+        {'from':'MANAGER','trigger':'need_clarification','condition':'Не хватает данных','action':'Запросить уточнение у MANAGER','to':'MANAGER','fallback':''}
+    ]
 def ensure_system_instructions():
     if SYSTEM_INSTRUCTIONS_FILE.exists():
         current = read_json(SYSTEM_INSTRUCTIONS_FILE, None)
         if isinstance(current, dict) and isinstance(current.get('instructions'), list):
             return current['instructions']
     now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-    instructions = [{
-        'id': 'instr-' + role.lower(),
-        'name': SYSTEM_INSTRUCTION_ROLE_NAMES[role] + ' (по умолчанию',
-        'role': role, 'system_prompt': AGENT_ROLE_PROMPTS[role],
-        'activity': SYSTEM_INSTRUCTION_ACTIVITY[role], 'is_default': True,
-        'interaction_plan': [], 'created_at': now, 'updated_at': now
-    } for role in AGENT_ROLES]
-    for item in instructions:
-        item['name'] += ')'
+    instructions = []
+    for role in AGENT_ROLES:
+        plan = [] if role == 'MANAGER' else system_instruction_agent_plan()
+        instructions.append({
+            'id': 'instr-' + role.lower(),
+            'name': SYSTEM_INSTRUCTION_ROLE_NAMES[role] + ' (по умолчанию)',
+            'role': role, 'system_prompt': AGENT_ROLE_PROMPTS[role],
+            'activity': SYSTEM_INSTRUCTION_ACTIVITY[role], 'is_default': True,
+            'interaction_plan': plan, 'created_at': now, 'updated_at': now
+        })
     write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': instructions})
     return instructions
 def save_system_instructions(items):
     write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': items})
 def system_instruction_defaults():
     return {role: {'system_prompt': AGENT_ROLE_PROMPTS[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
-def validate_interaction_plan(value):
+def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
-        raise ValueError('План взаимодействия должен быть массивом не более 50 правил')
+        raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
     validated = []
-    allowed_from = set(AGENT_ROLES) | {'USER', 'ANY'}
-    allowed_to = set(AGENT_ROLES) | {'USER'}
-    allowed_fallback = set(AGENT_ROLES) | {'MANAGER', ''}
+    allowed_to = set(AGENT_ROLES)
+    allowed_fallback = set(AGENT_ROLES) | {''}
     limits = {'trigger': 120, 'condition': 240, 'action': 1000}
     for index, row in enumerate(value):
         if not isinstance(row, dict):
             raise ValueError('Правило ' + str(index + 1) + ' должно быть объектом')
-        source = str(row.get('from', 'USER')).upper().strip()
-        target = str(row.get('to', 'USER')).upper().strip()
+        target = str(row.get('to', 'MANAGER')).upper().strip()
         fallback = str(row.get('fallback', '')).upper().strip()
-        if source not in allowed_from: raise ValueError('Недопустимая роль источника в правиле ' + str(index + 1))
-        if target not in allowed_to: raise ValueError('Недопустимый получатель в правиле ' + str(index + 1))
-        if fallback not in allowed_fallback: raise ValueError('Недопустимый fallback в правиле ' + str(index + 1))
-        item = {'from': source, 'to': target, 'fallback': fallback}
+        if target not in allowed_to:
+            raise ValueError('Недопустимый получатель в правиле ' + str(index + 1))
+        if fallback not in allowed_fallback:
+            raise ValueError('Недопустимый fallback в правиле ' + str(index + 1))
+        item = {'to': target, 'fallback': fallback}
         for key, limit in limits.items():
             text_value = row.get(key, '')
-            if not isinstance(text_value, str): raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' должно быть строкой')
-            if len(text_value) > limit: raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' превышает ' + str(limit) + ' символов')
+            if not isinstance(text_value, str):
+                raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' должно быть строкой')
+            if len(text_value) > limit:
+                raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' превышает ' + str(limit) + ' символов')
             item[key] = text_value.strip()
         validated.append(item)
     return validated
 def system_instruction_warnings(items):
-    by_role = {}
-    edges = []
-    for instruction in items:
-        role = instruction.get('role')
-        if role in AGENT_ROLES:
-            by_role.setdefault(role, []).append(instruction)
-        plan = instruction.get('interaction_plan', [])
-        for rule in plan if isinstance(plan, list) else []:
-            source, target = rule.get('from'), rule.get('to')
-            if source and target in AGENT_ROLES and source not in ('USER', 'ANY'):
-                edges.append((source, target))
-    warnings, seen = [], set()
-    for source, target in edges:
-        key = (source, target)
-        if key in seen: continue
-        seen.add(key)
-        target_rules = [rule for instruction in by_role.get(target, []) for rule in instruction.get('interaction_plan', []) if isinstance(instruction.get('interaction_plan', []), list)]
-        incoming_sources = {rule.get('from') for rule in target_rules}
-        if source not in incoming_sources and 'ANY' not in incoming_sources:
-            warnings.append({'from': source, 'to': target, 'message': 'У ' + target + ' нет входящего триггера от ' + source})
+    manager = next((item for item in items if item.get('role') == 'MANAGER'), None)
+    warnings = []
+    if not manager:
+        return warnings
+    for rule in manager.get('interaction_plan', []):
+        if not isinstance(rule, dict):
+            continue
+        target = str(rule.get('to', '')).strip()
+        fallback = str(rule.get('fallback', '')).strip()
+        if target in AGENT_ROLES and not fallback:
+            warnings.append({
+                'trigger': str(rule.get('trigger', '')),
+                'to': target,
+                'message': 'Правило "' + str(rule.get('trigger', '')) + '" ведёт на ' + target + ', но fallback не задан'
+            })
     return warnings
 
 def domain_items(kind):
@@ -1410,7 +1412,7 @@ class Handler(SimpleHTTPRequestHandler):
                 system_prompt = data.get('system_prompt', ''); activity = data.get('activity', '')
                 if not isinstance(system_prompt, str) or len(system_prompt) > 8000: return self.send_json(400, {'error': 'Системная инструкция должна быть строкой до 8000 символов'})
                 if not isinstance(activity, str) or len(activity) > 2000: return self.send_json(400, {'error': 'Основная деятельность должна быть строкой до 2000 символов'})
-                plan = validate_interaction_plan(data.get('interaction_plan', [])); items = ensure_system_instructions()
+                plan = validate_manager_interaction_plan(data.get('interaction_plan', [])) if role == 'MANAGER' else system_instruction_agent_plan(); items = ensure_system_instructions()
                 is_default = not any(x.get('role') == role and x.get('is_default') for x in items)
                 now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 item = {'id': 'instr-' + uuid.uuid4().hex[:12], 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'is_default': is_default, 'interaction_plan': plan, 'created_at': now, 'updated_at': now}
@@ -1432,7 +1434,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in AGENT_ROLES: return self.send_json(400, {'error': 'Неизвестная роль агента'})
                 if not isinstance(system_prompt, str) or len(system_prompt) > 8000: return self.send_json(400, {'error': 'Системная инструкция должна быть строкой до 8000 символов'})
                 if not isinstance(activity, str) or len(activity) > 2000: return self.send_json(400, {'error': 'Основная деятельность должна быть строкой до 2000 символов'})
-                plan = validate_interaction_plan(data.get('interaction_plan', existing.get('interaction_plan', [])))
+                plan = (validate_manager_interaction_plan(data.get('interaction_plan', existing.get('interaction_plan', []))) if role == 'MANAGER' else system_instruction_agent_plan())
                 updated = {**existing, 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'interaction_plan': plan, 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
                 items[index] = updated; save_system_instructions(items); log_event('system_instruction.update', updated['name'])
                 return self.send_json(200, updated)
