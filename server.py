@@ -2638,6 +2638,54 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/chat-groups':
+            groups = _chat_groups()
+            group_id = _chat_safe_id(data.get('id')) or ('group-' + uuid.uuid4().hex[:12])
+            name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()[:100]
+            if not name:
+                return self.send_json(400, {'error': 'Укажите название папки'})
+            existing = next((item for item in groups if item.get('id') == group_id), None)
+            item = {'id': group_id, 'name': name, 'created_at': (existing or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if existing:
+                groups[groups.index(existing)] = item
+            else:
+                groups.insert(0, item)
+            write_json(CHAT_GROUPS_FILE, groups)
+            return self.send_json(200, {'ok': True, 'group': item, 'items': groups})
+        if path == '/api/chats':
+            try:
+                chat = data.get('chat', data)
+                if not isinstance(chat, dict):
+                    return self.send_json(400, {'error': 'Некорректный объект чата'})
+                chat = dict(chat)
+                chat_id = _chat_safe_id(chat.get('id'))
+                if not chat_id:
+                    chat['id'] = 'chat-' + uuid.uuid4().hex[:16]
+                else:
+                    chat['id'] = chat_id
+                old_chat = next((item for item in _all_chat_records() if str(item.get('id')) == str(chat['id'])), None)
+                old_project_id = str((old_chat or {}).get('project_id') or (old_chat or {}).get('projectId') or '')
+                new_project_id = str(chat.get('project_id') or chat.get('projectId') or '')
+                if 'messages' in chat and not isinstance(chat['messages'], list):
+                    return self.send_json(400, {'error': 'messages должен быть массивом'})
+                chat['messages'] = chat.get('messages', [])[-2000:]
+                working_dir = str(chat.get('working_dir') or chat.get('workingDir') or '').strip()
+                if working_dir:
+                    chat['working_dir'] = working_dir
+                    _add_chat_working_root(working_dir)
+                saved = _save_chat_record(chat)
+                if old_chat and old_project_id != new_project_id:
+                    try:
+                        old_path = _chat_record_path(chat['id'], old_project_id)
+                        if old_path != _chat_record_path(chat['id'], new_project_id) and old_path.is_file():
+                            old_path.unlink()
+                    except ValueError:
+                        pass
+                return self.send_json(200, {'ok': True, 'chat': saved})
+            except ValueError as exc:
+                return self.send_json(400, {'error': str(exc)})
+            except Exception as exc:
+                return self.send_json(500, {'error': 'Не удалось сохранить чат: ' + str(exc)[:180]})
         if path == '/api/terminal':
             command=data.get('command')
             cwd_raw=str(data.get('cwd','')).strip()
@@ -3332,54 +3380,6 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if self._must_change_password_blocked(path): return
         if path.startswith('/api/') and not self.require_auth(): return
-        if path == '/api/chat-groups':
-            groups = _chat_groups()
-            group_id = _chat_safe_id(data.get('id')) or ('group-' + uuid.uuid4().hex[:12])
-            name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()[:100]
-            if not name:
-                return self.send_json(400, {'error': 'Укажите название папки'})
-            existing = next((item for item in groups if item.get('id') == group_id), None)
-            item = {'id': group_id, 'name': name, 'created_at': (existing or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
-            if existing:
-                groups[groups.index(existing)] = item
-            else:
-                groups.insert(0, item)
-            write_json(CHAT_GROUPS_FILE, groups)
-            return self.send_json(200, {'ok': True, 'group': item, 'items': groups})
-        if path == '/api/chats':
-            try:
-                chat = data.get('chat', data)
-                if not isinstance(chat, dict):
-                    return self.send_json(400, {'error': 'Некорректный объект чата'})
-                chat = dict(chat)
-                chat_id = _chat_safe_id(chat.get('id'))
-                if not chat_id:
-                    chat['id'] = 'chat-' + uuid.uuid4().hex[:16]
-                else:
-                    chat['id'] = chat_id
-                old_chat = next((item for item in _all_chat_records() if str(item.get('id')) == str(chat['id'])), None)
-                old_project_id = str((old_chat or {}).get('project_id') or (old_chat or {}).get('projectId') or '')
-                new_project_id = str(chat.get('project_id') or chat.get('projectId') or '')
-                if 'messages' in chat and not isinstance(chat['messages'], list):
-                    return self.send_json(400, {'error': 'messages должен быть массивом'})
-                chat['messages'] = chat.get('messages', [])[-2000:]
-                working_dir = str(chat.get('working_dir') or chat.get('workingDir') or '').strip()
-                if working_dir:
-                    chat['working_dir'] = working_dir
-                    _add_chat_working_root(working_dir)
-                saved = _save_chat_record(chat)
-                if old_chat and old_project_id != new_project_id:
-                    try:
-                        old_path = _chat_record_path(chat['id'], old_project_id)
-                        if old_path != _chat_record_path(chat['id'], new_project_id) and old_path.is_file():
-                            old_path.unlink()
-                    except ValueError:
-                        pass
-                return self.send_json(200, {'ok': True, 'chat': saved})
-            except ValueError as exc:
-                return self.send_json(400, {'error': str(exc)})
-            except Exception as exc:
-                return self.send_json(500, {'error': 'Не удалось сохранить чат: ' + str(exc)[:180]})
         if path.startswith('/api/chat-groups/'):
             group_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chat-groups/'):]))
             groups = _chat_groups()
