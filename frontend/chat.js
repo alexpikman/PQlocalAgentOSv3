@@ -173,7 +173,7 @@
     const historyList = createElement('div', 'sidebar-chat-list');
     historyList.id = 'chat-history-list';
     workspace.append(workspaceTitle, workspaceNav, actions, projectsTitle, projectsList, historyTitle, historyList);
-    nav.insertAdjacentElement('afterend', workspace);
+    nav.replaceChildren(workspace);
     elements.workspace = workspace;
     elements.projectsList = projectsList;
     elements.historyList = historyList;
