@@ -22,7 +22,7 @@ const refresh = async () => {
   if (typeof context.refresh === 'function') return await context.refresh();
   if (typeof window.PQRefresh === 'function') return await window.PQRefresh();
 };
-function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="modal-card-actions domain-modal-actions"><button type="button" class="btn secondary" id="domain-si-cancel" data-domain-modal-close hidden>Отмена</button><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
+function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="domain-si-history" id="domain-si-history" hidden><button type="button" class="btn secondary" id="domain-si-history-load">История версий</button><div id="domain-si-history-picker" hidden><select id="domain-si-history-select" aria-label="Версия инструкции"></select><button type="button" class="btn soft-danger" id="domain-si-revert">Откатить выбранную версию</button></div></div><div class="modal-card-actions domain-modal-actions"><button type="button" class="btn secondary" id="domain-si-cancel" data-domain-modal-close hidden>Отмена</button><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
 function ensureDomainModal(){let modal=$('#domain-modal');if(!modal){document.body.insertAdjacentHTML('beforeend',domainModalMarkup());modal=$('#domain-modal')}bindDomainModal();return modal}
 function fixedSystemInstructionPlan(){
   return [
@@ -96,6 +96,8 @@ function openDomainModal(kind,id){
   $('#domain-modal-status').innerHTML='';
   const tabsEl=$('#domain-modal-tabs'),avatarEl=$('#domain-modal-avatar');
   const siCancel=$('#domain-si-cancel');if(siCancel)siCancel.hidden=kind!=='system-instructions';
+  const siHistory=$('#domain-si-history');if(siHistory)siHistory.hidden=kind!=='system-instructions'||!item;
+  const siHistoryPicker=$('#domain-si-history-picker');if(siHistoryPicker)siHistoryPicker.hidden=true;
   if(kind==='agents'){
     tabsEl.style.display='flex';avatarEl.style.display='none';form.style.display='grid';
     document.querySelectorAll('[data-domain-tab]').forEach(button=>{button.classList.toggle('primary',button.dataset.domainTab==='profile');button.classList.toggle('secondary',button.dataset.domainTab!=='profile')});
@@ -240,6 +242,34 @@ function bindDomainModal(){
       const modal=$('#domain-modal');if(modal)modal.hidden=true;
       openDomainModal('system-instructions',instr.id);
       if(openSi.dataset.openSi==='plan')setTimeout(()=>{const tab=document.querySelector('[data-si-tab="plan"]');if(tab)tab.click()},0);
+      return;
+    }
+    const historyLoad=target.closest('#domain-si-history-load');if(historyLoad){
+      if(editor?.kind!=='system-instructions'||!editor.id)return;
+      historyLoad.disabled=true;
+      try{
+        const result=await api('/system-instructions/'+encodeURIComponent(editor.id)+'/history');
+        const versions=result.history||[],select=$('#domain-si-history-select'),picker=$('#domain-si-history-picker');
+        if(select)select.innerHTML=versions.map((version,index)=>'<option value="'+esc(version.at)+'">'+esc(version.at||'Без даты')+' · '+esc(version.role||'')+' · '+esc(String(version.system_prompt||'').slice(0,70).replace(/\\s+/g,' '))+'</option>').join('');
+        if(picker)picker.hidden=!versions.length;
+        if(typeof context.toast==='function')context.toast(versions.length?'История загружена: '+versions.length+' версий':'История версий пока пуста');
+      }catch(error){const status=$('#domain-modal-status');if(status)status.innerHTML='<div class="notice warning">'+esc(error.message)+'</div>'}
+      finally{historyLoad.disabled=false}
+      return;
+    }
+    const historyRevert=target.closest('#domain-si-revert');if(historyRevert){
+      if(editor?.kind!=='system-instructions'||!editor.id)return;
+      const at=$('#domain-si-history-select')?.value;if(!at){if(typeof context.toast==='function')context.toast('Выберите версию для отката');return}
+      if(!confirm('Откатить системную инструкцию к выбранной версии?'))return;
+      historyRevert.disabled=true;
+      try{
+        const restored=await api('/system-instructions/'+encodeURIComponent(editor.id)+'/revert',{method:'POST',body:JSON.stringify({at})});
+        const prompt=$('#domain-system_prompt');if(prompt)prompt.value=restored.system_prompt||'';
+        if(typeof context.refresh==='function')await context.refresh();
+        if(typeof context.toast==='function')context.toast('Системная инструкция восстановлена из истории');
+        const picker=$('#domain-si-history-picker');if(picker)picker.hidden=true;
+      }catch(error){const status=$('#domain-modal-status');if(status)status.innerHTML='<div class="notice warning">'+esc(error.message)+'</div>';if(typeof context.toast==='function')context.toast(error.message||'Не удалось выполнить откат')}
+      finally{historyRevert.disabled=false}
       return;
     }
     const reset=target.closest('#domain-reset-default');if(reset){
