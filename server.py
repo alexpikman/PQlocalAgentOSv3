@@ -725,10 +725,20 @@ def resolve_ollama_model(model, timeout=4):
 
 
 def provider_for_model(model, preferred_id=''):
-    """Resolve an agent's provider, preferring explicit IDs and known model/provider names."""
+    """Resolve an agent's provider, preferring an explicitly assigned GGUF runtime."""
     providers=provider_items()
     preferred=str(preferred_id or '').strip()
     name=str(model or '').strip().lower()
+
+    # An explicit file-provider assignment is authoritative. The model field can contain
+    # a display label, filename, or path depending on how the agent was configured.
+    preferred_provider=next((p for p in providers if str(p.get('id',''))==preferred),None)
+    if preferred_provider and (
+        str(preferred_provider.get('kind') or '').lower() == 'file'
+        or str(preferred_provider.get('format') or '').lower() in ('file','gguf')
+    ):
+        return preferred_provider
+
     # Resolve GGUF by its actual path/name before trusting a stale or mismatched agent provider_id.
     # Some agents store only the filename or provider display name in their model field.
     for p in providers:
