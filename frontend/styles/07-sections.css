@@ -339,3 +339,32 @@ td{border-color:var(--line)}
   }
   #domain-modal .domain-modal-actions .btn{min-width:120px}
 }
+
+
+/* Project cards: logo, memory action and task count follow the shared entity-row structure. */
+.project-entity-row{display:grid;grid-template-columns:80px minmax(0,1fr) auto;align-items:center;gap:14px}
+.project-logo-column{display:flex;flex-direction:column;align-items:stretch;gap:6px;width:80px;min-width:80px}
+.project-logo-image,.project-logo-placeholder{display:grid;place-items:center;width:80px;height:80px;max-width:80px;max-height:80px;object-fit:contain;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.project-logo-placeholder{color:var(--muted);font-size:28px}
+.project-memory-logo-btn{display:flex!important;align-items:center;justify-content:center;gap:4px;width:80px;height:20px;min-height:20px;max-height:20px;padding:0 4px!important;margin:0;font-size:10px;line-height:18px}
+.project-memory-logo-btn svg{width:13px;height:13px;flex:0 0 13px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.project-card-main{min-width:0}
+.project-card-main>.entity-row-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.project-tasks-btn{height:20px!important;min-height:20px!important;margin-top:0!important;padding:0 8px!important;line-height:18px!important;white-space:nowrap}
+.project-logo-editor-row{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.project-logo-editor-preview{display:grid;place-items:center;width:96px;height:96px;flex:0 0 96px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);overflow:hidden}
+.project-logo-editor-preview img{display:block;width:100%;height:100%;object-fit:contain}
+.project-logo-editor-preview span{font-size:11px;color:var(--muted)}
+.project-logo-editor-controls{display:grid;gap:8px;min-width:0}
+.project-memory-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.project-memory-tab{border:1px solid var(--line);border-radius:8px;padding:7px 12px;background:var(--panel2);color:var(--text);cursor:pointer}
+.project-memory-tab.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.project-memory-pane{display:none;min-width:0}
+.project-memory-pane.active{display:block}
+.project-memory-pane>.field{display:grid;gap:6px;margin-bottom:12px}
+.project-memory-facts{display:grid;gap:8px;margin-top:14px}
+.project-memory-facts .fact{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);overflow-wrap:anywhere}
+.project-memory-facts .fact small{display:block;margin-top:5px;color:var(--muted)}
+#pq-memory-nav-modal .modal-card{display:flex;flex-direction:column;max-height:min(88vh,860px);overflow:hidden}
+#pq-memory-nav-modal .modal-card-body{min-height:0;overflow:auto;overscroll-behavior:contain}
+@media(max-width:720px){.project-entity-row{grid-template-columns:80px minmax(0,1fr);gap:12px}.project-entity-row>.entity-row-actions{grid-column:2}.project-card-main>.entity-row-heading{align-items:flex-start}.project-logo-editor-row{flex-direction:column}}
