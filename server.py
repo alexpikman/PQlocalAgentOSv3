@@ -2849,8 +2849,10 @@ class Handler(SimpleHTTPRequestHandler):
             item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(old or {}).get('created_at') or (datetime.datetime.now().astimezone().isoformat(timespec='seconds') if not existing and not builtin else '')}
             if kind == 'file':
                 for setting, default, cast, low, high in (('n_ctx',4096,int,512,131072),('n_gpu_layers',-1,int,-1,200),('temperature',0.7,float,0.0,2.0),('top_p',0.9,float,0.0,1.0),('repeat_penalty',1.1,float,0.5,2.0)):
-                    try: item[setting]=max(low,min(high,cast(data.get(setting,old.get(setting,default))))
-                    except (TypeError,ValueError): item[setting]=default
+                    try:
+                        item[setting] = max(low, min(high, cast(data.get(setting, old.get(setting, default)))))
+                    except (TypeError, ValueError):
+                        item[setting] = default
             key=str(data.get('api_key','')).strip()
             if key: item['api_key']=key
             elif old.get('api_key'): item['api_key']=old['api_key']
