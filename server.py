@@ -478,6 +478,18 @@ def ensure_agent_roles():
 def save_agent_roles(items):
     write_json(AGENT_ROLES_FILE, items)
 
+def sync_builtin_agent_role(code, name, activity, system_prompt, now):
+    if code not in AGENT_ROLES:
+        return
+    roles = read_json(AGENT_ROLES_FILE, [])
+    if not isinstance(roles, list):
+        return
+    item = next((x for x in roles if isinstance(x, dict) and x.get('code') == code), None)
+    if not item:
+        return
+    item.update({'name': str(name).replace(' (по умолчанию)', ''), 'activity': str(activity), 'system_prompt': str(system_prompt), 'updated_at': now})
+    save_agent_roles(roles)
+
 def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
         raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
@@ -2103,7 +2115,9 @@ class Handler(SimpleHTTPRequestHandler):
                 is_default = not any(x.get('role') == role and x.get('is_default') for x in items)
                 now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 item = {'id': 'instr-' + uuid.uuid4().hex[:12], 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'is_default': is_default, 'interaction_plan': plan, 'created_at': now, 'updated_at': now}
-                items.append(item); save_system_instructions(items); log_event('system_instruction.create', item['name'])
+                items.append(item); save_system_instructions(items)
+                if item.get('is_default'): sync_builtin_agent_role(role, item['name'], item['activity'], item['system_prompt'], now)
+                log_event('system_instruction.create', item['name'])
                 return self.send_json(201, item)
             except ValueError as exc: return self.send_json(400, {'error': str(exc)})
             except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
@@ -2153,7 +2167,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if existing.get('system_prompt') != system_prompt:
                     _append_system_instruction_history(existing)
                     _append_system_instruction_history(updated)
-                items[index] = updated; save_system_instructions(items); log_event('system_instruction.update', updated['name'])
+                items[index] = updated; save_system_instructions(items)
+                if existing.get('is_default'): sync_builtin_agent_role(role, updated['name'], updated['activity'], updated['system_prompt'], updated['updated_at'])
+                log_event('system_instruction.update', updated['name'])
                 return self.send_json(200, updated)
             except ValueError as exc: return self.send_json(400, {'error': str(exc)})
             except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
