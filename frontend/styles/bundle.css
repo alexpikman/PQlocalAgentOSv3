@@ -1160,3 +1160,8 @@ td{border-color:var(--line)}
 .pq-memory-nav-modal h3{margin:14px 0 8px;font-size:13px}
 .pq-memory-nav-modal .task-context-description{white-space:pre-wrap;line-height:1.6;margin:8px 0 14px}
 .pq-memory-nav-modal .entity-row{margin:6px 0}
+
+
+.domain-si-history{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 22px;border-top:1px solid var(--line)}
+#domain-si-history-picker{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex:1}
+#domain-si-history-select{min-width:220px;max-width:100%;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel);color:var(--text)}
