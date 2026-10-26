@@ -86,7 +86,7 @@ def provider_models(p):
     if fmt=='ollama':
         req=urllib.request.Request(base+'/api/tags',headers=headers)
         with urllib.request.urlopen(req,timeout=4) as r: raw=json.loads(r.read())
-        return [{'name':x.get('name',''),'size':x.get('size',0)} for x in raw.get('models',[]) if x.get('name')]
+        return [{'name':x.get('name',''),'size':x.get('size',0),'parameter_size':(x.get('details') or {}).get('parameter_size','—')} for x in raw.get('models',[]) if x.get('name')]
     if fmt=='anthropic':
         if not key: return []
         headers.update({'x-api-key':key,'anthropic-version':'2023-06-01'})
@@ -1156,7 +1156,7 @@ class Handler(SimpleHTTPRequestHandler):
                     try: found=provider_models(p); connected=True
                     except Exception: pass
                 p['connected']=connected; p['model_count']=len(found); p['api_key_set']=bool(p.get('api_key'))
-                for m in found: models.append({'provider':p.get('name',''),'provider_id':p.get('id'),'kind':p.get('kind','local'),'name':m.get('name',''),'tokens':'—','size':m.get('size',0),'connected':connected})
+                for m in found: models.append({'provider':p.get('name',''),'provider_id':p.get('id'),'kind':p.get('kind','local'),'name':m.get('name',''),'parameter_size':m.get('parameter_size','—'),'size':m.get('size',0),'connected':connected})
             return self.send_json(200, {'providers':[public_provider(p) for p in items], 'models':models})
         if path=='/api/models':
             try:
