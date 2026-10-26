@@ -1,3 +1,4 @@
+(function () {
 'use strict';
 
 let context = {
@@ -120,3 +121,5 @@ window.PQDomainModal = {
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindDomainModal);
 else if (document.getElementById('domain-modal')) bindDomainModal();
+
+})();
