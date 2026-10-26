@@ -182,7 +182,7 @@ def validate_interaction_plan(value):
         target = str(row.get('to', 'USER')).upper().strip()
         fallback = str(row.get('fallback', '')).upper().strip()
         if source not in allowed_from: raise ValueError('Недопустимая роль источника в правиле ' + str(index + 1))
-        if target not in allowed_to: return ValueError('Недопустимый получатель в правиле ' + str(index + 1))
+        if target not in allowed_to: raise ValueError('Недопустимый получатель в правиле ' + str(index + 1))
         if fallback not in allowed_fallback: raise ValueError('Недопустимый fallback в правиле ' + str(index + 1))
         item = {'from': source, 'to': target, 'fallback': fallback}
         for key, limit in limits.items():
@@ -193,23 +193,28 @@ def validate_interaction_plan(value):
         validated.append(item)
     return validated
 def system_instruction_warnings(items):
-    incoming = {}
+    by_role = {}
     edges = []
     for instruction in items:
+        role = instruction.get('role')
+        if role in AGENT_ROLES:
+            by_role.setdefault(role, []).append(instruction)
         plan = instruction.get('interaction_plan', [])
         for rule in plan if isinstance(plan, list) else []:
             source, target = rule.get('from'), rule.get('to')
-            if source and target in AGENT_ROLES:
-                incoming.setdefault(target, set()).add(source)
+            if source and target in AGENT_ROLES and source not in ('USER', 'ANY'):
                 edges.append((source, target))
     warnings, seen = [], set()
     for source, target in edges:
         key = (source, target)
-        if source in ('USER', 'ANY') or key in seen: continue
+        if key in seen: continue
         seen.add(key)
-        if source not in incoming.get(target, set()) and 'ANY' not in incoming.get(target, set()):
+        target_rules = [rule for instruction in by_role.get(target, []) for rule in instruction.get('interaction_plan', []) if isinstance(instruction.get('interaction_plan', []), list)]
+        incoming_sources = {rule.get('from') for rule in target_rules}
+        if source not in incoming_sources and 'ANY' not in incoming_sources:
             warnings.append({'from': source, 'to': target, 'message': 'У ' + target + ' нет входящего триггера от ' + source})
     return warnings
+
 def domain_items(kind):
     fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
     items = read_json(DOMAIN_FILES[kind],fallback)
