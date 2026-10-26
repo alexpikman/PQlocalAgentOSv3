@@ -2562,18 +2562,22 @@ class Handler(SimpleHTTPRequestHandler):
             action = str(data.get('action') or 'add').strip().lower()
             raw_path = str(data.get('path') or '').strip()
             if not raw_path: return self.send_json(400, {'error':'Укажите путь к папке'})
+            folders = read_json(DATA/'model_folders.json', [])
+            folders = folders if isinstance(folders, list) else []
+            if action == 'remove':
+                target = str(Path(raw_path).expanduser())
+                folders = [str(x) for x in folders if str(x).lower() != target.lower()]
+                write_json(DATA/'model_folders.json', folders)
+                log_event('model.folders.remove', target)
+                return self.send_json(200, {'ok':True,'folders':folders})
+            if action != 'add': return self.send_json(400, {'error':'action должен быть add или remove'})
             try: folder = Path(raw_path).expanduser().resolve(strict=True)
             except (OSError, RuntimeError, ValueError): return self.send_json(400, {'error':'Папка не существует или путь некорректен'})
             if not folder.is_dir(): return self.send_json(400, {'error':'Указанный путь не является папкой'})
-            folders = read_json(DATA/'model_folders.json', [])
-            folders = folders if isinstance(folders, list) else []
             normalized = str(folder)
-            if action == 'remove': folders = [str(x) for x in folders if str(x).lower() != normalized.lower()]
-            elif action == 'add':
-                if not any(str(x).lower() == normalized.lower() for x in folders): folders.append(normalized)
-            else: return self.send_json(400, {'error':'action должен быть add или remove'})
+            if not any(str(x).lower() == normalized.lower() for x in folders): folders.append(normalized)
             write_json(DATA/'model_folders.json', folders)
-            log_event('model.folders.' + action, normalized)
+            log_event('model.folders.add', normalized)
             return self.send_json(200, {'ok':True,'folders':folders})
         if path == '/api/models/download':
             repo_id = str(data.get('repo_id') or '').strip()[:200]
