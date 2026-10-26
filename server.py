@@ -567,18 +567,41 @@ _GPU_CACHE = None
 _GPU_CACHE_AT = 0.0
 _GPU_CACHE_LOCK = threading.Lock()
 GPU_CACHE_TTL = 5.0
+_GPU_BACKGROUND_STARTED = False
+
+def _start_gpu_background():
+    global _GPU_BACKGROUND_STARTED
+    if _GPU_BACKGROUND_STARTED:
+        return
+    _GPU_BACKGROUND_STARTED = True
+
+    def worker():
+        global _GPU_CACHE, _GPU_CACHE_AT
+        try:
+            result = _gpu_stats_uncached()
+            with _GPU_CACHE_LOCK:
+                _GPU_CACHE = result
+                _GPU_CACHE_AT = time.monotonic()
+        except Exception:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
 
 def _gpu_stats():
     import time
     global _GPU_CACHE, _GPU_CACHE_AT
     now = time.monotonic()
-    if _GPU_CACHE is not None and now - _GPU_CACHE_AT < GPU_CACHE_TTL:
+    if _GPU_CACHE is None:
+        _start_gpu_background()
+        return {'available': False, 'pending': True, 'name': None, 'percent': None,
+                'vramUsed': None, 'vramTotal': None, 'temperatureC': None, 'powerW': None,
+                'powerLimitW': None, 'coreClockMHz': None, 'memoryClockMHz': None,
+                'fanPercent': None}
+    if now - _GPU_CACHE_AT < GPU_CACHE_TTL:
         return _GPU_CACHE
-    result = _gpu_stats_uncached()
-    with _GPU_CACHE_LOCK:
-        _GPU_CACHE = result
-        _GPU_CACHE_AT = time.monotonic()
-    return result
+    # Cache is stale: refresh asynchronously and return the last known sample immediately.
+    _start_gpu_background()
+    return _GPU_CACHE
 
 def _disk_stats():
     disks = []
@@ -1782,6 +1805,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET_HEAD(self): pass
 if __name__=='__main__':
     settings(); pages(); log_event('server.start',f'http://{HOST}:{PORT}')
+    _start_gpu_background()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
     try: server.serve_forever()
