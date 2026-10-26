@@ -1167,3 +1167,5 @@ td{border-color:var(--line)}
 #domain-si-history-select{min-width:220px;max-width:100%;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel);color:var(--text)}
 
 #domain-si-history[hidden],#domain-si-history-picker[hidden]{display:none}
+
+.pq-memory-nav-modal[hidden]{display:none!important}
