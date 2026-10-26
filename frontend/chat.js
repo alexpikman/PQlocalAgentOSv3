@@ -74,7 +74,7 @@
     const form = document.createElement('form');
     form.id = 'chat-form';
     form.className = 'chat-input-row';
-    const attach = createElement('button', 'btn secondary chat-attach', 'Прикрепить файл'); attach.type = 'button'; attach.id = 'chat-attach';
+    const attach = createElement('button', 'btn secondary chat-attach', ''); attach.type = 'button'; attach.id = 'chat-attach'; attach.title = 'Прикрепить файл'; attach.setAttribute('aria-label', 'Прикрепить файл'); attach.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.5 12.5 6.8-6.8a3.2 3.2 0 0 1 4.5 4.5l-8.7 8.7a5 5 0 0 1-7.1-7.1l8.1-8.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.id = 'chat-file-input'; fileInput.hidden = true;
     const input = document.createElement('textarea');
     input.id = 'chat-input';
@@ -419,6 +419,7 @@
     state.projects = [];
     rebuildProjectTree();
     state.projects.forEach(project => { if (expandedProjects.size) project.expanded = expandedProjects.has(project.id); });
+    renderChatWorkspace();
     if (!state.conversations.some(chat => chat.id === state.activeConversationId)) state.activeConversationId = state.conversations[0]?.id || '';
     return state.conversations;
   }
