@@ -2470,41 +2470,6 @@ class Handler(SimpleHTTPRequestHandler):
             if saved.get('active_id')==connection_id: saved['active_id']=saved['connections'][0].get('id','') if saved['connections'] else ''
             write_json(GITHUB_CONNECTIONS_FILE,saved); log_event('github.connection.delete',found.get('repository',''))
             return self.send_json(200, {'ok':True})
-        if path.startswith('/api/chat-groups/'):
-            group_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chat-groups/'):]))
-            groups = _chat_groups()
-            group = next((item for item in groups if item.get('id') == group_id), None)
-            if not group:
-                return self.send_json(404, {'error': 'Папка не найдена'})
-            write_json(CHAT_GROUPS_FILE, [item for item in groups if item.get('id') != group_id])
-            for chat in _all_chat_records():
-                if str(chat.get('group_id') or chat.get('groupId') or '') == group_id:
-                    chat['group_id'] = ''
-                    _save_chat_record(chat)
-            log_event('chat_group.delete', group_id)
-            return self.send_json(200, {'ok': True})
-        if path.startswith('/api/chats/'):
-            chat_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chats/'):]))
-            if not chat_id or '/' in path[len('/api/chats/'):]:
-                return self.send_json(404, {'error': 'Чат не найден'})
-            found = False
-            for item in _all_chat_records():
-                if str(item.get('id')) != chat_id:
-                    continue
-                project_id = str(item.get('project_id') or item.get('projectId') or '')
-                try:
-                    record_path = _chat_record_path(chat_id, project_id)
-                    if record_path.is_file(): record_path.unlink()
-                    found = True
-                except ValueError:
-                    pass
-            file_dir = CHAT_DATA_DIR / chat_id
-            if file_dir.exists():
-                shutil.rmtree(file_dir, ignore_errors=True)
-            if not found:
-                return self.send_json(404, {'error': 'Чат не найден'})
-            log_event('chat.delete', chat_id)
-            return self.send_json(200, {'ok': True})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -3415,6 +3380,41 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if self._must_change_password_blocked(path): return
         if path.startswith('/api/') and not self.require_auth(): return
+        if path.startswith('/api/chat-groups/'):
+            group_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chat-groups/'):]))
+            groups = _chat_groups()
+            group = next((item for item in groups if item.get('id') == group_id), None)
+            if not group:
+                return self.send_json(404, {'error': 'Папка не найдена'})
+            write_json(CHAT_GROUPS_FILE, [item for item in groups if item.get('id') != group_id])
+            for chat in _all_chat_records():
+                if str(chat.get('group_id') or chat.get('groupId') or '') == group_id:
+                    chat['group_id'] = ''
+                    _save_chat_record(chat)
+            log_event('chat_group.delete', group_id)
+            return self.send_json(200, {'ok': True})
+        if path.startswith('/api/chats/'):
+            chat_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chats/'):]))
+            if not chat_id or '/' in path[len('/api/chats/'):]:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            found = False
+            for item in _all_chat_records():
+                if str(item.get('id')) != chat_id:
+                    continue
+                project_id = str(item.get('project_id') or item.get('projectId') or '')
+                try:
+                    record_path = _chat_record_path(chat_id, project_id)
+                    if record_path.is_file(): record_path.unlink()
+                    found = True
+                except ValueError:
+                    pass
+            file_dir = CHAT_DATA_DIR / chat_id
+            if file_dir.exists():
+                shutil.rmtree(file_dir, ignore_errors=True)
+            if not found:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            log_event('chat.delete', chat_id)
+            return self.send_json(200, {'ok': True})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
