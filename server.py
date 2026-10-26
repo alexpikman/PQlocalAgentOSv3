@@ -2707,7 +2707,7 @@ class Handler(SimpleHTTPRequestHandler):
                 except subprocess.TimeoutExpired as exc:
                     stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
                     stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
-                    result={'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
+                    result={'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
                 log_event('terminal.command',str(cwd)+' · '+command[:120])
                 return self.send_json(200,result)
             except (PermissionError,ValueError,OSError,RuntimeError) as exc:
