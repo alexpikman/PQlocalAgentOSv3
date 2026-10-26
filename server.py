@@ -39,6 +39,99 @@ def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8'); tmp.replace(path)
 
+
+DECISIONS_LOG = DATA / 'decisions_log.json'
+_DECISIONS_LOCK = threading.Lock()
+
+
+def extract_task_keywords(value):
+    """Извлечь устойчивые ключевые слова из названия/описания задачи."""
+    text = str(value or '').lower()
+    tokens = re.findall(r'[a-zа-яё0-9_][a-zа-яё0-9_.-]{1,80}', text, flags=re.IGNORECASE)
+    result, seen = [], set()
+    for token in tokens:
+        token = token.strip('._-').lower()
+        if len(token) < 3 or token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result[:60]
+
+
+def log_decision(keywords, action, outcome, weight, reason, requires_human=False, task_id=''):
+    """Добавить прецедент в локальный журнал решений."""
+    entry = {
+        'id': 'log_' + uuid.uuid4().hex[:12],
+        'task_keywords': list(dict.fromkeys(str(x).lower() for x in (keywords or []) if str(x).strip()))[:60],
+        'action_taken': str(action or 'task_execution')[:120],
+        'outcome': str(outcome or 'failed')[:40],
+        'weight': max(0, min(100, int(weight or 0))),
+        'reason': str(reason or '')[:1200],
+        'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+    }
+    if requires_human:
+        entry['requires_human'] = True
+    if task_id:
+        entry['task_id'] = str(task_id)[:100]
+    with _DECISIONS_LOCK:
+        records = read_json(DECISIONS_LOG, [])
+        if not isinstance(records, list):
+            records = []
+        records.insert(0, entry)
+        write_json(DECISIONS_LOG, records[:2000])
+    return entry
+
+
+def search_risks(keywords):
+    """Найти до трёх наиболее весомых неудачных прецедентов."""
+    query = {str(word).strip().lower() for word in (keywords or []) if str(word).strip()}
+    if not query:
+        return []
+    with _DECISIONS_LOCK:
+        records = read_json(DECISIONS_LOG, [])
+    if not isinstance(records, list):
+        return []
+    matches = []
+    for record in records:
+        if not isinstance(record, dict) or str(record.get('outcome', '')).lower() != 'failed':
+            continue
+        prior = {str(word).strip().lower() for word in record.get('task_keywords', []) if str(word).strip()}
+        overlap = query & prior
+        if overlap:
+            item = dict(record)
+            item['matched_keywords'] = sorted(overlap)
+            matches.append(item)
+    matches.sort(key=lambda item: (int(item.get('weight', 0) or 0), str(item.get('timestamp', ''))), reverse=True)
+    return matches[:3]
+
+
+def _record_task_outcome(task, status):
+    """Записать результат задачи с учётом найденных ранее рисков."""
+    keywords = extract_task_keywords(str(task.get('title', '')) + ' ' + str(task.get('description', '')))
+    risks = task.get('risk_history') if isinstance(task.get('risk_history'), list) else search_risks(keywords)
+    active = [risk for risk in risks if isinstance(risk, dict) and int(risk.get('weight', 0) or 0) > 5]
+    task_id = str(task.get('id', ''))
+    if status == 'completed':
+        if active:
+            log_decision(keywords, 'task_completion', 'passed', 5,
+                         'Задача завершена несмотря на ранее найденный риск: ' + str(active[0].get('reason', ''))[:500],
+                         task_id=task_id)
+        return
+    if status != 'failed':
+        return
+    if active:
+        prior = active[0]
+        previous_weight = int(prior.get('weight', 0) or 0)
+        weight = 50 if previous_weight >= 25 else min(50, max(10, previous_weight * 2))
+        log_decision(keywords, str(prior.get('action_taken') or 'task_execution'), 'failed', weight,
+                     'Повторный сбой при ранее известном риске. Предыдущая причина: ' + str(prior.get('reason', ''))[:700]
+                     + '. Ошибка задачи: ' + str(task.get('error', ''))[:300],
+                     requires_human=(previous_weight >= 25 or weight >= 25), task_id=task_id)
+    else:
+        log_decision(keywords, 'task_execution', 'failed', 10,
+                     'Новая ошибка выполнения задачи: ' + str(task.get('error', ''))[:900],
+                     task_id=task_id)
+
 MEMORY_DIR = DATA / 'memory'
 MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 MEMORY_FACTS_LIMIT = 15
@@ -1391,6 +1484,11 @@ def run_agent_team(model, task, agent=None, project=None):
     task_title = str(task.get('title', '')).strip() or 'Задача без названия'
     task_description = str(task.get('description', '')).strip()
     project_id = str(task.get('project_id', '') or ((project or {}).get('id', '') if isinstance(project, dict) else '')).strip()
+    task_keywords = extract_task_keywords(task_title + ' ' + task_description)
+    risk_history = search_risks(task_keywords)
+    active_risks = [risk for risk in risk_history if int(risk.get('weight', 0) or 0) > 5]
+    task['risk_history'] = risk_history
+    task['risk_weight'] = max((int(risk.get('weight', 0) or 0) for risk in active_risks), default=0)
     manager = find_agent_by_role('MANAGER', agents)
     dispatcher = find_agent_by_role('DISPATCHER', agents)
     manager = {**manager, 'role': 'MANAGER', 'permissions': {}, 'system_prompt':
@@ -1475,6 +1573,8 @@ def run_agent_team(model, task, agent=None, project=None):
             + 'Назначай только роли из этого списка; MANAGER и DISPATCHER не назначаются исполнителями. '
               'Для каждой задачи укажи измеримый результат, релевантный контекст и критерии приёмки. '
               'Учитывай зависимости и не создавай дубликаты.\n'
+            + ('ВНИМАНИЕ: ОБНАРУЖЕНЫ РИСКИ ИЗ ЖУРНАЛА ПРЕЦЕДЕНТОВ. При риске выше 5 оцени прошлые сбои и запроси подтверждение Владельца до опасных или необратимых действий.\\n'
+               + '\\n'.join('- Прошлый сбой: ' + str(risk.get('reason', 'без описания')) + ' (Вес: ' + str(risk.get('weight', 0)) + '; действие: ' + str(risk.get('action_taken', 'не указано')) + '; совпадения: ' + ', '.join(risk.get('matched_keywords', [])) + ')' for risk in active_risks) + '\\n' if active_risks else '')
             + 'Верни только JSON: {"tasks":[{"role":"CODER","task":"конкретная инструкция"}]}. '
               'Если исполнительские подзадачи не нужны, верни {"tasks":[]} .'
         )
@@ -3074,6 +3174,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if 'MANAGER' not in active:
                     active.insert(0, 'MANAGER')
                 item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'team_mode':bool(data.get('team_mode',False)),'active_roles':active,'status':'pending','result':'','error':'','team_result':[]})
+                item['risk_history'] = search_risks(extract_task_keywords(name + ' ' + item['description']))
+                item['risk_weight'] = max((int(r.get('weight', 0) or 0) for r in item['risk_history'] if int(r.get('weight', 0) or 0) > 5), default=0)
             items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
             return self.send_json(201,item)
         if path.startswith('/api/tasks/') and (path.endswith('/run') or path.endswith('/run-team')):
@@ -3084,6 +3186,8 @@ class Handler(SimpleHTTPRequestHandler):
             model=item.get('model') or (agent or {}).get('model') or str(data.get('model','')).strip()
             if not model: return self.send_json(400, {'error':'Укажите модель для запуска задачи или назначьте модель агенту'})
             project=next((x for x in domain_items('projects') if x.get('id')==item.get('project_id')),None)
+            item['risk_history'] = search_risks(extract_task_keywords(str(item.get('title', '')) + ' ' + str(item.get('description', ''))))
+            item['risk_weight'] = max((int(r.get('weight', 0) or 0) for r in item['risk_history'] if int(r.get('weight', 0) or 0) > 5), default=0)
             item['status']='running'; item['model']=model; item['started_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items)
             role=(agent or {}).get('role','ANALYST')
             system_prompt=(agent or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role,AGENT_ROLE_PROMPTS['ANALYST'])
@@ -3100,12 +3204,15 @@ class Handler(SimpleHTTPRequestHandler):
                 item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['team_result']=result.get('team_result',[]); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 if agent:
                     agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
+                _record_task_outcome(item, 'completed')
                 log_event('task.completed',item.get('title','')); save_domain('tasks',items)
                 try: update_project_memory_after_task(item, item.get('team_result') or [], agent)
                 except Exception: pass
                 return self.send_json(200,item)
             except Exception as e:
-                item['status']='failed'; item['error']=str(e)[:300]; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items); log_event('task.failed',item.get('title',''))
+                item['status']='failed'; item['error']=str(e)[:300]; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                _record_task_outcome(item, 'failed')
+                save_domain('tasks',items); log_event('task.failed',item.get('title',''))
                 try: update_project_memory_after_task(item, item.get('team_result') or [], agent)
                 except Exception: pass
                 return self.send_json(502, {'error':'Не удалось выполнить задачу через Ollama: '+str(e)[:180],'task':item})
