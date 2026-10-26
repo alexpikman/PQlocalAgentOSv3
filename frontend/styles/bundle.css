@@ -1072,3 +1072,8 @@ td{border-color:var(--line)}
 #project-tasks-list .entity-row{grid-template-columns:minmax(0,1fr) auto}
 .project-task-item{width:100%;text-align:left;cursor:pointer;background:var(--panel2)}
 #chat-project-modal[hidden],#project-tasks-modal[hidden]{display:none!important}
+
+
+/* === UI fixes: project modal overlay positioning === */
+#chat-project-modal,#project-tasks-modal{position:fixed;inset:0;z-index:1300;display:grid;place-items:center;padding:20px;overflow-y:auto}
+#chat-project-modal .modal-card,#project-tasks-modal .modal-card{width:min(620px,100%);max-height:min(85vh,780px);overflow:auto}
