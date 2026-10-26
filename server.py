@@ -1204,7 +1204,7 @@ def run_agent_task(model, task, agent=None, project=None):
                 result={'error':'Некорректный или недоступный инструмент.'}; name=str(name or 'unknown')
             else:
                 if name=='run_command' and project and project.get('path'):
-                    args.setdefault('cwd',str(project.get('path')))
+                    args['cwd']=str(project.get('path'))
                 result=execute_tool(name,args,agent,permissions)
             log_event('agent.tool_called',str((agent or {}).get('id',''))+' · '+name+' · '+('error' if 'error' in result else 'ok'))
             messages.append({'role':'tool','tool_name':name,'content':json.dumps(result,ensure_ascii=False)[:12000]})
@@ -2723,7 +2723,7 @@ class Handler(SimpleHTTPRequestHandler):
                                 if not isinstance(args,dict) or not isinstance(name,str) or name not in tool_names:
                                     result={'error':'Некорректный или недоступный инструмент.'}; name=str(name or 'unknown')
                                 else:
-                                    if name=='run_command' and project and project.get('path'): args.setdefault('cwd',str(project.get('path')))
+                                    if name=='run_command' and project and project.get('path'): args['cwd']=str(project.get('path'))
                                     result=execute_tool(name,args,agent,permission_config)
                                 status='error' if isinstance(result,dict) and result.get('error') else 'ok'
                                 tool_summaries.append({'name':name,'status':status})
