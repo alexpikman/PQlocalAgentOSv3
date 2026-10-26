@@ -150,8 +150,10 @@ async function saveDomainItem(event){
   const requiredFields=form.querySelectorAll('[required]');
   for(const field of requiredFields){
     if(!String(field.value||'').trim()){
-      const profileTab=document.querySelector('[data-domain-tab="profile"]');
-      if(profileTab)profileTab.click();
+      if(editor?.kind==='agents'){
+        const profileTab=document.querySelector('[data-domain-tab="profile"]');
+        if(profileTab)profileTab.click();
+      }
       field.focus();
       field.scrollIntoView({block:'center',behavior:'smooth'});
       if(typeof field.reportValidity==='function')field.reportValidity();
@@ -211,6 +213,7 @@ function bindDomainModal(){
   document.addEventListener('input',event=>{
     const field=event.target;
     if(field instanceof Element&&field.matches('#domain-modal-form [required]'))field.setCustomValidity?.('');
+    if(field instanceof Element&&field.matches('#domain-interaction-plan [data-rule="trigger"]'))field.classList.remove('field-invalid');
   });
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
