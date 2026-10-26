@@ -728,20 +728,28 @@ def provider_for_model(model, preferred_id=''):
     """Resolve an agent's provider, preferring explicit IDs and known model/provider names."""
     providers=provider_items()
     preferred=str(preferred_id or '').strip()
+    name=str(model or '').strip().lower()
+    # Resolve GGUF by its actual path/name before trusting a stale or mismatched agent provider_id.
+    # Some agents store only the filename or provider display name in their model field.
+    for p in providers:
+        if str(p.get('kind') or '').lower() == 'file' or str(p.get('format') or '').lower() in ('file', 'gguf'):
+            raw_path = str(p.get('base_url') or '').strip()
+            if not raw_path:
+                continue
+            model_path = Path(raw_path).expanduser()
+            file_names = {
+                model_path.name.lower(),
+                model_path.stem.lower(),
+                raw_path.lower(),
+                str(p.get('id') or '').lower(),
+                str(p.get('name') or '').lower(),
+            }
+            if name in file_names or name == str(model_path.resolve()).lower():
+                return p
     if preferred:
         match=next((p for p in providers if str(p.get('id',''))==preferred),None)
         if match:
             return match
-    name=str(model or '').strip().lower()
-    # File-backed GGUF models may be stored on agents by filename rather than provider ID.
-    for p in providers:
-        if str(p.get('kind') or '').lower() == 'file' or str(p.get('format') or '').lower() in ('file', 'gguf'):
-            raw_path = str(p.get('base_url') or '').strip()
-            if raw_path:
-                model_path = Path(raw_path).expanduser()
-                file_names = {model_path.name.lower(), model_path.stem.lower(), raw_path.lower()}
-                if name in file_names or name in {str(p.get('id') or '').lower(), str(p.get('name') or '').lower()}:
-                    return p
     # Provider-qualified model IDs and provider names.
     for p in providers:
         pid=str(p.get('id','')).lower()
