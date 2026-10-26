@@ -120,7 +120,7 @@ def _system_instruction_history_path():
 
 
 def _append_system_instruction_history(item):
-    if not isinstance(item, dict) or not item.get('system_prompt'):
+    if not isinstance(item, dict) or not isinstance(item.get('system_prompt'), str):
         return
     history = read_json(_system_instruction_history_path(), [])
     if not isinstance(history, list):
