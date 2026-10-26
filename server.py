@@ -233,6 +233,138 @@ def permission_settings():
     current['local_files']=bool(current.get('local_files',False))
     current['roots']=current.get('roots',[]) if isinstance(current.get('roots',[]),list) else []
     return current
+
+
+CHAT_DATA_DIR = DATA / 'chats'
+CHAT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+CHAT_MAX_FILE_BYTES = 20 * 1024 * 1024
+
+
+def _chat_safe_id(value):
+    value = str(value or '').strip()
+    return value if re.fullmatch(r'[A-Za-z0-9_-]{1,100}', value) else ''
+
+
+def _chat_record_path(chat_id, project_id=''):
+    safe_chat_id = _chat_safe_id(chat_id)
+    if not safe_chat_id:
+        raise ValueError('Некорректный ID чата')
+    safe_project_id = _chat_safe_id(project_id) if project_id else ''
+    if project_id and not safe_project_id:
+        raise ValueError('Некорректный ID проекта')
+    folder = CHAT_DATA_DIR / safe_project_id if safe_project_id else CHAT_DATA_DIR / safe_chat_id
+    return folder / (safe_chat_id + '.json' if safe_project_id else 'chat.json')
+
+
+def _save_chat_record(chat):
+    if not isinstance(chat, dict):
+        raise ValueError('Ожидался объект чата')
+    chat_id = _chat_safe_id(chat.get('id'))
+    if not chat_id:
+        raise ValueError('Некорректный ID чата')
+    project_id = str(chat.get('project_id') or chat.get('projectId') or '').strip()
+    path = _chat_record_path(chat_id, project_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    chat['id'] = chat_id
+    chat['project_id'] = project_id
+    chat['updated_at'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    write_json(path, chat)
+    return chat
+
+
+def _all_chat_records():
+    found = {}
+    if not CHAT_DATA_DIR.exists():
+        return []
+    for path in CHAT_DATA_DIR.rglob('*.json'):
+        try:
+            item = read_json(path, None)
+            if isinstance(item, dict) and _chat_safe_id(item.get('id')):
+                found[str(item['id'])] = item
+        except (OSError, ValueError):
+            continue
+    return sorted(found.values(), key=lambda item: str(item.get('updated_at') or item.get('updatedAt') or item.get('created_at') or ''), reverse=True)
+
+
+def _add_chat_working_root(working_dir):
+    raw = str(working_dir or '').strip().strip('"')
+    if not raw:
+        return
+    try:
+        normalized = str(Path(raw).expanduser().resolve(strict=False))
+    except Exception:
+        normalized = str(Path(raw).expanduser())
+    access = permission_settings()
+    roots = [str(root) for root in access.get('roots', []) if str(root).strip()]
+    comparable = {os.path.normcase(os.path.normpath(root)) for root in roots}
+    if os.path.normcase(os.path.normpath(normalized)) not in comparable:
+        roots.append(normalized)
+    access['roots'] = roots
+    access['local_files'] = True
+    write_json(DATA / 'permissions.json', access)
+    log_event('permissions.root.chat_working_dir', normalized)
+
+
+def _chat_file_upload(handler, chat_id):
+    safe_id = _chat_safe_id(chat_id)
+    if not safe_id:
+        return handler.send_json(400, {'error': 'Некорректный ID чата'})
+    content_type = handler.headers.get('Content-Type', '')
+    match = re.search(r'boundary=(?:"([^"]+)"|([^;]+))', content_type, re.I)
+    if not match or 'multipart/form-data' not in content_type.lower():
+        return handler.send_json(400, {'error': 'Ожидается multipart/form-data с файлом'})
+    boundary = (match.group(1) or match.group(2)).encode('ascii', 'ignore')
+    try:
+        length = int(handler.headers.get('Content-Length', '0'))
+    except ValueError:
+        length = 0
+    if length <= 0 or length > CHAT_MAX_FILE_BYTES + 1024 * 1024:
+        return handler.send_json(413, {'error': 'Файл пустой или превышает лимит 20 МБ'})
+    raw = handler.rfile.read(length)
+    parts = raw.split(b'--' + boundary)
+    uploaded = None
+    for part in parts:
+        part = part.strip(b'\r\n')
+        if not part or part == b'--':
+            continue
+        header_blob, separator, payload = part.partition(b'\r\n\r\n')
+        if not separator:
+            continue
+        payload = payload.removesuffix(b'\r\n').removesuffix(b'--')
+        header_text = header_blob.decode('latin-1', 'replace')
+        disposition = re.search(r'Content-Disposition:[^\r\n]*filename="([^"]*)"', header_text, re.I)
+        if not disposition:
+            continue
+        filename = Path(disposition.group(1).replace('\\', '/')).name.strip()
+        filename = re.sub(r'[^A-Za-zА-Яа-яЁё0-9._ ()-]', '_', filename)[:180].strip(' .')
+        if not filename:
+            filename = 'attachment.bin'
+        if len(payload) > CHAT_MAX_FILE_BYTES:
+            return handler.send_json(413, {'error': 'Файл превышает лимит 20 МБ'})
+        uploaded = (filename, payload, re.search(r'Content-Type:\s*([^\r\n]+)', header_text, re.I))
+        break
+    if not uploaded:
+        return handler.send_json(400, {'error': 'Файл не найден в запросе'})
+    filename, payload, mime_match = uploaded
+    file_dir = CHAT_DATA_DIR / safe_id / 'files'
+    file_dir.mkdir(parents=True, exist_ok=True)
+    target_name = uuid.uuid4().hex[:12] + '-' + filename
+    target = file_dir / target_name
+    target.write_bytes(payload)
+    mime = mime_match.group(1).strip() if mime_match else 'application/octet-stream'
+    attachment = {'id': target_name, 'name': filename, 'size': len(payload), 'type': mime, 'url': '/api/chats/' + safe_id + '/files/' + urllib.parse.quote(target_name)}
+    records = _all_chat_records()
+    chat = next((item for item in records if str(item.get('id')) == safe_id), None)
+    if chat is None:
+        target.unlink(missing_ok=True)
+        return handler.send_json(404, {'error': 'Чат не найден'})
+    messages = chat.get('messages') if isinstance(chat.get('messages'), list) else []
+    messages.append({'role': 'user', 'content': '', 'time': datetime.datetime.now().astimezone().strftime('%H:%M'), 'attachment': attachment})
+    chat['messages'] = messages
+    _save_chat_record(chat)
+    return handler.send_json(201, {'ok': True, 'attachment': attachment, 'chat': chat})
+
+
 def log_event(action, detail=''):
     path=DATA/'events.json'; events=read_json(path, [])
     events.insert(0, {'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'action':action,'detail':str(detail)[:300]})
@@ -2329,6 +2461,28 @@ class Handler(SimpleHTTPRequestHandler):
             if saved.get('active_id')==connection_id: saved['active_id']=saved['connections'][0].get('id','') if saved['connections'] else ''
             write_json(GITHUB_CONNECTIONS_FILE,saved); log_event('github.connection.delete',found.get('repository',''))
             return self.send_json(200, {'ok':True})
+        if path.startswith('/api/chats/'):
+            chat_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chats/'):]))
+            if not chat_id or '/' in path[len('/api/chats/'):]:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            found = False
+            for item in _all_chat_records():
+                if str(item.get('id')) != chat_id:
+                    continue
+                project_id = str(item.get('project_id') or item.get('projectId') or '')
+                try:
+                    record_path = _chat_record_path(chat_id, project_id)
+                    if record_path.is_file(): record_path.unlink()
+                    found = True
+                except ValueError:
+                    pass
+            file_dir = CHAT_DATA_DIR / chat_id
+            if file_dir.exists():
+                shutil.rmtree(file_dir, ignore_errors=True)
+            if not found:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            log_event('chat.delete', chat_id)
+            return self.send_json(200, {'ok': True})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -2369,6 +2523,45 @@ class Handler(SimpleHTTPRequestHandler):
                 models=[{'name':m.get('name',''),'size':m.get('size',0),'modified_at':m.get('modified_at','')} for m in payload.get('models',[]) if isinstance(m,dict) and m.get('name')]
                 return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':True,'models':models,'error':None})
             except Exception as e: return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':False,'models':[],'error':'Не удалось подключиться к Ollama: '+str(e)[:180]})
+        if path == '/api/chats':
+            items = _all_chat_records()
+            return self.send_json(200, {'items': items, 'total': len(items)})
+        if path.startswith('/api/chats/') and '/files/' in path:
+            parts = path.strip('/').split('/')
+            chat_id = _chat_safe_id(urllib.parse.unquote(parts[2] if len(parts) > 2 else ''))
+            filename = Path(urllib.parse.unquote(parts[-1])).name
+            target = CHAT_DATA_DIR / chat_id / 'files' / filename if chat_id else None
+            if not target or not target.is_file():
+                return self.send_json(404, {'error': 'Файл чата не найден'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(target.stat().st_size))
+            self.send_header('Content-Disposition', 'attachment; filename="' + filename.replace('"', '') + '"')
+            self.end_headers()
+            self.wfile.write(target.read_bytes())
+            return
+        if path == '/api/chats':
+            try:
+                chat = data.get('chat', data)
+                if not isinstance(chat, dict):
+                    return self.send_json(400, {'error': 'Некорректный объект чата'})
+                chat = dict(chat)
+                chat_id = _chat_safe_id(chat.get('id'))
+                if not chat_id:
+                    chat['id'] = 'chat-' + uuid.uuid4().hex[:16]
+                if 'messages' in chat and not isinstance(chat['messages'], list):
+                    return self.send_json(400, {'error': 'messages должен быть массивом'})
+                chat['messages'] = chat.get('messages', [])[-2000:]
+                working_dir = str(chat.get('working_dir') or chat.get('workingDir') or '').strip()
+                if working_dir:
+                    chat['working_dir'] = working_dir
+                    _add_chat_working_root(working_dir)
+                saved = _save_chat_record(chat)
+                return self.send_json(200, {'ok': True, 'chat': saved})
+            except ValueError as exc:
+                return self.send_json(400, {'error': str(exc)})
+            except Exception as exc:
+                return self.send_json(500, {'error': 'Не удалось сохранить чат: ' + str(exc)[:180]})
         if path in ('/api/agents','/api/projects','/api/tasks'):
             kind=path.split('/')[-1]; items=domain_items(kind)
             return self.send_json(200, {'items':items,'total':len(items)})
@@ -2425,6 +2618,10 @@ class Handler(SimpleHTTPRequestHandler):
         if not self._check_host(): return
         path=urlparse(self.path).path
         if self._must_change_password_blocked(path): return
+        if path.startswith('/api/chats/') and path.endswith('/files'):
+            if path.startswith('/api/') and not self.require_auth(): return
+            chat_id = urllib.parse.unquote(path.strip('/').split('/')[2])
+            return _chat_file_upload(self, chat_id)
         try: data=self.body()
         except Exception as e: return self.send_json(400, {'error':str(e)})
         if path == '/api/auth/login':
