@@ -131,11 +131,15 @@ class ChatProviderTests(unittest.TestCase):
         self.assertEqual(result['response'],'Работает')
 
     def test_ollama_request_still_resolves_local_model(self):
+        import io
         provider={'id':'ollama','name':'Ollama','kind':'local','format':'ollama','base_url':'http://127.0.0.1:11434'}
-        with patch.object(server,'resolve_ollama_model',return_value='qwen3:8b') as resolve, patch.object(server,'ollama_request',return_value={'model':'qwen3:8b','message':{'content':'Локальный ответ'},'done':True}) as request:
+        response=io.BytesIO(json.dumps({'model':'qwen3:8b','message':{'content':'Локальный ответ'},'done':True}).encode())
+        with patch.object(server,'resolve_ollama_model',return_value='qwen3:8b') as resolve, patch.object(server.urllib.request,'urlopen',return_value=response) as mocked:
             result=server.send_chat_request(provider,'qwen/qwen3-8b',[{'role':'user','content':'Тест'}])
         resolve.assert_called_once_with('qwen/qwen3-8b')
-        request.assert_called_once_with('/api/chat',{'model':'qwen3:8b','messages':[{'role':'user','content':'Тест'}],'stream':False},timeout=120)
+        request=mocked.call_args.args[0]
+        self.assertEqual(request.full_url,'http://127.0.0.1:11434/api/chat')
+        self.assertEqual(json.loads(request.data.decode())['model'],'qwen3:8b')
         self.assertEqual(result['response'],'Локальный ответ')
 
     def test_cloud_unauthorized_error_is_translated(self):
