@@ -2903,7 +2903,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if project:
                     project_dir = str(project.get('path', '')).strip() or 'не указана'
                     project_context = (
-                        '=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\\n'
+                        '=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\n'
                         + 'Название: ' + str(project.get('name', '')) + '\\n'
                         + 'Рабочая папка проекта: ' + project_dir + '\\n'
                         + 'Описание: ' + str(project.get('description', '')) + '\\n'
