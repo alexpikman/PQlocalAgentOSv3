@@ -85,13 +85,13 @@ def provider_models(p):
     if key: headers['Authorization']='Bearer '+key
     if fmt=='ollama':
         req=urllib.request.Request(base+'/api/tags',headers=headers)
-        with urllib.request.urlopen(req,timeout=4) as r: raw=json.loads(r.read())
+        with urllib.request.urlopen(req,timeout=1.5) as r: raw=json.loads(r.read())
         return [{'name':x.get('name',''),'size':x.get('size',0),'parameter_size':(x.get('details') or {}).get('parameter_size','—')} for x in raw.get('models',[]) if x.get('name')]
     if fmt=='anthropic':
         if not key: return []
         headers.update({'x-api-key':key,'anthropic-version':'2023-06-01'})
         req=urllib.request.Request(base+'/models',headers=headers)
-        with urllib.request.urlopen(req,timeout=5) as r: raw=json.loads(r.read())
+        with urllib.request.urlopen(req,timeout=3) as r: raw=json.loads(r.read())
         return [{'name':x.get('id','')} for x in raw.get('data',[]) if x.get('id')]
     if fmt=='gemini':
         if not key: return []
@@ -444,19 +444,25 @@ def _windows_cpu_times():
         raise OSError('GetSystemTimes failed')
     return (_filetime_value(idle), _filetime_value(kernel), _filetime_value(user))
 
+_CPU_PREVIOUS_TIMES = None
+
 def _cpu_usage():
+    global _CPU_PREVIOUS_TIMES
     try:
-        before = _windows_cpu_times()
-        import time
-        time.sleep(0.12)
-        after = _windows_cpu_times()
-        idle = after[0] - before[0]
-        total = (after[1] - before[1]) + (after[2] - before[2])
-        return round(max(0.0, min(100.0, (1 - idle / total) * 100)), 1) if total > 0 else None
+        import psutil
+        return round(psutil.cpu_percent(interval=None), 1)
     except Exception:
         try:
-            import psutil
-            return round(psutil.cpu_percent(interval=0.12), 1)
+            current = _windows_cpu_times()
+            previous = _CPU_PREVIOUS_TIMES
+            _CPU_PREVIOUS_TIMES = current
+            if previous is None:
+                return None
+            idle = current[0] - previous[0]
+            total = (current[1] - previous[1]) + (current[2] - previous[2])
+            if total <= 0 or idle < 0:
+                return None
+            return round(max(0.0, min(100.0, (1 - idle / total) * 100)), 1)
         except Exception:
             return None
 
@@ -507,7 +513,7 @@ def _cpu_name():
         except Exception:
             return None
 
-def _gpu_stats():
+def _gpu_stats_uncached():
     import subprocess
     from pathlib import Path
     candidates = ['nvidia-smi']
@@ -556,6 +562,23 @@ def _gpu_stats():
     return {'available': False, 'name': None, 'percent': None, 'vramUsed': None, 'vramTotal': None,
             'temperatureC': None, 'powerW': None, 'powerLimitW': None, 'coreClockMHz': None,
             'memoryClockMHz': None, 'fanPercent': None}
+
+_GPU_CACHE = None
+_GPU_CACHE_AT = 0.0
+_GPU_CACHE_LOCK = threading.Lock()
+GPU_CACHE_TTL = 5.0
+
+def _gpu_stats():
+    import time
+    global _GPU_CACHE, _GPU_CACHE_AT
+    now = time.monotonic()
+    if _GPU_CACHE is not None and now - _GPU_CACHE_AT < GPU_CACHE_TTL:
+        return _GPU_CACHE
+    result = _gpu_stats_uncached()
+    with _GPU_CACHE_LOCK:
+        _GPU_CACHE = result
+        _GPU_CACHE_AT = time.monotonic()
+    return result
 
 def _disk_stats():
     disks = []
@@ -913,12 +936,13 @@ def _ai_runtime_stats():
 def _telemetry_snapshot():
     import time
     global _TELEMETRY_CACHE, _TELEMETRY_CACHE_AT
-    # Один сбор раз в 2 секунды; блокировка не даёт параллельным запросам дублировать сбор.
+    now = time.monotonic()
+    if _TELEMETRY_CACHE is not None and now - _TELEMETRY_CACHE_AT < 2:
+        return _TELEMETRY_CACHE
+    data = system_stats()
     with _TELEMETRY_CACHE_LOCK:
-        now = time.monotonic()
-        if _TELEMETRY_CACHE is not None and now - _TELEMETRY_CACHE_AT < 2:
+        if _TELEMETRY_CACHE is not None and time.monotonic() - _TELEMETRY_CACHE_AT < 2:
             return _TELEMETRY_CACHE
-        data = system_stats()
         sample = {'timestamp': data.get('timestamp'),
                   'cpuPercent': (data.get('cpu') or {}).get('percent'),
                   'ramPercent': (data.get('ram') or {}).get('percent'),
@@ -929,7 +953,7 @@ def _telemetry_snapshot():
         del _TELEMETRY_HISTORY[:-360]
         _TELEMETRY_CACHE = data
         _TELEMETRY_CACHE_AT = time.monotonic()
-        return data
+    return data
 
 def _telemetry_schema_node(value, path=''):
     if isinstance(value,dict):
