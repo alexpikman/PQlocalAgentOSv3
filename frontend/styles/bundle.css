@@ -1103,3 +1103,22 @@ td{border-color:var(--line)}
 .system-instruction-plan-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .system-instruction-plan table{min-width:900px}
 @media(max-width:720px){#domain-modal:has(.system-instruction-plan) .modal-card{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.system-instruction-plan table{min-width:850px}}
+
+/* === System instruction modal: header + tabs === */
+#domain-modal .domain-modal-content:has(.si-header){display:flex;flex-direction:column;overflow:hidden;min-height:0}
+#domain-modal #domain-modal-form:has(.si-header){display:flex!important;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden;gap:0;margin-top:0}
+.si-header{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;flex:0 0 auto}
+.si-header .field{min-width:0}
+.si-header .field:nth-child(3){grid-column:1/-1}
+.si-header input,.si-header select,.si-header textarea{box-sizing:border-box;width:100%;min-width:0}
+.si-tabs{display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px;flex:0 0 auto}
+.si-tab{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer}
+.si-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.si-content{min-height:0;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain}
+.si-pane{display:none}
+.si-pane.active{display:block}
+.si-pane textarea{width:100%;min-width:0;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--text);font:12px/1.5 var(--font);resize:vertical}
+.si-pane-actions{display:flex;justify-content:flex-end;margin-top:8px}
+.si-pane [data-rule="trigger"].field-invalid{border-color:var(--danger,#e05252);box-shadow:0 0 0 2px color-mix(in srgb,var(--danger,#e05252) 20%,transparent)}
+#domain-plan-note{margin-top:10px}
+@media(max-width:560px){.si-header{grid-template-columns:1fr}.si-header .field:nth-child(3){grid-column:auto}.si-tabs{flex-wrap:wrap}.si-tab{flex:1 1 auto}}
