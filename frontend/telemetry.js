@@ -135,8 +135,10 @@
     if (gpuVal) gpuVal.textContent = gpu.available ? displayPercent(gpu.percent) : '—';
     if (gpuDetail) gpuDetail.textContent = gpu.available
       ? gpu.name + ' · VRAM ' + displayGb(gpu.vramUsed, 1) + ' / ' + displayGb(gpu.vramTotal, 1) + ' ГБ'
-      : 'Данные GPU недоступны (требуется nvidia-smi)';
-    setBar('sysmon-gpu-bar', gpu.available ? gpu.percent : null);
+      : gpu.pending === true
+        ? 'Ожидание данных…'
+        : 'Данные GPU недоступны (требуется nvidia-smi)';
+    setBar('sysmon-gpu-bar', gpu.pending === true ? 0 : (gpu.available ? gpu.percent : null));
 
     // Компактная панель показывает только CPU, RAM и GPU; сбор дисков отключён.
 
