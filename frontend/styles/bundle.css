@@ -1139,3 +1139,24 @@ td{border-color:var(--line)}
 .agent-model-recommendations-table th{background:var(--panel);color:var(--muted);font-weight:650;font-size:10px;letter-spacing:.5px}
 .agent-model-recommendations-table code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--bg);padding:1px 5px;border-radius:4px}
 .agent-model-recommendations-note{margin:10px 0 0;font-size:10px;color:var(--muted);line-height:1.5}
+
+
+/* === Project memory + navigation === */
+.project-memory-facts{display:grid;gap:6px;margin-top:8px;max-height:200px;overflow-y:auto}
+.project-memory-facts .fact{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:var(--panel2)}
+.project-memory-facts .fact small{color:var(--muted);display:block;margin-top:2px}
+.project-memory-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.project-memory-tab{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);font-size:11px;font-weight:600;cursor:pointer}
+.project-memory-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.project-memory-pane{display:none}
+.project-memory-pane.active{display:block}
+.nav-link{color:var(--accent);text-decoration:none;border-bottom:1px dashed color-mix(in srgb,var(--accent) 50%,transparent);cursor:pointer}
+.nav-link:hover{border-bottom-style:solid}
+.pq-memory-nav-modal .modal-card{width:min(860px,calc(100vw - 32px));max-height:min(84vh,900px)}
+.pq-memory-nav-modal .modal-card-body{overflow:auto}
+.pq-memory-nav-modal .field{display:grid;gap:6px;margin-bottom:10px}
+.pq-memory-nav-modal .field span{font-size:12px;color:var(--muted)}
+.pq-memory-nav-modal textarea{width:100%;resize:vertical;min-height:62px;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--panel);color:var(--text);font:inherit}
+.pq-memory-nav-modal h3{margin:14px 0 8px;font-size:13px}
+.pq-memory-nav-modal .task-context-description{white-space:pre-wrap;line-height:1.6;margin:8px 0 14px}
+.pq-memory-nav-modal .entity-row{margin:6px 0}
