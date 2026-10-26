@@ -686,6 +686,133 @@ def resolve_ollama_model(model, timeout=4):
     )
 
 
+def provider_for_model(model, preferred_id=''):
+    """Find the configured provider for a model; Ollama remains the safe default."""
+    providers=provider_items()
+    preferred=str(preferred_id or '').strip()
+    if preferred:
+        match=next((p for p in providers if str(p.get('id',''))==preferred),None)
+        if match:
+            return match
+    name=str(model or '').strip().lower()
+    # Explicit provider/model IDs (e.g. anthropic/claude-sonnet-5) take priority.
+    for p in providers:
+        pid=str(p.get('id','')).lower()
+        pname=str(p.get('name','')).lower()
+        if pid and (name.startswith(pid+'/') or name.startswith(pid+':') or name==pid):
+            return p
+        if pname and name.startswith(pname+'/'):
+            return p
+    if name.startswith('claude-') or 'claude' in name:
+        return next((p for p in providers if p.get('format')=='anthropic'), None) or next((p for p in providers if p.get('id')=='anthropic'), None)
+    if name.startswith('gemini-') or 'gemini' in name:
+        return next((p for p in providers if p.get('format')=='gemini'), None)
+    if name.startswith(('gpt-','o1-','o3-','o4-')):
+        return next((p for p in providers if p.get('id')=='openai'), None)
+    return next((p for p in providers if p.get('id')=='ollama'), {'id':'ollama','name':'Ollama','kind':'local','base_url':OLLAMA_URL,'format':'ollama'})
+
+
+def _cloud_provider_error(exc):
+    """Translate common provider HTTP failures into actionable Russian messages."""
+    code=getattr(exc,'code',None)
+    try:
+        payload=json.loads(exc.read().decode('utf-8','replace'))
+        detail=payload.get('error',{})
+        if isinstance(detail,dict): detail=detail.get('message') or detail.get('type') or ''
+        detail=str(detail or payload.get('message') or '')
+    except Exception:
+        detail=''
+    if code in (401,403):
+        return 'Ошибка облачного провайдера: неверный API-ключ или нет доступа (HTTP '+str(code)+').'
+    if code==429:
+        return 'Ошибка облачного провайдера: превышен лимит запросов или недостаточно средств (HTTP 429).'
+    if code==404:
+        return 'Ошибка провайдера: модель или endpoint не найдены (HTTP 404).'
+    return 'Ошибка провайдера (HTTP '+str(code or '?')+'): '+(detail or str(getattr(exc,'reason','неизвестная ошибка')))[:220]
+
+
+def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
+    """Send one non-streaming chat request to Ollama, OpenAI-compatible, Anthropic, or Gemini."""
+    provider=provider if isinstance(provider,dict) else {}
+    fmt=str(provider.get('format','ollama') or 'ollama').strip().lower()
+    base=str(provider.get('base_url') or (OLLAMA_URL if fmt=='ollama' else '')).strip().rstrip('/')
+    key=str(provider.get('api_key','') or '').strip()
+    requested_model=str(model or '').strip()[:200]
+    if not requested_model:
+        raise ValueError('Не указана модель провайдера')
+    if not base:
+        raise ValueError('У провайдера не настроен base_url')
+    if fmt=='ollama':
+        resolved=resolve_ollama_model(requested_model)
+        payload={'model':resolved,'messages':messages,'stream':False}
+        try:
+            req=urllib.request.Request(base+'/api/chat',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Content-Type':'application/json'},method='POST')
+            with urllib.request.urlopen(req,timeout=timeout) as response:
+                raw=json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as exc:
+            try: detail=json.loads(exc.read().decode('utf-8','replace')).get('error')
+            except Exception: detail=''
+            raise ValueError('Ошибка Ollama: '+str(detail or exc.reason)[:220]) from exc
+        answer=(raw.get('message') or {}).get('content') if isinstance(raw,dict) else None
+        if not isinstance(answer,str):
+            raise ValueError('Ollama вернула ответ без текста модели')
+        return {'model':raw.get('model',resolved),'response':answer,'done':bool(raw.get('done',True))}
+    if fmt=='anthropic':
+        if not key:
+            raise ValueError('У облачного провайдера не настроен API-ключ')
+        system_text='\\n\\n'.join(str(m.get('content','')) for m in messages if m.get('role')=='system')
+        chat_messages=[{'role':m['role'],'content':m['content']} for m in messages if m.get('role') in ('user','assistant')]
+        headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','User-Agent':'PQlocalAgentOSv3'}
+        body={'model':requested_model,'max_tokens':max_tokens,'messages':chat_messages}
+        if system_text: body['system']=system_text
+        endpoint=base+'/messages'
+    elif fmt=='gemini':
+        if not key:
+            raise ValueError('У облачного провайдера не настроен API-ключ')
+        contents=[]
+        system_parts=[]
+        for m in messages:
+            role=m.get('role')
+            if role=='system':
+                system_parts.append(str(m.get('content','')))
+            elif role in ('user','assistant'):
+                contents.append({'role':'model' if role=='assistant' else 'user','parts':[{'text':str(m.get('content',''))}]})
+        endpoint=base+'/models/'+urllib.parse.quote(requested_model.removeprefix('models/'),safe='')+':generateContent?key='+urllib.parse.quote(key)
+        headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
+        body={'contents':contents,'generationConfig':{'maxOutputTokens':max_tokens}}
+        if system_parts: body['systemInstruction']={'parts':[{'text':'\\n\\n'.join(system_parts)}]}
+    elif fmt in ('openai','openai-compatible'):
+        headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
+        if key: headers['Authorization']='Bearer '+key
+        body={'model':requested_model,'messages':messages,'stream':False,'max_tokens':max_tokens}
+        endpoint=base+'/chat/completions'
+    else:
+        raise ValueError('Неподдерживаемый формат провайдера: '+fmt)
+    try:
+        req=urllib.request.Request(endpoint,data=json.dumps(body,ensure_ascii=False).encode('utf-8'),headers=headers,method='POST')
+        with urllib.request.urlopen(req,timeout=timeout) as response:
+            raw=json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        raise ValueError(_cloud_provider_error(exc)) from exc
+    except (TimeoutError, urllib.error.URLError, ConnectionError, OSError) as exc:
+        raise ValueError('Провайдер недоступен: '+str(exc)[:180]) from exc
+    if fmt=='anthropic':
+        answer=''.join(str(x.get('text','')) for x in raw.get('content',[]) if isinstance(x,dict) and x.get('type')=='text')
+    elif fmt=='gemini':
+        candidates=raw.get('candidates') or []
+        parts=(candidates[0].get('content') or {}).get('parts',[]) if candidates else []
+        answer=''.join(str(x.get('text','')) for x in parts if isinstance(x,dict))
+    else:
+        choices=raw.get('choices') or []
+        message=(choices[0].get('message') or {}) if choices else {}
+        content=message.get('content','')
+        answer=content if isinstance(content,str) else ''.join(str(x.get('text','')) for x in content if isinstance(x,dict))
+    if not answer.strip():
+        raise ValueError('Провайдер вернул пустой ответ')
+    return {'model':requested_model,'response':answer,'done':True}
+
+
+
 def run_diagnostics():
     checks=[]
     def check(name,status,message,detail=''):
@@ -2438,25 +2565,13 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
         if path == '/api/chat':
             agent_id = str(data.get('agent_id', '')).strip()[:160]
-            model = str(data.get('model', '')).strip()[:160]
+            requested_model = str(data.get('model', '')).strip()[:160]
             messages = data.get('messages')
             agent = None
             if agent_id:
                 agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
                 if not agent: return self.send_json(404, {'error':'Выбранный агент не найден'})
-                model = str(agent.get('model', '')).strip()[:160] or model
-            if not model:
-                try:
-                    available = ollama_request('/api/tags', timeout=4).get('models', [])
-                    model = next((str(x.get('name','')).strip() for x in available if isinstance(x,dict) and x.get('name')), '')
-                except Exception:
-                    model = ''
-            if not model:
-                return self.send_json(400, {'error': 'У выбранного агента не назначена модель, а локальные модели недоступны. Откройте настройки агента и назначьте модель.'})
-            try:
-                model = resolve_ollama_model(model)
-            except ValueError as exc:
-                return self.send_json(400, {'error': str(exc)})
+                requested_model = str(agent.get('model', '')).strip()[:160] or requested_model
             if not isinstance(messages, list) or not messages:
                 return self.send_json(400, {'error': 'Передайте историю сообщений'})
             validated_messages = []
@@ -2476,8 +2591,8 @@ class Handler(SimpleHTTPRequestHandler):
                     transcript=[]
                     for entry in (chat_entry.get('messages') or [])[-12:]:
                         if isinstance(entry,dict) and entry.get('role') in ('user','assistant'): transcript.append(str(entry.get('role'))+': '+str(entry.get('content',''))[:1800])
-                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\n'+'\n'.join(transcript))
-                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\n\n'+'\n\n'.join(recent_chat_context)[-14000:]})
+                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\\n'+'\\n'.join(transcript))
+                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\\n\\n'+'\\n\\n'.join(recent_chat_context)[-14000:]})
             if agent:
                 system_prompt = str(agent.get('system_prompt', '').strip())
                 role_prompt = {
@@ -2487,44 +2602,35 @@ class Handler(SimpleHTTPRequestHandler):
                     'DESIGNER':'Ты дизайнер интерфейсов. Учитывай доступность, адаптивность, иерархию и единообразие.',
                     'COPYWRITER':'Ты редактор и технический автор. Пиши ясно, конкретно и без выдуманных фактов.',
                     'CODER':'Ты инженер-программист. Предлагай проверяемые решения и учитывай безопасность, тесты и сопровождение.',
-                    'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии и воспроизводимые критерии приёмки.',
+                    'TESTER':'Ты инженер по тестированию. Ищи регрессии и воспроизводимые критерии приёмки.',
                     'DEVOPS':'Ты инженер инфраструктуры. Учитывай конфигурацию, логи, мониторинг и откат.'
                 }.get(str(agent.get('role','')).upper(), '')
-                instruction = (resolve_agent_system_prompt(agent) or system_prompt or role_prompt) if agent else role_prompt
+                instruction = resolve_agent_system_prompt(agent) or system_prompt or role_prompt
                 if instruction:
                     validated_messages.insert(0, {'role':'system','content':instruction})
-            request_body = json.dumps({
-                'model': model,
-                'messages': validated_messages,
-                'stream': False
-            }, ensure_ascii=False).encode('utf-8')
-            request = urllib.request.Request(
-                'http://127.0.0.1:11434/api/chat',
-                data=request_body,
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=120) as response:
-                    result = json.loads(response.read().decode('utf-8'))
-                answer = result.get('message', {}).get('content')
-                if not isinstance(answer, str):
-                    return self.send_json(500, {'error': 'Ollama вернула ответ без текста модели.'})
-                log_event('chat.message', model)
-                return self.send_json(200, {'response': answer})
-            except urllib.error.HTTPError as exc:
+            model = requested_model
+            provider_id = str((agent or {}).get('provider_id') or data.get('provider_id') or '').strip()[:120]
+            provider = provider_for_model(model, provider_id)
+            if not model and provider.get('format') == 'ollama':
                 try:
-                    error_payload = json.loads(exc.read().decode('utf-8'))
-                    detail = error_payload.get('error')
+                    available = ollama_request('/api/tags', timeout=4).get('models', [])
+                    model = next((str(x.get('name','')).strip() for x in available if isinstance(x,dict) and x.get('name')), '')
                 except Exception:
-                    detail = None
-                return self.send_json(500, {'error': 'Ошибка Ollama: ' + str(detail or exc.reason)[:240]})
+                    model = ''
+            if not model:
+                return self.send_json(400, {'error': 'У выбранного агента не назначена модель. Откройте настройки агента и назначьте модель.'})
+            try:
+                result = send_chat_request(provider, model, validated_messages, timeout=120)
+                log_event('chat.message', str(provider.get('name',provider.get('id','provider')))+'/'+model)
+                return self.send_json(200, {'response': result['response']})
+            except ValueError as exc:
+                message=str(exc)
+                status=502 if ('Ошибка облачного провайдера' in message or 'Ошибка провайдера' in message or 'Провайдер недоступен' in message or 'Ошибка Ollama' in message) else 400
+                return self.send_json(status, {'error':message})
             except TimeoutError:
-                return self.send_json(500, {'error': 'Ollama не ответила за 120 секунд. Попробуйте ещё раз.'})
-            except (urllib.error.URLError, ConnectionError, OSError) as exc:
-                return self.send_json(500, {'error': 'Ollama недоступна. Запустите ollama serve.'})
+                return self.send_json(504, {'error':'Провайдер не ответил за 120 секунд. Попробуйте ещё раз.'})
             except Exception as exc:
-                return self.send_json(500, {'error': 'Не удалось получить ответ Ollama: ' + str(exc)[:180]})
+                return self.send_json(502, {'error':'Не удалось получить ответ модели: '+str(exc)[:180]})
         if path=='/api/providers':
             pid=str(data.get('id','')).strip(); name=str(data.get('name','')).strip()[:80]; kind=str(data.get('kind','local')).strip(); base=str(data.get('base_url','')).strip().rstrip('/'); fmt=str(data.get('format','openai')).strip()
             if not name or not base or kind not in ('local','cloud'): return self.send_json(400, {'error':'Укажите имя, тип и адрес провайдера'})
@@ -2550,50 +2656,21 @@ class Handler(SimpleHTTPRequestHandler):
             agent['model']=model; agent['provider_id']=pid; save_domain('agents',agents); log_event('model.assign',agent.get('name','')+' ← '+prov.get('name','')+'/'+model)
             return self.send_json(200, {'ok':True})
         if path=='/api/models/test':
-            model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Ответь одним коротким предложением на приветствие.')).strip()[:4000]
+            model=str(data.get('model','')).strip()[:160]
+            prompt=str(data.get('prompt','Ответь одним коротким предложением на приветствие.')).strip()[:4000]
             provider_id=str(data.get('provider_id','')).strip()[:120]
             if not model: return self.send_json(400, {'error':'Выберите модель'})
-            provider=next((p for p in provider_items() if str(p.get('id',''))==provider_id),None) if provider_id else None
-            if not provider or provider.get('format') == 'ollama':
-                try:
-                    model = resolve_ollama_model(model)
-                except ValueError as exc:
-                    return self.send_json(400, {'error': str(exc)})
+            provider=provider_for_model(model,provider_id)
             try:
-                if provider and provider.get('kind')=='cloud':
-                    base=str(provider.get('base_url','')).rstrip('/'); fmt=str(provider.get('format','openai')).lower(); key=str(provider.get('api_key','')).strip()
-                    if not base or not key: return self.send_json(400, {'error':'У облачного провайдера не настроен адрес или API-ключ'})
-                    headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3','Authorization':'Bearer '+key}
-                    if fmt=='anthropic':
-                        headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','User-Agent':'PQlocalAgentOSv3'}; endpoint=base+'/messages'; body={'model':model,'max_tokens':80,'messages':[{'role':'user','content':prompt}]}
-                    elif fmt=='gemini':
-                        endpoint=base+'/models/'+urllib.parse.quote(model,safe='')+':generateContent?key='+urllib.parse.quote(key); headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}; body={'contents':[{'parts':[{'text':prompt}]}],'generationConfig':{'maxOutputTokens':80}}
-                    else:
-                        endpoint=base+'/chat/completions'; body={'model':model,'messages':[{'role':'user','content':prompt}],'max_tokens':80,'stream':False}
-                    req=urllib.request.Request(endpoint,data=json.dumps(body).encode('utf-8'),headers=headers,method='POST')
-                    with urllib.request.urlopen(req,timeout=45) as response: raw=json.loads(response.read().decode('utf-8'))
-                    if fmt=='anthropic': answer=''.join(x.get('text','') for x in raw.get('content',[]) if x.get('type')=='text')
-                    elif fmt=='gemini': answer=''.join(x.get('text','') for x in (raw.get('candidates') or [{}])[0].get('content',{}).get('parts',[]))
-                    else: answer=str((((raw.get('choices') or [{}])[0].get('message') or {}).get('content')) or '')
-                    if not answer.strip(): raise ValueError('Провайдер вернул пустой ответ')
-                    result={'model':model,'response':answer,'done':True}
-                elif provider and provider.get('format')=='ollama':
-                    result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':80}},timeout=60)
-                elif provider and provider.get('base_url') and provider.get('format') in ('openai','openai-compatible'):
-                    base=str(provider.get('base_url','')).rstrip('/'); headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
-                    if provider.get('api_key'): headers['Authorization']='Bearer '+str(provider['api_key'])
-                    req=urllib.request.Request(base+'/chat/completions',data=json.dumps({'model':model,'messages':[{'role':'user','content':prompt}],'max_tokens':80,'stream':False}).encode('utf-8'),headers=headers,method='POST')
-                    with urllib.request.urlopen(req,timeout=45) as response: raw=json.loads(response.read().decode('utf-8'))
-                    answer=str((((raw.get('choices') or [{}])[0].get('message') or {}).get('content')) or '')
-                    if not answer.strip(): raise ValueError('Провайдер вернул пустой ответ')
-                    result={'model':model,'response':answer,'done':True}
-                else: result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':80}},timeout=60)
-                answer=str(result.get('response','')).strip()
-                if not answer: raise ValueError('Модель вернула пустой ответ')
-                log_event('model.test',str(provider.get('name') if provider else 'Ollama')+'/'+model)
-                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':answer,'done':bool(result.get('done',True))})
-            except Exception as e:
-                return self.send_json(502, {'error':'Модель не ответила: '+str(e)[:220]})
+                result=send_chat_request(provider,model,[{'role':'user','content':prompt}],timeout=60,max_tokens=80)
+                log_event('model.test',str(provider.get('name',provider.get('id','provider')))+'/'+model)
+                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':result['response'],'done':bool(result.get('done',True))})
+            except ValueError as exc:
+                message=str(exc)
+                status=502 if ('Ошибка облачного провайдера' in message or 'Ошибка провайдера' in message or 'Провайдер недоступен' in message or 'Ошибка Ollama' in message) else 400
+                return self.send_json(status, {'error':message})
+            except Exception as exc:
+                return self.send_json(502, {'error':'Модель не ответила: '+str(exc)[:220]})
         if path in ('/api/agents','/api/projects','/api/tasks'):
             kind=path.split('/')[-1]; items=domain_items(kind); field='title' if kind=='tasks' else 'name'
             name=str(data.get(field,'')).strip()[:160]
