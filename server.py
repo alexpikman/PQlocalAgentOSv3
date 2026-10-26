@@ -1657,29 +1657,6 @@ def run_agent_team(model, task, agent=None, project=None):
         'warning': 'max_cycles_reached',
     }
 
-def _run_agent_team_legacy(model, task, agent=None, project=None, reason=''):
-    """Старое поведение: manager → specialist → reviewer."""
-    base_description=str(task.get('description',''))
-    manager_agent={'id':None,'name':'Менеджер команды','role':'MANAGER','system_prompt':AGENT_ROLE_PROMPTS['MANAGER'],'permissions':{}}
-    manager_task={'title':str(task.get('title',''))+' — планирование','description':base_description+'\n\nСоставь краткий план выполнения, критерии готовности и риски. Не выполняй саму работу.'}
-    manager=run_agent_task(model,manager_task,manager_agent,project)
-    specialist=agent or {'id':None,'name':'Специалист','role':'ANALYST','system_prompt':AGENT_ROLE_PROMPTS['ANALYST'],'permissions':{}}
-    specialist_task={'title':str(task.get('title',''))+' — выполнение','description':base_description+'\n\nПлан менеджера:\n'+str(manager.get('response',''))+'\n\nВыполни задачу по плану. Если план содержит ошибочные предположения, исправь их.'}
-    specialist_model=str((agent or {}).get('model') or model)
-    specialist_result=run_agent_task(specialist_model,specialist_task,specialist,project)
-    reviewer={'id':None,'name':'Контролёр качества','role':'TESTER','system_prompt':AGENT_ROLE_PROMPTS['TESTER'],'permissions':{}}
-    review_task={'title':str(task.get('title',''))+' — проверка результата','description':'Исходная задача:\n'+base_description+'\n\nПлан менеджера:\n'+str(manager.get('response',''))+'\n\nРезультат специалиста:\n'+str(specialist_result.get('response',''))+'\n\nПроверь соответствие исходной задаче, найди неподтверждённые утверждения и недостающие части. Верни итоговый результат и явно перечисли ограничения. Не утверждай, что запускал проверки, если этого не делал.'}
-    review=run_agent_task(model,review_task,reviewer,project)
-    stages=[
-        {'role':'MANAGER','name':'Менеджер','model':manager.get('model',model),'response':manager.get('response',''),'tool_calls':manager.get('tool_calls',0),'warning':manager.get('warning','')},
-        {'role':specialist.get('role','ANALYST'),'name':specialist.get('name','Специалист'),'model':specialist_result.get('model',specialist_model),'response':specialist_result.get('response',''),'tool_calls':specialist_result.get('tool_calls',0),'warning':specialist_result.get('warning','')},
-        {'role':'TESTER','name':'Контроль качества','model':review.get('model',model),'response':review.get('response',''),'tool_calls':review.get('tool_calls',0),'warning':review.get('warning','')}
-    ]
-    result={'response':review.get('response',''),'team_result':stages,'tool_calls':sum(int(x.get('tool_calls',0) or 0) for x in stages),'model':model}
-    if reason:
-        result['warning'] = (str(result.get('warning', '')).strip() + ' | legacy: ' + reason).strip(' |')
-    return result
-
 def _filetime_value(value):
     return (value.dwHighDateTime << 32) | value.dwLowDateTime
 
