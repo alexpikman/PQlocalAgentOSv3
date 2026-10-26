@@ -2904,9 +2904,9 @@ class Handler(SimpleHTTPRequestHandler):
                     project_dir = str(project.get('path', '')).strip() or 'не указана'
                     project_context = (
                         '=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\n'
-                        + 'Название: ' + str(project.get('name', '')) + '\\n'
-                        + 'Рабочая папка проекта: ' + project_dir + '\\n'
-                        + 'Описание: ' + str(project.get('description', '')) + '\\n'
+                        + 'Название: ' + str(project.get('name', '')) + '\n'
+                        + 'Рабочая папка проекта: ' + project_dir + '\n'
+                        + 'Описание: ' + str(project.get('description', '')) + '\n'
                         + 'ВАЖНО: если работаешь с файлами, используй только рабочую папку проекта и доступные разрешённые инструменты. '
                         + 'Не утверждай, что файл прочитан или изменён, пока инструмент не вернул результат.'
                     )
