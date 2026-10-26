@@ -2599,7 +2599,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/chat-groups':
             groups = _chat_groups()
             group_id = _chat_safe_id(data.get('id')) or ('group-' + uuid.uuid4().hex[:12])
-            name = re.sub(r'\\s+', ' ', str(data.get('name') or '')).strip()[:100]
+            name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()[:100]
             if not name:
                 return self.send_json(400, {'error': 'Укажите название папки'})
             existing = next((item for item in groups if item.get('id') == group_id), None)
