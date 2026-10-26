@@ -604,6 +604,16 @@
     loadAgents();
   }
 
+  if (window.PQDomainModal?.configure) {
+    window.PQDomainModal.configure({
+      getState: () => ({ agents: state.agents, models: state.models || { models: [] }, projects: [], tasks: [] }),
+      api: chatApi,
+      esc: value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])),
+      toast: message => showNotice(message, 'info'),
+      refresh: async () => {}
+    });
+  }
+
   window.ChatPage = { init };
 
   if (document.readyState === 'loading') {
