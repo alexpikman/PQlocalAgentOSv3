@@ -176,7 +176,7 @@
     conversation.updatedAt = new Date().toISOString();
     const firstUser = state.messages.find((message) => message.role === 'user' && message.content);
     if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
-      conversation.title = firstUser.content.trim().replace(/\\s+/g, ' ').split(' ').slice(0, 3).join(' ').slice(0, 48) || 'Новый чат';
+      conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').split(' ').slice(0, 3).join(' ').slice(0, 48) || 'Новый чат';
     }
     saveWorkspace();
     renderChatWorkspace();
@@ -352,7 +352,7 @@
   async function renameConversation(id) {
     const conversation = state.conversations.find(item => item.id === id); if (!conversation) return;
     const next = window.prompt('Название чата', conversation.title || 'Новый чат'); if (next === null) return;
-    const title = next.trim().replace(/\\s+/g, ' ').slice(0, 120);
+    const title = next.trim().replace(/\s+/g, ' ').slice(0, 120);
     if (!title) { showNotice('Название чата не может быть пустым.', 'warning'); return; }
     conversation.title = title; conversation.updatedAt = new Date().toISOString();
     await saveConversation(conversation); renderChatWorkspace();
