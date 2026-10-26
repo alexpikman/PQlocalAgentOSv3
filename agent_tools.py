@@ -43,6 +43,17 @@ PERMISSION_FOR_TOOL = {
     'github_search_code':('github_access',), 'run_command':('terminal_access',),
 }
 
+def is_blocked_shell_command(command: str) -> bool:
+    """Basic guardrail against a few catastrophic/destructive shell commands."""
+    value = str(command or '').strip()
+    checks = (
+        r'(?i)\\brm\\s+-rf\\s+/(?:\\s|$|\\*)',
+        r'(?i)(?:^|[;&|]\\s*|\\s)format(?:\\.com)?(?:\\s|$)',
+        r'(?i)\\bdel\\s+/f\\s+/s\\s+/q(?:\\s|$)',
+    )
+    return any(re.search(pattern, value) for pattern in checks)
+
+
 def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) -> list[dict[str, Any]]:
     permissions = agent.get('permissions') if isinstance(agent.get('permissions'),dict) else {}
     global_files = bool(permission_config.get('local_files')) and bool(permission_config.get('roots'))
@@ -137,6 +148,8 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
         if name=='run_command':
             command=args.get('command')
             if not isinstance(command,str) or not command.strip() or len(command)>4000: return {'error':'Укажите команду длиной от 1 до 4000 символов.'}
+            if is_blocked_shell_command(command):
+                return {'error':'Команда заблокирована базовой защитой от опасных операций.'}
             cwd_raw=str(args.get('cwd','')).strip()
             if not cwd_raw: return {'error':'Не задан путь проекта для выполнения команды.'}
             cwd=resolve_authorized_path(cwd_raw,permission_config,must_exist=True)
