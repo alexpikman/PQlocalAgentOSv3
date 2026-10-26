@@ -24,6 +24,115 @@ def read_json(path, fallback):
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8'); tmp.replace(path)
+
+MEMORY_DIR = DATA / 'memory'
+MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+MEMORY_FACTS_LIMIT = 15
+MEMORY_TASKS_LIMIT = 50
+
+
+def _empty_project_memory(project_id):
+    return {
+        'project_id': project_id, 'updated_at': '', 'summary': '',
+        'constraints': [], 'facts': [], 'open_questions': [], 'next_steps': [],
+        'task_ids': [], 'agent_ids': [],
+    }
+
+
+def _project_memory_path(project_id):
+    safe_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(project_id))[:80]
+    return MEMORY_DIR / (safe_id + '.json')
+
+
+def read_project_memory(project_id: str) -> dict:
+    if not project_id:
+        return _empty_project_memory('')
+    path = _project_memory_path(project_id)
+    data = read_json(path, None)
+    if not isinstance(data, dict):
+        return _empty_project_memory(project_id)
+    defaults = _empty_project_memory(project_id)
+    for key, default in defaults.items():
+        if key not in data or (isinstance(default, list) and not isinstance(data[key], list)):
+            data[key] = default.copy() if isinstance(default, list) else default
+    return data
+
+
+def write_project_memory(project_id: str, memory: dict):
+    if not project_id:
+        return
+    memory['project_id'] = project_id
+    memory['updated_at'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    if isinstance(memory.get('facts'), list):
+        memory['facts'] = memory['facts'][-MEMORY_FACTS_LIMIT:]
+    if isinstance(memory.get('task_ids'), list):
+        memory['task_ids'] = memory['task_ids'][-MEMORY_TASKS_LIMIT:]
+    if isinstance(memory.get('agent_ids'), list):
+        memory['agent_ids'] = list(dict.fromkeys(memory['agent_ids']))[-50:]
+    write_json(_project_memory_path(project_id), memory)
+
+
+def update_project_memory_after_task(task: dict, team_result: list, agent: dict | None):
+    project_id = str(task.get('project_id', '')).strip()
+    if not project_id:
+        return
+    memory = read_project_memory(project_id)
+    task_id = str(task.get('id', '')).strip()
+    status = str(task.get('status', '')).lower()
+    title = str(task.get('title', '')).strip()
+    now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+
+    if task_id and task_id not in memory['task_ids']:
+        memory['task_ids'].append(task_id)
+    if agent and agent.get('id') and agent['id'] not in memory['agent_ids']:
+        memory['agent_ids'].append(agent['id'])
+    for stage in (team_result or []):
+        role = str(stage.get('role', '')).strip().upper()
+        if role == 'MANAGER':
+            continue
+        for candidate in domain_items('agents'):
+            if str(candidate.get('role', '')).upper() == role and candidate.get('id') and candidate['id'] not in memory['agent_ids']:
+                memory['agent_ids'].append(candidate['id'])
+                break
+
+    if status == 'completed':
+        last = team_result[-1] if team_result else {}
+        snippet = str(last.get('response', '') or task.get('result', ''))[:200].replace('\\n', ' ').strip()
+        memory['summary'] = (title + ' — ' + snippet).strip(' —')[:400]
+        stages = team_result[-3:] if team_result else []
+        if not stages and str(task.get('result', '')).strip():
+            stages = [{'role': (agent or {}).get('role', 'AGENT'), 'response': task.get('result', '')}]
+        for stage in stages:
+            role = str(stage.get('role', '')).strip()
+            resp = str(stage.get('response', '')).strip()
+            if role and resp:
+                fact_text = (role + ': ' + resp[:150]).replace('\\n', ' ').strip()
+                memory['facts'].append({'text': fact_text, 'source': task_id, 'at': now})
+    elif status == 'failed':
+        err = str(task.get('error', ''))[:200].replace('\\n', ' ')
+        memory['summary'] = (title + ' — ОШИБКА: ' + err).strip(' —')[:400]
+        memory['facts'].append({'text': 'Задача "' + title + '" завершилась ошибкой: ' + err, 'source': task_id, 'at': now})
+    write_project_memory(project_id, memory)
+
+
+def _system_instruction_history_path():
+    return DATA / 'system_instructions_history.json'
+
+
+def _append_system_instruction_history(item):
+    if not isinstance(item, dict) or not item.get('system_prompt'):
+        return
+    history = read_json(_system_instruction_history_path(), [])
+    if not isinstance(history, list):
+        history = []
+    history.insert(0, {
+        'id': item.get('id', ''),
+        'role': item.get('role', ''),
+        'system_prompt': item.get('system_prompt', ''),
+        'at': item.get('updated_at') or item.get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+    })
+    write_json(_system_instruction_history_path(), history[:50])
+
 AUTH_FILE = DATA/'auth.json'
 AUTH_ENABLED = os.environ.get('PQ_AUTH_ENABLED', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 AUTH_ITERATIONS = 310000
@@ -760,6 +869,26 @@ def build_orchestrator_context(task, history, active_roles, manager_plan):
         '',
         'План взаимодействия (правила маршрутизации):',
     ]
+    project_id = str(task.get('project_id', '')).strip()
+    if project_id:
+        mem = read_project_memory(project_id)
+        lines.extend(['', '=== Память проекта ==='])
+        if mem.get('summary'):
+            lines.append('Сводка: ' + str(mem['summary'])[:600])
+        if mem.get('constraints'):
+            lines.append('Ограничения проекта (соблюдать строго):')
+            for c in mem['constraints'][:10]: lines.append('- ' + str(c)[:300])
+        if mem.get('facts'):
+            lines.append('Известные факты (последние ' + str(len(mem['facts'])) + '):')
+            for fact in mem['facts'][-10:]:
+                if isinstance(fact, dict) and fact.get('text'): lines.append('- ' + str(fact['text'])[:300])
+        if mem.get('open_questions'):
+            lines.append('Открытые вопросы:')
+            for question in mem['open_questions'][:10]: lines.append('- ' + str(question)[:300])
+        if mem.get('next_steps'):
+            lines.append('Следующие шаги:')
+            for step in mem['next_steps'][:10]: lines.append('- ' + str(step)[:300])
+        lines.append('=== Конец памяти проекта ===')
     valid_rules = [rule for rule in manager_plan if isinstance(rule, dict)] if isinstance(manager_plan, list) else []
     if valid_rules:
         for rule in valid_rules:
@@ -1647,6 +1776,52 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/system-instructions':
             items = ensure_system_instructions()
             return self.send_json(200, {'instructions': items, 'total': len(items)})
+        if path.startswith('/api/projects/') and path.endswith('/memory'):
+            pid = urllib.parse.unquote(path.split('/')[-2])
+            mem = read_project_memory(pid)
+            tasks_all = domain_items('tasks')
+            agents_all = domain_items('agents')
+            mem['tasks'] = [
+                {'id': t.get('id'), 'title': t.get('title'), 'status': t.get('status'),
+                 'created_at': t.get('created_at'), 'finished_at': t.get('finished_at'),
+                 'agent_id': t.get('agent_id'), 'team_mode': t.get('team_mode')}
+                for t in tasks_all if str(t.get('project_id', '')) == str(pid)
+            ]
+            mem['agents'] = [
+                {'id': a.get('id'), 'name': a.get('name'), 'role': a.get('role')}
+                for a in agents_all if a.get('id') in (mem.get('agent_ids') or [])
+            ]
+            return self.send_json(200, mem)
+        if path.startswith('/api/agents/') and path.endswith('/tasks'):
+            aid = urllib.parse.unquote(path.split('/')[-2])
+            tasks = [t for t in domain_items('tasks') if str(t.get('agent_id', '')) == str(aid)]
+            tasks.sort(key=lambda t: str(t.get('created_at', '')), reverse=True)
+            return self.send_json(200, {'agent_id': aid, 'tasks': [
+                {'id': t.get('id'), 'title': t.get('title'), 'status': t.get('status'),
+                 'project_id': t.get('project_id'), 'created_at': t.get('created_at'),
+                 'finished_at': t.get('finished_at')} for t in tasks[:100]
+            ]})
+        if path.startswith('/api/tasks/') and path.endswith('/context'):
+            tid = urllib.parse.unquote(path.split('/')[-2])
+            task = next((t for t in domain_items('tasks') if str(t.get('id')) == tid), None)
+            if not task: return self.send_json(404, {'error': 'Задача не найдена'})
+            pid = str(task.get('project_id', '')).strip()
+            aid = str(task.get('agent_id', '')).strip()
+            project = next((p for p in domain_items('projects') if str(p.get('id')) == pid), None)
+            agent = next((a for a in domain_items('agents') if str(a.get('id')) == aid), None)
+            mem = read_project_memory(pid) if pid else _empty_project_memory('')
+            return self.send_json(200, {
+                'task': task,
+                'project': {'id': project.get('id'), 'name': project.get('name')} if project else None,
+                'agent': {'id': agent.get('id'), 'name': agent.get('name'), 'role': agent.get('role')} if agent else None,
+                'memory': {'summary': mem.get('summary'), 'constraints': mem.get('constraints'),
+                           'facts': mem.get('facts', [])[-5:], 'next_steps': mem.get('next_steps')}
+            })
+        if path.startswith('/api/system-instructions/') and path.endswith('/history'):
+            instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):].rsplit('/', 1)[0])
+            history = read_json(_system_instruction_history_path(), [])
+            if not isinstance(history, list): history = []
+            return self.send_json(200, {'id': instruction_id, 'history': [entry for entry in history if isinstance(entry, dict) and entry.get('id') == instruction_id][:50]})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -1791,6 +1966,33 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(201, item)
             except ValueError as exc: return self.send_json(400, {'error': str(exc)})
             except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
+        if path.startswith('/api/projects/') and path.endswith('/memory'):
+            pid = urllib.parse.unquote(path.split('/')[-2])
+            mem = read_project_memory(pid)
+            for key in ('summary', 'constraints', 'open_questions', 'next_steps'):
+                if key not in data: continue
+                if key == 'summary':
+                    mem[key] = str(data[key])[:400]
+                elif isinstance(data[key], list):
+                    mem[key] = [str(value)[:300] for value in data[key][:20]]
+            write_project_memory(pid, mem)
+            log_event('project.memory.update', pid)
+            return self.send_json(200, mem)
+        if path.startswith('/api/system-instructions/') and path.endswith('/revert'):
+            instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):].rsplit('/', 1)[0])
+            at = str(data.get('at', '')).strip()
+            history = read_json(_system_instruction_history_path(), [])
+            if not isinstance(history, list): history = []
+            version = next((entry for entry in history if isinstance(entry, dict) and entry.get('id') == instruction_id and entry.get('at') == at), None)
+            if not version: return self.send_json(404, {'error': 'Версия инструкции не найдена'})
+            items = ensure_system_instructions()
+            index = next((i for i, entry in enumerate(items) if entry.get('id') == instruction_id), None)
+            if index is None: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            _append_system_instruction_history(items[index])
+            items[index] = {**items[index], 'system_prompt': str(version.get('system_prompt', ''))[:8000], 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            save_system_instructions(items)
+            log_event('system_instruction.revert', instruction_id)
+            return self.send_json(200, items[index])
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -1807,6 +2009,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(activity, str) or len(activity) > 2000: return self.send_json(400, {'error': 'Основная деятельность должна быть строкой до 2000 символов'})
                 plan = (validate_manager_interaction_plan(data.get('interaction_plan', existing.get('interaction_plan', []))) if role == 'MANAGER' else system_instruction_agent_plan())
                 updated = {**existing, 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'interaction_plan': plan, 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                if existing.get('system_prompt') != system_prompt:
+                    _append_system_instruction_history(existing)
+                    _append_system_instruction_history(updated)
                 items[index] = updated; save_system_instructions(items); log_event('system_instruction.update', updated['name'])
                 return self.send_json(200, updated)
             except ValueError as exc: return self.send_json(400, {'error': str(exc)})
@@ -1963,9 +2168,14 @@ class Handler(SimpleHTTPRequestHandler):
                 item['status']='completed'; item['result']=result.get('response',''); item['tool_calls']=result.get('tool_calls',0); item['warning']=result.get('warning',''); item['team_result']=result.get('team_result',[]); item['error']=''; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
                 if agent:
                     agent['last_task_id']=task_id; agent['last_task_at']=item['finished_at']; save_domain('agents',agents)
-                log_event('task.completed',item.get('title','')); save_domain('tasks',items); return self.send_json(200,item)
+                log_event('task.completed',item.get('title','')); save_domain('tasks',items)
+                try: update_project_memory_after_task(item, item.get('team_result') or [], agent)
+                except Exception: pass
+                return self.send_json(200,item)
             except Exception as e:
                 item['status']='failed'; item['error']=str(e)[:300]; item['finished_at']=datetime.datetime.now().astimezone().isoformat(timespec='seconds'); save_domain('tasks',items); log_event('task.failed',item.get('title',''))
+                try: update_project_memory_after_task(item, item.get('team_result') or [], agent)
+                except Exception: pass
                 return self.send_json(502, {'error':'Не удалось выполнить задачу через Ollama: '+str(e)[:180],'task':item})
         if path.startswith('/api/agents/') or path.startswith('/api/projects/') or path.startswith('/api/tasks/'):
             parts=path.strip('/').split('/'); kind=parts[1]; item_id=parts[2] if len(parts)>2 else ''
