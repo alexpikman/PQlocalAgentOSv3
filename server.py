@@ -225,18 +225,19 @@ def log_event(action, detail=''):
     write_json(path, events[:500])
 OLLAMA_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
 DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 'tasks': DATA/'tasks.json'}
-AGENT_ROLES = ['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS']
+AGENT_ROLES = ['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS']
 AGENT_ROLES_FILE = DATA / 'agent_roles.json'
-AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер проекта','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Инженер-программист','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
+AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер','DISPATCHER':'Диспетчер','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Разработчик','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
 AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access'}
 DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
 AGENT_ROLE_PROMPTS = {
-    'MANAGER':'Ты менеджер проекта. Разбей цель на этапы, уточни критерии результата, риски и зависимости. Дай приоритетный план и явно обозначь, что не выполнено.',
+    'MANAGER':'Ты менеджер проекта и руководитель Агент №1. Анализируй цель и результаты диспетчера и профильных агентов, определяй приоритеты, утверждай план и принимай итоговое решение. Не теряй пункты памяти проекта.',
+    'DISPATCHER':'Ты диспетчер системы. Единственная точка маршрутизации запросов, задач, артефактов и памяти проекта. Собери полный контекст памяти (сводка, ограничения, вопросы, следующие шаги, факты), определи нужные роли, передай менеджеру структурированный отчёт. Не подменяй решения менеджера и не выдумывай результаты.'
     'ARCHITECT':'Ты системный архитектор. Проектируй модульную структуру, контракты, потоки данных, ограничения и точки отказа. Не выдумывай существующие API.',
     'ANALYST':'Ты аналитик. Разделяй факты, предположения и рекомендации; проверяй полноту требований и формулируй выводы структурированно.',
     'DESIGNER':'Ты продуктовый и интерфейсный дизайнер. Учитывай сценарии пользователя, доступность, адаптивность, визуальную иерархию и единообразие компонентов.',
     'COPYWRITER':'Ты редактор и технический автор. Пиши ясно, конкретно, на языке пользователя; сохраняй смысл и не выдумывай факты.',
-    'CODER':'Ты инженер-программист. Предлагай проверяемые решения, учитывай ошибки, безопасность, тесты и сопровождение. Не утверждай, что код запущен, если это не так.',
+    'CODER':'Ты разработчик-программист. Реализуй утверждённые требования, соблюдай архитектуру и контракты, учитывай ошибки, безопасность, тесты и сопровождение. Не утверждай, что код запущен, если это не так.',
     'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии, ошибки обработки данных, безопасность и воспроизводимые критерии приёмки.',
     'DEVOPS':'Ты инженер инфраструктуры. Учитывай воспроизводимые сборки, конфигурацию окружения, логи, мониторинг, откат и минимальные привилегии.'
 }
@@ -544,15 +545,35 @@ def system_instruction_warnings(items):
                 })
     return warnings
 
+SYSTEM_AGENT_DEFINITIONS = [
+    {'id':'manager','name':'Агент №1','role':'MANAGER','description':'Менеджер — руководитель системы. Анализирует сводный отчёт диспетчера и утверждает решения.','authority':1},
+    {'id':'dispatcher','name':'Диспетчер','role':'DISPATCHER','description':'Единая точка маршрутизации задач, запросов, артефактов и памяти. Передаёт сводный анализ менеджеру.','authority':2},
+    {'id':'architect','name':'Архитектор','role':'ARCHITECT','description':'Инженер-проектировщик: архитектура, модули, интерфейсы и контракты.','authority':3},
+    {'id':'analyst','name':'Аналитик','role':'ANALYST','description':'Инженер-технолог: требования, процессы, зависимости и критерии приёмки.','authority':4},
+    {'id':'developer','name':'Разработчик','role':'CODER','description':'Программист: реализация утверждённых решений.','authority':5},
+    {'id':'designer','name':'Дизайнер','role':'DESIGNER','description':'Художник и проектировщик пользовательского опыта.','authority':6},
+    {'id':'copywriter','name':'Копирайтер','role':'COPYWRITER','description':'Писатель и редактор текстов и документации.','authority':7},
+    {'id':'tester','name':'Тестировщик','role':'TESTER','description':'Bug reporter: поиск дефектов, регрессий и проверка критериев приёмки.','authority':8},
+]
 def domain_items(kind):
-    fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
+    fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'system_enabled':True,'description':'Менеджер — руководитель системы.'}] if kind=='agents' else []
     items = read_json(DOMAIN_FILES[kind],fallback)
     if kind == 'agents' and isinstance(items, list):
         changed = False
-        for item in items:
-            if isinstance(item, dict) and item.get('id') == 'manager' and item.get('name') == 'Менеджер проекта':
-                item['name'] = 'Агент №1'
-                changed = True
+        by_id = {str(item.get('id')): item for item in items if isinstance(item, dict)}
+        now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+        for definition in SYSTEM_AGENT_DEFINITIONS:
+            item = by_id.get(definition['id'])
+            if item is None:
+                item = {**definition,'model':'','status':'idle','system':True,'system_enabled':True,'permissions':DEFAULT_AGENT_PERMISSIONS.copy(),'created_at':now}
+                items.append(item); by_id[definition['id']] = item; changed = True
+            else:
+                if not item.get('system'): item['system'] = True; changed = True
+                if 'system_enabled' not in item: item['system_enabled'] = True; changed = True
+                for key in ('role','authority'):
+                    if item.get(key) != definition.get(key): item[key] = definition[key]; changed = True
+                if item.get('id') == 'manager' and item.get('name') == 'Менеджер проекта':
+                    item['name'] = 'Агент №1'; changed = True
         if changed:
             write_json(DOMAIN_FILES[kind], items)
     return items
@@ -1943,10 +1964,15 @@ class Handler(SimpleHTTPRequestHandler):
                  'agent_id': t.get('agent_id'), 'team_mode': t.get('team_mode')}
                 for t in tasks_all if str(t.get('project_id', '')) == str(pid)
             ]
+            linked_ids = set(str(value) for value in (mem.get('agent_ids') or []))
             mem['agents'] = [
-                {'id': a.get('id'), 'name': a.get('name'), 'role': a.get('role')}
-                for a in agents_all if a.get('id') in (mem.get('agent_ids') or [])
+                {'id': a.get('id'), 'name': a.get('name'), 'role': a.get('role'),
+                 'description': a.get('description', ''), 'system': bool(a.get('system')),
+                 'system_enabled': bool(a.get('system_enabled', True)), 'model': a.get('model', ''),
+                 'status': a.get('status', 'idle'), 'authority': a.get('authority', 99)}
+                for a in agents_all if str(a.get('id')) in linked_ids or (a.get('system') and a.get('system_enabled', True))
             ]
+            mem['agents'].sort(key=lambda a: int(a.get('authority', 99)))
             return self.send_json(200, mem)
         if path.startswith('/api/agents/') and path.endswith('/tasks'):
             aid = urllib.parse.unquote(path.split('/')[-2])
@@ -2465,12 +2491,15 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description','logo'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
             for key in allowed:
                 if key not in data: continue
                 if kind=='agents' and key=='permissions':
                     if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
+                elif kind=='agents' and key=='system_enabled':
+                    if not item.get('system'): return self.send_json(400, {'error':'Переключать можно только системных агентов'})
+                    item[key]=bool(data[key])
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
                 elif kind=='projects' and key=='logo':
                     try:
