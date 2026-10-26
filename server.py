@@ -866,7 +866,7 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
                 elif role in ('user', 'assistant'):
                     gguf_messages.append({'role': role, 'content': content})
             if system_parts:
-                gguf_messages.insert(0, {'role': 'system', 'content': '\\n\\n'.join(system_parts)})
+                gguf_messages.insert(0, {'role': 'system', 'content': '\n\n'.join(system_parts)})
 
             if not gguf_messages:
                 raise ValueError('История сообщений GGUF пуста после проверки ролей')
