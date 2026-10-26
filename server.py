@@ -1092,6 +1092,13 @@ def run_agent_team(model, task, agent=None, project=None):
     if not isinstance(active_roles, list) or not active_roles:
         active_roles = list(AGENT_ROLES)
     active_roles = [str(role).upper() for role in active_roles if str(role).upper() in AGENT_ROLES]
+    # Disabled built-in agents must not be selected as workers; keep the manager as the orchestration authority.
+    for role in list(active_roles):
+        if role == 'MANAGER': continue
+        role_agents = [a for a in agents if isinstance(a, dict) and str(a.get('role', '')).upper() == role]
+        enabled = any(not a.get('system') or a.get('system_enabled', True) for a in role_agents)
+        if role_agents and not enabled:
+            active_roles.remove(role)
     if 'MANAGER' not in active_roles:
         active_roles.insert(0, 'MANAGER')
 
