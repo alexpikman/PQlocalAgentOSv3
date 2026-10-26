@@ -31,7 +31,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'github_list_files','description':'List files in the configured GitHub repository. Path is repository-relative; use an empty string for root. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_read_file','description':'Read a UTF-8 text file from the configured GitHub repository using a repository-relative path. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_search_code','description':'Search code in the configured GitHub repository for a symbol or distinctive text. Requires github_access.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
-    {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'},'cwd':{'type':'string'}},'required':['command']}}},
+    {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'}},'required':['command']}}},
 ]
 
 PERMISSION_FOR_TOOL = {
