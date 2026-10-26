@@ -245,6 +245,15 @@ def _chat_safe_id(value):
     return value if re.fullmatch(r'[A-Za-z0-9_-]{1,100}', value) else ''
 
 
+
+CHAT_GROUPS_FILE = DATA / 'chat_groups.json'
+
+
+def _chat_groups():
+    groups = read_json(CHAT_GROUPS_FILE, [])
+    return [group for group in groups if isinstance(group, dict) and _chat_safe_id(group.get('id'))] if isinstance(groups, list) else []
+
+
 def _chat_record_path(chat_id, project_id=''):
     safe_chat_id = _chat_safe_id(chat_id)
     if not safe_chat_id:
@@ -2461,6 +2470,19 @@ class Handler(SimpleHTTPRequestHandler):
             if saved.get('active_id')==connection_id: saved['active_id']=saved['connections'][0].get('id','') if saved['connections'] else ''
             write_json(GITHUB_CONNECTIONS_FILE,saved); log_event('github.connection.delete',found.get('repository',''))
             return self.send_json(200, {'ok':True})
+        if path.startswith('/api/chat-groups/'):
+            group_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chat-groups/'):]))
+            groups = _chat_groups()
+            group = next((item for item in groups if item.get('id') == group_id), None)
+            if not group:
+                return self.send_json(404, {'error': 'Папка не найдена'})
+            write_json(CHAT_GROUPS_FILE, [item for item in groups if item.get('id') != group_id])
+            for chat in _all_chat_records():
+                if str(chat.get('group_id') or chat.get('groupId') or '') == group_id:
+                    chat['group_id'] = ''
+                    _save_chat_record(chat)
+            log_event('chat_group.delete', group_id)
+            return self.send_json(200, {'ok': True})
         if path.startswith('/api/chats/'):
             chat_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chats/'):]))
             if not chat_id or '/' in path[len('/api/chats/'):]:
@@ -2523,6 +2545,9 @@ class Handler(SimpleHTTPRequestHandler):
                 models=[{'name':m.get('name',''),'size':m.get('size',0),'modified_at':m.get('modified_at','')} for m in payload.get('models',[]) if isinstance(m,dict) and m.get('name')]
                 return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':True,'models':models,'error':None})
             except Exception as e: return self.send_json(200, {'provider':'ollama','base_url':OLLAMA_URL,'connected':False,'models':[],'error':'Не удалось подключиться к Ollama: '+str(e)[:180]})
+        if path == '/api/chat-groups':
+            groups = _chat_groups()
+            return self.send_json(200, {'items': groups, 'total': len(groups)})
         if path == '/api/chats':
             items = _all_chat_records()
             return self.send_json(200, {'items': items, 'total': len(items)})
@@ -2540,6 +2565,20 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(target.read_bytes())
             return
+        if path == '/api/chat-groups':
+            groups = _chat_groups()
+            group_id = _chat_safe_id(data.get('id')) or ('group-' + uuid.uuid4().hex[:12])
+            name = re.sub(r'\\s+', ' ', str(data.get('name') or '')).strip()[:100]
+            if not name:
+                return self.send_json(400, {'error': 'Укажите название папки'})
+            existing = next((item for item in groups if item.get('id') == group_id), None)
+            item = {'id': group_id, 'name': name, 'created_at': (existing or {}).get('created_at') or datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if existing:
+                groups[groups.index(existing)] = item
+            else:
+                groups.insert(0, item)
+            write_json(CHAT_GROUPS_FILE, groups)
+            return self.send_json(200, {'ok': True, 'group': item, 'items': groups})
         if path == '/api/chats':
             try:
                 chat = data.get('chat', data)
