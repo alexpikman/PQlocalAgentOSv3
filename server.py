@@ -2032,7 +2032,8 @@ class Handler(SimpleHTTPRequestHandler):
                 'project': {'id': project.get('id'), 'name': project.get('name')} if project else None,
                 'agent': {'id': agent.get('id'), 'name': agent.get('name'), 'role': agent.get('role')} if agent else None,
                 'memory': {'summary': mem.get('summary'), 'constraints': mem.get('constraints'),
-                           'facts': mem.get('facts', [])[-5:], 'next_steps': mem.get('next_steps')}
+                           'open_questions': mem.get('open_questions'), 'facts': mem.get('facts', [])[-15:],
+                           'next_steps': mem.get('next_steps')}
             })
         if path.startswith('/api/system-instructions/') and path.endswith('/history'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):].rsplit('/', 1)[0])
