@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
-  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], conversations: [], activeConversationId: '', activeProjectId: '' };
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '' };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -143,53 +143,50 @@
   }
 
   function buildChatWorkspace() {
-    const sidebar = document.getElementById('sidebar');
     const nav = document.getElementById('nav');
-    if (!sidebar || !nav || document.getElementById('chat-workspace')) return;
-    const workspace = createElement('section', 'sidebar-chat-workspace');
-    workspace.id = 'chat-workspace';
-    const workspaceTitle = createElement('div', 'nav-group-label sidebar-chat-workspace-title', 'РАБОЧЕЕ ПРОСТРАНСТВО');
-    const workspaceNav = createElement('div', 'nav-group-items sidebar-chat-nav');
-    const dashboardLink = createElement('a', 'nav-item sidebar-chat-nav-item', '');
-    dashboardLink.href = '/';
-    dashboardLink.append(createElement('span', 'nav-icon', '▦'), createElement('span', 'nav-label', 'Рабочий стол'));
-    const chatLink = createElement('a', 'nav-item sidebar-chat-nav-item active', '');
-    chatLink.href = '/chat.html';
-    chatLink.setAttribute('aria-current', 'page');
-    chatLink.append(createElement('span', 'nav-icon', '▤'), createElement('span', 'nav-label', 'Чат'));
-    workspaceNav.append(dashboardLink, chatLink);
-    const actions = createElement('div', 'sidebar-chat-actions');
-    const newChat = createElement('button', 'btn primary', '＋ Новый чат');
-    newChat.type = 'button';
-    newChat.addEventListener('click', () => createConversation(state.activeProjectId));
-    const newProject = createElement('button', 'btn secondary', '＋ Проект');
-    newProject.type = 'button';
-    newProject.addEventListener('click', createProject);
-    actions.append(newChat, newProject);
-    const projectsTitle = createElement('div', 'nav-group-label', 'ПРОЕКТЫ');
-    const projectsList = createElement('div', 'sidebar-chat-list');
-    projectsList.id = 'chat-project-list';
-    const historyTitle = createElement('div', 'nav-group-label', 'ИСТОРИЯ ЧАТОВ');
-    const historyList = createElement('div', 'sidebar-chat-list');
-    historyList.id = 'chat-history-list';
-    workspace.append(workspaceTitle, workspaceNav, actions, projectsTitle, projectsList, historyTitle, historyList);
-    nav.replaceChildren(workspace);
-    elements.workspace = workspace;
-    elements.projectsList = projectsList;
-    elements.historyList = historyList;
+    if (!nav || document.getElementById('chat-workspace')) return;
+    const workspace = createElement('section', 'sidebar-chat-workspace'); workspace.id = 'chat-workspace';
+    const group = createElement('section', 'nav-group nav-group-fixed'); group.dataset.navGroup = 'group-0';
+    const title = createElement('div', 'nav-group-label', 'РАБОЧЕЕ ПРОСТРАНСТВО');
+    const items = createElement('div', 'nav-group-items');
+    const dashboard = createElement('button', 'nav-item', ''); dashboard.type='button'; dashboard.dataset.go='dashboard';
+    dashboard.append(createElement('span','nav-icon','▦'),createElement('span','nav-label','Рабочий стол'));
+    const chatLink = createElement('button','nav-item active',''); chatLink.type='button'; chatLink.dataset.go='chat'; chatLink.setAttribute('aria-current','page');
+    chatLink.append(createElement('span','nav-icon','▤'),createElement('span','nav-label','Чат'));
+    dashboard.onclick=()=>{window.location.href='/'}; chatLink.onclick=()=>{window.location.href='/chat.html'};
+    items.append(dashboard,chatLink); group.append(title,items);
+    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','＋ Новый чат'),newProject=createElement('button','btn secondary','＋ Проект');
+    newChat.type='button';newChat.onclick=()=>createConversation(state.activeProjectId);newProject.type='button';newProject.onclick=openProjectModal;actions.append(newChat,newProject);
+    const projectsTitle=createElement('div','nav-group-label','ПРОЕКТЫ'),projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
+    const historyToggle=createElement('button','btn secondary chat-history-toggle','');historyToggle.type='button';historyToggle.id='chat-history-toggle';
+    historyToggle.innerHTML='<span>История чатов</span><svg class="nav-group-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"></path></svg>';
+    const historyList=createElement('div','sidebar-chat-list');historyList.id='chat-history-list';
+    const collapsed=localStorage.getItem('pqlocalagentosv3.chat-history-collapsed')==='true';historyList.hidden=collapsed;historyToggle.setAttribute('aria-expanded',String(!collapsed));historyToggle.classList.toggle('is-collapsed',collapsed);
+    historyToggle.onclick=()=>{const close=historyToggle.getAttribute('aria-expanded')==='true';historyToggle.setAttribute('aria-expanded',String(!close));historyToggle.classList.toggle('is-collapsed',close);historyList.hidden=close;localStorage.setItem('pqlocalagentosv3.chat-history-collapsed',String(close))};
+    workspace.append(group,actions,projectsTitle,projectsList,historyToggle,historyList);
+    workspace.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="chat-project-modal" hidden><div class="modal-backdrop" data-chat-project-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-project-title"><div class="section-title modal-card-head"><div><h2 id="chat-project-title">Проект для чата</h2><p>Выберите существующий или создайте новый.</p></div><button type="button" class="btn secondary" data-chat-project-close>Закрыть</button></div><div class="modal-card-body"><div class="field"><label for="chat-project-select">Существующий проект</label><select id="chat-project-select"><option value="">— Не выбран —</option></select></div><div class="divider"></div><div class="field"><label for="chat-project-name">Новый проект</label><input id="chat-project-name" maxlength="120" placeholder="Название нового проекта"></div><div class="field"><label for="chat-project-path">Путь (необязательно)</label><input id="chat-project-path" maxlength="1000" placeholder="C:\\Projects\\MyProject"></div><div class="field"><label for="chat-project-description">Описание (необязательно)</label><textarea id="chat-project-description" rows="2" maxlength="1000"></textarea></div><div class="notice" id="chat-project-status" hidden></div></div><div class="modal-card-actions"><button type="button" class="btn secondary" data-chat-project-close>Отмена</button><button type="button" class="btn primary" id="chat-project-submit">Добавить в чат</button></div></section></div>');
+    nav.replaceChildren(workspace);elements.workspace=workspace;elements.projectsList=projectsList;elements.historyList=historyList;bindProjectModal();
   }
 
-  function createProject() {
-    const name = window.prompt('Название проекта');
-    if (!name || !name.trim()) return;
-    const project = { id: makeId('project'), name: name.trim().slice(0, 80), createdAt: new Date().toISOString(), expanded: true };
-    state.projects.unshift(project);
-    state.activeProjectId = project.id;
-    saveWorkspace();
-    renderChatWorkspace();
-    createConversation(project.id);
+  async function openProjectModal() {
+    const modal=document.getElementById('chat-project-modal'),select=document.getElementById('chat-project-select'),status=document.getElementById('chat-project-status');if(!modal||!select)return;
+    status.hidden=true;status.textContent='';select.replaceChildren(new Option('— Не выбран —',''));
+    try{const result=await chatApi('/projects');state.systemProjects=Array.isArray(result.items)?result.items:[];state.systemProjects.forEach(p=>select.add(new Option(p.name||'Без названия',p.id)))}catch(e){state.systemProjects=[];status.textContent='Не удалось загрузить проекты: '+e.message;status.hidden=false}
+    modal.hidden=false;document.getElementById('chat-project-name')?.focus();
   }
 
+  function bindProjectModal() {
+    const modal=document.getElementById('chat-project-modal');if(!modal||modal.dataset.bound==='true')return;modal.dataset.bound='true';
+    modal.querySelectorAll('[data-chat-project-close]').forEach(b=>b.onclick=()=>{modal.hidden=true});
+    document.getElementById('chat-project-submit').onclick=async()=>{
+      const select=document.getElementById('chat-project-select'),nameInput=document.getElementById('chat-project-name'),pathInput=document.getElementById('chat-project-path'),descInput=document.getElementById('chat-project-description'),status=document.getElementById('chat-project-status'),submit=document.getElementById('chat-project-submit'),name=nameInput.value.trim();
+      status.hidden=true;status.textContent='';submit.disabled=true;
+      try{let project;if(name){project=await chatApi('/projects',{method:'POST',body:JSON.stringify({name:name.slice(0,120),path:pathInput.value.trim(),description:descInput.value.trim()})});state.systemProjects=[project,...(state.systemProjects||[]).filter(p=>p.id!==project.id)]}else if(select.value){project=(state.systemProjects||[]).find(p=>p.id===select.value);if(!project)throw new Error('Выбранный проект больше не найден. Откройте список заново.')}else throw new Error('Выберите проект или введите название');
+      if(!state.projects.some(p=>p.id===project.id))state.projects.unshift({id:project.id,name:project.name||'Без названия',createdAt:project.created_at||new Date().toISOString(),expanded:true});
+      state.activeProjectId=project.id;saveWorkspace();renderChatWorkspace();modal.hidden=true;nameInput.value='';pathInput.value='';descInput.value='';select.value='';createConversation(project.id)
+      }catch(e){status.textContent=e.message||'Не удалось добавить проект.';status.hidden=false}finally{submit.disabled=false}
+    };
+  }
   function createConversation(projectId) {
     if (state.sending) return;
     const conversation = {
