@@ -586,13 +586,13 @@
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
-    await applySidebarWidthFromApi();
-    const chatSidebarWidthMediaQuery = window.matchMedia('(max-width:720px)');
-    chatSidebarWidthMediaQuery.addEventListener('change', () => { void applySidebarWidthFromApi(); });
     buildUI();
     bindShellEvents();
     bindEvents();
     renderChatWorkspace();
+    void applySidebarWidthFromApi();
+    const chatSidebarWidthMediaQuery = window.matchMedia('(max-width:720px)');
+    chatSidebarWidthMediaQuery.addEventListener('change', () => { void applySidebarWidthFromApi(); });
     const existing = state.conversations.find((item) => item.id === state.activeConversationId);
     if (existing) {
       state.messages = Array.isArray(existing.messages) ? existing.messages.slice() : [];
