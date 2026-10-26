@@ -196,8 +196,8 @@ SYSTEM_INSTRUCTION_PROMPTS = {
 };
 def system_instruction_agent_plan():
     return [
-        {'from':'MANAGER','trigger':'task_received','condition':'Задача получена','action':'Выполнить работу и вернуть результат','to':'MANAGER','fallback':''},
-        {'from':'MANAGER','trigger':'need_clarification','condition':'Не хватает данных','action':'Запросить уточнение у MANAGER','to':'MANAGER','fallback':''}
+        {'from':'MANAGER','trigger':'task_received','condition':'Задача получена','action_instruction':'Выполнить работу и вернуть результат','target_role':'MANAGER','fallback_role':''},
+        {'from':'MANAGER','trigger':'need_clarification','condition':'Не хватает данных','action_instruction':'Запросить уточнение у MANAGER','target_role':'MANAGER','fallback_role':''}
     ]
 MANAGER_DEFAULT_INTERACTION_PLAN = [
     {'trigger':'new_task','condition':'Есть ARCHITECT','action_instruction':'Декомпозиция, отправка на архитектурное проектирование','target_role':'ARCHITECT','fallback_role':'ANALYST'},
