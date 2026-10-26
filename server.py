@@ -1264,8 +1264,8 @@ def resolve_agent_system_prompt(agent: dict | None) -> str:
 def run_agent_task(model, task, agent=None, project=None):
     from agent_tools import effective_tools, execute_tool
     permissions=permission_settings()
-    role=(agent or {}).get('role','ANALYST')
-    system_prompt=resolve_agent_system_prompt(agent)
+    role=str((agent or {}).get('role','ANALYST')).upper()
+    system_prompt=str((agent or {}).get('system_prompt') or '').strip() or resolve_agent_system_prompt(agent)
     if agent:
         system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
         memory=str(agent.get('memory','')).strip()
@@ -1283,15 +1283,15 @@ def run_agent_task(model, task, agent=None, project=None):
         ]
         system_prompt += '\n\n' + '\n'.join(memory_context)
     system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код, если инструмент run_command не предоставлен. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
-    if permissions.get('local_files') and permissions.get('roots'):
+    if role != 'MANAGER' and permissions.get('local_files') and permissions.get('roots'):
         system_prompt += '\n\nРазрешённые корневые папки для файловых инструментов:\n'+'\n'.join(str(root) for root in permissions['roots'][:50])+'\nИспользуй только эти пути. Доступ за пределами этих папок будет отклонён.'
     if (agent or {}).get('permissions',{}).get('github_access') and os.environ.get('GITHUB_TOKEN'):
         system_prompt += '\n\nДоступен только чтение настроенного репозитория GitHub: '+REPO+'.'
     prompt='Выполни задачу. Разделяй факты и предположения; сообщи о том, что не удалось проверить.\n\nНазвание задачи: '+str(task.get('title',''))+'\n\nИнструкция:\n'+str(task.get('description',''))
-    if project:
-        prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nПуть (справочная информация; не открывай автоматически): '+str(project.get('path',''))
+    if project and role != 'MANAGER':
+        prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочая папка: '+(str(project.get('path','')).strip() or 'не указана')+'\nВсе файловые операции выполняй только в этой папке и через разрешённые инструменты.'
     available=effective_tools(agent or {},permissions) if agent else []
-    if project:
+    if project and role != 'MANAGER':
         project_dir=str(project.get('path','')).strip() or 'не указана'
         github_info='Доступ к GitHub разрешён.' if (agent or {}).get('permissions',{}).get('github_access') else 'Доступ к GitHub не разрешён.'
         system_prompt += '\n\n=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nРабочая папка проекта: '+project_dir+'\nОписание: '+str(project.get('description',''))+'\n'+github_info+'\nВАЖНО: если работаешь с файлами проекта, используй только указанную рабочую папку и разрешённые файловые инструменты. Не обращайся к другим папкам и не утверждай, что файл прочитан или изменён без результата инструмента.'
@@ -1452,113 +1452,213 @@ def build_orchestrator_context(task, history, active_roles, manager_plan):
 
 
 def run_agent_team(model, task, agent=None, project=None):
-    """Оркестрация через interaction_plan MANAGER. Fallback — старая логика."""
+    """Строгая матрица: MANAGER → DISPATCHER → workers → DISPATCHER → MANAGER."""
     agents = domain_items('agents')
+    task = task if isinstance(task, dict) else {}
+    manager_plan = load_manager_plan()
+
     active_roles = task.get('active_roles')
     if not isinstance(active_roles, list) or not active_roles:
         active_roles = list(AGENT_ROLES)
     active_roles = [str(role).upper() for role in active_roles if str(role).upper() in AGENT_ROLES]
-    # Disabled built-in agents must not be selected as workers; keep the manager as the orchestration authority.
-    for role in list(active_roles):
-        if role == 'MANAGER': continue
-        role_agents = [a for a in agents if isinstance(a, dict) and str(a.get('role', '')).upper() == role]
-        enabled = any(not a.get('system') or a.get('system_enabled', True) for a in role_agents)
-        if role_agents and not enabled:
-            active_roles.remove(role)
-    if 'MANAGER' not in active_roles:
-        active_roles.insert(0, 'MANAGER')
 
-    manager_plan = load_manager_plan()
-    manager_system = read_system_prompt_template('MANAGER') + '\n\n' + ORCHESTRATOR_JSON_INSTRUCTION
+    # MANAGER и DISPATCHER — обязательные координаторы, не исполнители подзадач.
+    worker_roles = []
+    for role in active_roles:
+        if role in {'MANAGER', 'DISPATCHER'} or role in worker_roles:
+            continue
+        role_agents = [a for a in agents if isinstance(a, dict) and str(a.get('role', '')).upper() == role]
+        if role_agents and not any(not a.get('system') or a.get('system_enabled', True) for a in role_agents):
+            continue
+        worker_roles.append(role)
+    if not worker_roles:
+        worker_roles = [r for r in ('CODER', 'ANALYST', 'TESTER') if r in AGENT_ROLES]
+
+    task_title = str(task.get('title', '')).strip() or 'Задача без названия'
+    task_description = str(task.get('description', '')).strip()
+    project_id = str(task.get('project_id', '') or ((project or {}).get('id', '') if isinstance(project, dict) else '')).strip()
+    manager = find_agent_by_role('MANAGER', agents)
+    dispatcher = find_agent_by_role('DISPATCHER', agents)
+    manager = {**manager, 'role': 'MANAGER', 'permissions': {}, 'system_prompt':
+        'Ты — Генерал, руководитель процесса. Принимай решения и утверждай план. Ты НЕ читаешь файлы, НЕ исследуешь артефакты и НЕ выполняешь работу специалистов. Все поручения передавай только Диспетчеру. Ты получаешь информацию только от Диспетчера. Возвращай только JSON по указанной схеме.'}
+    dispatcher = {**dispatcher, 'role': 'DISPATCHER', 'system_prompt':
+        'Ты — Премьер, Диспетчер команды. Ты единственный маршрутизатор. Получай план Менеджера, распределяй задачи между активными ролями, собирай их результаты и передавай Менеджеру только сводный отчёт. Не выдавай чужую работу за свою. Возвращай только JSON по указанной схеме.'}
+
+    manager_model = str(manager.get('model') or model)
+    dispatcher_model = str(dispatcher.get('model') or model)
     history = []
     total_tool_calls = 0
-    max_steps = 10
-    # All project work is first routed through the dispatcher, whose report becomes manager context.
-    has_project_context = bool(str(task.get('project_id', '')).strip() or (isinstance(project, dict) and str(project.get('id', '')).strip()))
-    if 'DISPATCHER' in active_roles and has_project_context:
-        dispatcher = find_agent_by_role('DISPATCHER', agents)
-        if dispatcher.get('id') and (not dispatcher.get('system') or dispatcher.get('system_enabled', True)):
-            dispatch_task = {
-                'title': str(task.get('title', '')) + ' — маршрутизация диспетчером',
-                'description': 'Передай менеджеру полный структурированный контекст задачи. Проверь все разделы памяти проекта: сводку, ограничения, открытые вопросы, следующие шаги и накопленные факты. Определи какие специалисты нужны, зависимости, существующие решения и что нельзя потерять. Не выполняй работу вместо специалистов; верни краткий маршрут и риски.',
-                'project_id': task.get('project_id', '') or ((project or {}).get('id', '') if isinstance(project, dict) else ''),
-            }
-            dispatched = run_agent_task(str(dispatcher.get('model') or model), dispatch_task, dispatcher, project)
-            history.append({'role':'DISPATCHER','name':dispatcher.get('name') or 'Диспетчер','model':dispatched.get('model',model),'response':dispatched.get('response',''),'tool_calls':dispatched.get('tool_calls',0),'warning':dispatched.get('warning','')})
-            total_tool_calls += int(dispatched.get('tool_calls',0) or 0)
+    max_cycles = 4
 
-    for _step in range(max_steps):
-        context = build_orchestrator_context(task, history, active_roles, manager_plan)
-        try:
-            response = ollama_request('/api/chat', {
-                'model': model,
-                'messages': [
-                    {'role': 'system', 'content': manager_system},
-                    {'role': 'user', 'content': context},
-                ],
-                'stream': False,
-                'options': {'num_predict': 2048},
-            }, timeout=240)
-        except Exception as exc:
-            return _run_agent_team_legacy(model, task, agent, project,
-                                          reason='MANAGER недоступен: ' + str(exc)[:160])
-
-        message = response.get('message', {}) if isinstance(response, dict) else {}
-        content = message.get('content', '') if isinstance(message, dict) else ''
-        decision = parse_orchestrator_decision(content)
-        if not isinstance(decision, dict):
-            return _run_agent_team_legacy(model, task, agent, project,
-                                          reason='MANAGER вернул не-JSON: ' + str(content)[:200])
-
-        if decision.get('done') is True:
-            final = str(decision.get('final_answer', '')).strip()
-            if not final:
-                final = 'MANAGER завершил без итогового ответа.'
-            return {
-                'response': final,
-                'team_result': history,
-                'tool_calls': total_tool_calls,
-                'model': model,
-            }
-
-        requested_role = str(decision.get('next_role', '')).upper()
-        next_role = resolve_fallback_role(requested_role, manager_plan, active_roles)
-        # DISPATCHER routes project work but is never a worker for an ordinary task.
-        if next_role == 'DISPATCHER':
-            next_role = 'MANAGER' if 'MANAGER' in active_roles else ('ANALYST' if 'ANALYST' in active_roles else '')
-        if not next_role:
-            return {
-                'response': 'MANAGER не смог выбрать активного исполнителя. Ответ: ' + str(content)[:400],
-                'team_result': history,
-                'tool_calls': total_tool_calls,
-                'model': model,
-                'warning': 'no_active_role',
-            }
-
-        worker = find_agent_by_role(next_role, agents)
-        worker_task = {
-            'title': str(task.get('title', '')) + ' — ' + next_role,
-            'description': str(decision.get('task', ''))[:5000],
+    def add_stage(role, agent_item, result, stage):
+        nonlocal total_tool_calls
+        calls = int(result.get('tool_calls', 0) or 0)
+        total_tool_calls += calls
+        item = {
+            'role': role,
+            'name': str(agent_item.get('name') or role),
+            'stage': stage,
+            'model': result.get('model', model),
+            'response': str(result.get('response', '')),
+            'tool_calls': calls,
+            'warning': str(result.get('warning', '') or ''),
         }
-        worker_result = run_agent_task(model, worker_task, worker, project)
-        history.append({
-            'role': next_role,
-            'name': worker.get('name') or next_role,
-            'model': worker_result.get('model', model),
-            'response': worker_result.get('response', ''),
-            'tool_calls': worker_result.get('tool_calls', 0),
-            'warning': worker_result.get('warning', ''),
-        })
-        total_tool_calls += int(worker_result.get('tool_calls', 0) or 0)
+        history.append(item)
+        return item
 
+    def call_manager(instruction, prior_report=''):
+        manager_task = {
+            'title': task_title + ' — решение Менеджера',
+            'description': (
+                'Исходная задача пользователя:\n' + task_description
+                + '\n\n' + instruction
+                + ('\n\nСводка, полученная ИСКЛЮЧИТЕЛЬНО от Диспетчера:\n' + prior_report if prior_report else '')
+                + '\n\nВерни строго один JSON-объект без markdown. Первый ответ: '
+                  '{"action":"delegate","target":"DISPATCHER","instruction":"утверждённый общий план и ожидаемые результаты"}. '
+                  'После отчёта Диспетчера: {"done":true,"final_answer":"итог пользователю"} '
+                  'или {"done":false,"action":"delegate","target":"DISPATCHER","instruction":"конкретное продолжение или исправление"}. '
+                  'Не выбирай исполнителей напрямую. Не проси и не анализируй содержимое файлов. '
+                  'Не утверждай, что файлы прочитаны, код изменён или тесты выполнены.'
+            ),
+            'project_id': project_id,
+        }
+        return run_agent_task(manager_model, manager_task, manager, None)
+
+    def call_dispatcher(title_suffix, instruction):
+        dispatcher_task = {
+            'title': task_title + ' — Диспетчер: ' + title_suffix,
+            'description': instruction,
+            'project_id': project_id,
+        }
+        return run_agent_task(dispatcher_model, dispatcher_task, dispatcher, project)
+
+    # Stage 1: General/Manager creates the plan and delegates only to Dispatcher.
+    manager_result = call_manager(
+        'Ты — Генерал. Прими решение, утверди общий план и передай задачу Диспетчеру. '
+        'Не читай файлы и не выполняй специализированную работу.'
+    )
+    manager_item = add_stage('MANAGER', manager, manager_result, 'manager_decision')
+    manager_decision = parse_orchestrator_decision(manager_item['response'])
+    if not isinstance(manager_decision, dict) or manager_decision.get('action') != 'delegate' or str(manager_decision.get('target', '')).upper() != 'DISPATCHER':
+        return {
+            'response': 'Менеджер не вернул корректное решение для передачи Диспетчеру. Ответ: ' + manager_item['response'][:500],
+            'team_result': history, 'tool_calls': total_tool_calls, 'model': model,
+            'warning': 'invalid_manager_delegation_json',
+        }
+
+    current_instruction = str(manager_decision.get('instruction', '')).strip()
+    if not current_instruction:
+        current_instruction = 'Выполни исходную задачу по утверждённому плану и назначь необходимые активные роли.'
+
+    for cycle in range(1, max_cycles + 1):
+        # Stage 2: Dispatcher breaks the approved plan into tasks for active specialist roles.
+        dispatch_result = call_dispatcher(
+            'распределение, цикл ' + str(cycle),
+            'Ты — Премьер. Получи утверждённый план Генерала и разбей его на конкретные подзадачи.\\n'
+            + 'Исходная задача: ' + task_title + '\\n' + task_description + '\\n'
+            + 'Инструкция Генерала: ' + current_instruction + '\\n'
+            + 'Активные роли-исполнители: ' + ', '.join(worker_roles) + '\\n'
+            + 'Назначай только роли из этого списка; MANAGER и DISPATCHER не назначаются исполнителями. '
+              'Для каждой задачи укажи измеримый результат, релевантный контекст и критерии приёмки. '
+              'Учитывай зависимости и не создавай дубликаты.\\n'
+            + 'Верни только JSON: {"tasks":[{"role":"CODER","task":"конкретная инструкция"}]}. '
+              'Если исполнительские подзадачи не нужны, верни {"tasks":[]} .'
+        )
+        dispatch_item = add_stage('DISPATCHER', dispatcher, dispatch_result, 'dispatch')
+        dispatch_decision = parse_orchestrator_decision(dispatch_item['response'])
+        task_specs = dispatch_decision.get('tasks') if isinstance(dispatch_decision, dict) else None
+        if not isinstance(task_specs, list):
+            task_specs = []
+            dispatch_item['warning'] = (dispatch_item['warning'] + ' | ' if dispatch_item['warning'] else '') + 'invalid_dispatcher_tasks_json'
+
+        worker_reports = []
+        seen = set()
+        for spec in task_specs[:8]:
+            if not isinstance(spec, dict):
+                continue
+            role = str(spec.get('role', '')).upper().strip()
+            if role not in worker_roles or role in seen:
+                continue
+            instruction = str(spec.get('task', '')).strip()
+            if not instruction:
+                continue
+            seen.add(role)
+            worker = find_agent_by_role(role, agents)
+            worker_task = {
+                'title': task_title + ' — ' + role,
+                'description': (
+                    'Ты получил задание от Диспетчера. Выполни только назначенную работу. '
+                    'После выполнения верни проверяемый отчёт: что сделано, какие файлы/артефакты затронуты, '
+                    'какие проверки действительно выполнены, результаты и оставшиеся ограничения. '
+                    'Не заявляй о действиях без подтверждения инструмента.\n\nЗадание Диспетчера:\n' + instruction
+                ),
+                'project_id': project_id,
+            }
+            worker_model = str(worker.get('model') or model)
+            worker_result = run_agent_task(worker_model, worker_task, worker, project)
+            worker_item = add_stage(role, worker, worker_result, 'execution')
+            worker_reports.append({
+                'role': role,
+                'name': worker_item['name'],
+                'response': worker_item['response'][:5000],
+                'warning': worker_item['warning'],
+            })
+
+        # Stage 4: all specialist reports are returned to Dispatcher; Dispatcher summarizes for Manager.
+        reports_text = json.dumps(worker_reports, ensure_ascii=False, indent=2)
+        report_result = call_dispatcher(
+            'сбор результатов, цикл ' + str(cycle),
+            'Агенты отчитались. Собери результаты без искажений, сопоставь их с исходной задачей и планом Генерала. '
+            'Укажи выполненное, неподтверждённое, ошибки, блокеры и что следует делать дальше. '
+            'Ты передаёшь Менеджеру только сводку, не направляй ему сырые артефакты и не выдумывай проверки.\n\n'
+            'Исходная задача: ' + task_title + '\n' + task_description + '\n'
+            'План Генерала: ' + current_instruction + '\n'
+            'Результаты исполнителей (источник данных):\n' + reports_text + '\n\n'
+            'Верни только JSON: {"action":"report","target":"MANAGER","summary":"сводный отчёт для решения Менеджера"}.'
+        )
+        report_item = add_stage('DISPATCHER', dispatcher, report_result, 'dispatcher_report')
+        report_decision = parse_orchestrator_decision(report_item['response'])
+        if not isinstance(report_decision, dict) or str(report_decision.get('action', '')).lower() != 'report' or str(report_decision.get('target', '')).upper() != 'MANAGER':
+            dispatcher_summary = 'Диспетчер не вернул корректный JSON-отчёт. Его ответ: ' + report_item['response'][:3000]
+            report_item['warning'] = (report_item['warning'] + ' | ' if report_item['warning'] else '') + 'invalid_dispatcher_report_json'
+        else:
+            dispatcher_summary = str(report_decision.get('summary', '')).strip()
+            if not dispatcher_summary:
+                dispatcher_summary = 'Диспетчер вернул пустую сводку.'
+
+        # Stage 5: Manager sees only Dispatcher summary and decides final/next cycle.
+        final_result = call_manager(
+            'Ты получил сводку от Премьера. Прими финальное решение: задача выполнена или нужен ещё цикл. '
+            'Если работа завершена, верни {"done":true,"final_answer":"итог пользователю"}. '
+            'Если нужны дополнительные действия, верни {"done":false,"action":"delegate","target":"DISPATCHER","instruction":"что исправить или продолжить"}. '
+            'Не назначай исполнителей напрямую; не проси файлы или сырые артефакты.',
+            prior_report=dispatcher_summary,
+        )
+        final_item = add_stage('MANAGER', manager, final_result, 'manager_final_decision')
+        final_decision = parse_orchestrator_decision(final_item['response'])
+        if isinstance(final_decision, dict) and final_decision.get('done') is True:
+            final_answer = str(final_decision.get('final_answer', '')).strip() or dispatcher_summary
+            return {
+                'response': final_answer,
+                'team_result': history,
+                'tool_calls': total_tool_calls,
+                'model': model,
+            }
+        if not isinstance(final_decision, dict) or final_decision.get('action') != 'delegate' or str(final_decision.get('target', '')).upper() != 'DISPATCHER':
+            final_item['warning'] = (final_item['warning'] + ' | ' if final_item['warning'] else '') + 'invalid_manager_followup_json'
+            return {
+                'response': 'Менеджер не вернул корректное финальное решение. Сводка Диспетчера:\n' + dispatcher_summary,
+                'team_result': history, 'tool_calls': total_tool_calls, 'model': model,
+                'warning': 'invalid_manager_followup_json',
+            }
+        current_instruction = str(final_decision.get('instruction', '')).strip()
+        if not current_instruction:
+            current_instruction = 'Продолжи задачу, устрани выявленные блокеры и передай новую сводку.'
     return {
-        'response': 'Достигнут лимит шагов оркестрации (' + str(max_steps) + '). Последний шаг: ' + (history[-1]['name'] if history else '—'),
-        'team_result': history,
-        'tool_calls': total_tool_calls,
-        'model': model,
-        'warning': 'max_steps_reached',
+        'response': 'Достигнут лимит циклов команды (' + str(max_cycles) + '). Последняя сводка Диспетчера должна быть проверена вручную.',
+        'team_result': history, 'tool_calls': total_tool_calls, 'model': model,
+        'warning': 'max_cycles_reached',
     }
-
 
 def _run_agent_team_legacy(model, task, agent=None, project=None, reason=''):
     """Старое поведение: manager → specialist → reviewer."""
