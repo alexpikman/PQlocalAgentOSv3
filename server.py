@@ -10,6 +10,7 @@ FRONTEND = ROOT / 'frontend'
 ICONS_DIR = FRONTEND / 'icons'
 DATA = ROOT / 'data'
 MODULES = ROOT / 'modules'
+TEMPLATES_DIR = ROOT / 'agents' / 'templates'
 PAGES = DATA / 'pages'
 PORT = int(os.environ.get('PQ_PORT', '8765'))
 HOST = '127.0.0.1'
@@ -194,6 +195,40 @@ SYSTEM_INSTRUCTION_PROMPTS = {
 
 Перед запуском оцени влияние на данные и активные процессы. Для потенциально разрушительных операций требуй резервного копирования и явного разрешения; предусмотри безопасный откат. Проверяй состояние сервиса по реальному health-check и журналам, а не только по коду возврата команды. В отчёте указывай выполненные команды, фактические результаты, конфигурационные изменения, риски и инструкции восстановления. Не заявляй об успешном развёртывании, если оно не выполнялось.""",
 };
+
+def read_system_prompt_template(role: str) -> str:
+    """Читает agents/templates/{ROLE}.md; встроенный словарь остаётся fallback."""
+    role = str(role).strip().upper()
+    if role not in AGENT_ROLES:
+        raise ValueError('Неизвестная роль: ' + role)
+    path = TEMPLATES_DIR / (role + '.md')
+    try:
+        text = path.read_text(encoding='utf-8').strip()
+        if text:
+            return text
+    except (OSError, UnicodeError):
+        pass
+    return SYSTEM_INSTRUCTION_PROMPTS.get(role, '')
+
+
+def read_all_system_prompt_templates() -> dict:
+    """Возвращает актуальные тексты шаблонов для всех восьми ролей."""
+    result = {}
+    for role in AGENT_ROLES:
+        try:
+            result[role] = read_system_prompt_template(role)
+        except Exception:
+            result[role] = SYSTEM_INSTRUCTION_PROMPTS.get(role, '')
+    return result
+
+
+def initialize_system_prompt_templates():
+    """Создаёт каталог шаблонов и журналирует отсутствующие файлы, не прерывая запуск."""
+    TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    for role in AGENT_ROLES:
+        if not (TEMPLATES_DIR / (role + '.md')).is_file():
+            log_event('system_instruction.template_missing', role)
+
 def system_instruction_agent_plan():
     return [
         {'from':'MANAGER','trigger':'task_received','condition':'Задача получена','action_instruction':'Выполнить работу и вернуть результат','target_role':'MANAGER','fallback_role':''},
@@ -260,7 +295,7 @@ def ensure_system_instructions():
                         item['interaction_plan'] = [dict(rule) for rule in fixed_plan]
                         item_changed = True
                 if not str(item.get('system_prompt', '')).strip():
-                    item['system_prompt'] = SYSTEM_INSTRUCTION_PROMPTS[role]
+                    item['system_prompt'] = read_system_prompt_template(role)
                     item_changed = True
                 if role == 'DEVOPS':
                     expected_name = SYSTEM_INSTRUCTION_ROLE_NAMES['DEVOPS'] + ' (по умолчанию)'
@@ -282,7 +317,7 @@ def ensure_system_instructions():
         instructions.append({
             'id': 'instr-' + role.lower(),
             'name': SYSTEM_INSTRUCTION_ROLE_NAMES[role] + ' (по умолчанию)',
-            'role': role, 'system_prompt': SYSTEM_INSTRUCTION_PROMPTS[role],
+            'role': role, 'system_prompt': read_system_prompt_template(role),
             'activity': SYSTEM_INSTRUCTION_ACTIVITY[role], 'is_default': True,
             'interaction_plan': plan, 'created_at': now, 'updated_at': now
         })
@@ -291,7 +326,7 @@ def ensure_system_instructions():
 def save_system_instructions(items):
     write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': items})
 def system_instruction_defaults():
-    return {role: {'system_prompt': SYSTEM_INSTRUCTION_PROMPTS[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
+    return {role: {'system_prompt': read_system_prompt_template(role), 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
 def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
         raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
@@ -2084,7 +2119,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_GET_HEAD(self): pass
 if __name__=='__main__':
-    settings(); pages(); ensure_system_instructions(); log_event('server.start',f'http://{HOST}:{PORT}')
+    settings(); pages(); initialize_system_prompt_templates(); ensure_system_instructions(); log_event('server.start',f'http://{HOST}:{PORT}')
     _start_gpu_background()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
