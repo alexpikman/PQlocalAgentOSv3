@@ -651,6 +651,33 @@ def save_project_logo(project_id, value, current_logo=''):
 def ollama_request(path, payload=None, timeout=8):
     req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
     with urllib.request.urlopen(req,timeout=timeout) as response: return json.loads(response.read().decode('utf-8'))
+
+def resolve_ollama_model(model, timeout=4):
+    """Resolve a configured Ollama model name against installed tags."""
+    requested = str(model or '').strip()[:160]
+    try:
+        raw = ollama_request('/api/tags', timeout=timeout)
+        available = [
+            str(item.get('name', '')).strip()
+            for item in raw.get('models', [])
+            if isinstance(item, dict) and str(item.get('name', '')).strip()
+        ]
+    except Exception as exc:
+        raise ValueError('Не удалось получить список моделей Ollama: ' + str(exc)[:180]) from exc
+
+    if requested in available:
+        return requested
+
+    # Agent/module configs can store provider-qualified IDs such as qwen/qwen3-8b.
+    candidate = requested.rsplit('/', 1)[-1].strip() if '/' in requested else requested
+    if candidate in available:
+        return candidate
+
+    model_list = ', '.join(available) if available else '(нет установленных моделей)'
+    raise ValueError(
+        'Модель «' + (requested or '(не указана)') + '» не найдена в Ollama. '
+        'Доступные модели: ' + model_list
+    )
 def run_diagnostics():
     checks=[]
     def check(name,status,message,detail=''):
@@ -888,6 +915,10 @@ def execute_module_graph(data):
             prompt=to_text(incoming_value)
             system_prompt=str(runtime.get('system_prompt','')).strip()[:4000]
             if system_prompt: prompt='Инструкции модуля:\n'+system_prompt+'\n\nВходные данные:\n'+prompt
+            try:
+                model = resolve_ollama_model(model)
+            except ValueError as exc:
+                raise ValueError('Модуль «' + str(module.get('name',module_id)) + '»: ' + str(exc)) from exc
             result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':min(max(int(runtime.get('max_tokens',1024)),64),4096)}},timeout=300)
             output=result.get('response','')
         else: output=incoming_value
@@ -2379,6 +2410,10 @@ class Handler(SimpleHTTPRequestHandler):
                     model = ''
             if not model:
                 return self.send_json(400, {'error': 'У выбранного агента не назначена модель, а локальные модели недоступны. Откройте настройки агента и назначьте модель.'})
+            try:
+                model = resolve_ollama_model(model)
+            except ValueError as exc:
+                return self.send_json(400, {'error': str(exc)})
             if not isinstance(messages, list) or not messages:
                 return self.send_json(400, {'error': 'Передайте историю сообщений'})
             validated_messages = []
@@ -2476,6 +2511,11 @@ class Handler(SimpleHTTPRequestHandler):
             provider_id=str(data.get('provider_id','')).strip()[:120]
             if not model: return self.send_json(400, {'error':'Выберите модель'})
             provider=next((p for p in provider_items() if str(p.get('id',''))==provider_id),None) if provider_id else None
+            if not provider or provider.get('format') == 'ollama':
+                try:
+                    model = resolve_ollama_model(model)
+                except ValueError as exc:
+                    return self.send_json(400, {'error': str(exc)})
             try:
                 if provider and provider.get('kind')=='cloud':
                     base=str(provider.get('base_url','')).rstrip('/'); fmt=str(provider.get('format','openai')).lower(); key=str(provider.get('api_key','')).strip()
