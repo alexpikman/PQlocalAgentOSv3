@@ -2189,7 +2189,7 @@ class Handler(SimpleHTTPRequestHandler):
                     'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии и воспроизводимые критерии приёмки.',
                     'DEVOPS':'Ты инженер инфраструктуры. Учитывай конфигурацию, логи, мониторинг и откат.'
                 }.get(str(agent.get('role','')).upper(), '')
-                instruction = system_prompt or (resolve_agent_system_prompt(agent) if agent else role_prompt)
+                instruction = (resolve_agent_system_prompt(agent) or system_prompt or role_prompt) if agent else role_prompt
                 if instruction and not any(m.get('role') == 'system' for m in validated_messages):
                     validated_messages.insert(0, {'role':'system','content':instruction})
             request_body = json.dumps({
@@ -2265,7 +2265,6 @@ class Handler(SimpleHTTPRequestHandler):
                 role=str(data.get('role','ANALYST')).upper().strip()
                 role_item = next((x for x in ensure_agent_roles() if str(x.get('code','')).upper() == role), None)
                 if role not in AGENT_ROLES and not role_item: return self.send_json(400, {'error':'Неизвестная роль агента'})
-                default_prompt = (role_item or {}).get('system_prompt') or AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or '').strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects':
                 try:
