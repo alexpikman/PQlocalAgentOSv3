@@ -268,18 +268,26 @@
       elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Создайте проект, чтобы группировать диалоги.'));
     }
     state.projects.forEach((project) => {
-      const row = createElement('div', 'sidebar-chat-item sidebar-chat-project' + (state.activeProjectId === project.id ? ' active' : ''));
-      const label = createElement('button', 'sidebar-chat-item-label', '');label.type='button';label.insertAdjacentHTML('beforeend','<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');label.append(createElement('span','sidebar-chat-item-title',project.name||'Без названия'));label.classList.toggle('is-expanded',!!project.expanded);
+      const row = createElement('div', 'sidebar-chat-project-row' + (state.activeProjectId === project.id ? ' active' : ''));
+      const label = createElement('button', 'sidebar-chat-project-label', '');
+      label.type = 'button';
+      label.title = project.name || 'Без названия';
+      label.dataset.projectToggle = project.id;
+      label.insertAdjacentHTML('beforeend','<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
+      label.append(createElement('span', 'sidebar-chat-item-title', project.name || 'Без названия'));
+      label.classList.toggle('is-expanded', !!project.expanded);
       label.addEventListener('click', () => {
         project.expanded = !project.expanded;
         state.activeProjectId = project.id;
         saveWorkspace();
         renderChatWorkspace();
       });
-      const add = createElement('button', 'sidebar-chat-item-action chat-project-add', '');add.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+      const add = createElement('button', 'icon-btn sidebar-project-add', '');
       add.type = 'button';
+      add.dataset.projectAddChat = project.id;
       add.title = 'Новый чат в проекте';
       add.setAttribute('aria-label', 'Новый чат в проекте ' + project.name);
+      add.innerHTML = '<img src="/icons/start.svg" alt="">';
       add.addEventListener('click', () => createConversation(project.id));
       row.append(label, add);
       elements.projectsList.append(row);
