@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys
 from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parent
@@ -639,9 +639,56 @@ def run_diagnostics():
         check('Сервис LM Studio','warning','LM Studio не запущена или недоступна; это необязательный сервис.',str(exc)[:180])
     return {'checked_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds'),'checks':checks,'summary':{'total':len(checks),'ok':sum(x['status']=='ok' for x in checks),'warning':sum(x['status']=='warning' for x in checks),'error':sum(x['status']=='error' for x in checks)}}
 
+GITHUB_CONNECTIONS_FILE = DATA / 'github-connections.json'
+
+def _dpapi_crypt(value, decrypt=False):
+    """Protect GitHub tokens with Windows DPAPI for the current user."""
+    if sys.platform != 'win32':
+        raise RuntimeError('Безопасное хранение токенов поддерживается через Windows DPAPI.')
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [('cbData', ctypes.wintypes.DWORD), ('pbData', ctypes.POINTER(ctypes.c_ubyte))]
+    raw = value if isinstance(value, bytes) else str(value).encode('utf-8')
+    source_buffer = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+    source = DATA_BLOB(len(raw), ctypes.cast(source_buffer, ctypes.POINTER(ctypes.c_ubyte)))
+    output = DATA_BLOB()
+    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    if decrypt:
+        ok = crypt32.CryptUnprotectData(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(output))
+    else:
+        ok = crypt32.CryptProtectData(ctypes.byref(source), 'PQlocalAgentOSv3 GitHub token', None, None, None, 1, ctypes.byref(output))
+    if not ok: raise OSError('Windows DPAPI не смог обработать секрет.')
+    try:
+        result = ctypes.string_at(output.pbData, output.cbData)
+        return result.decode('utf-8') if decrypt else base64.b64encode(result).decode('ascii')
+    finally: kernel32.LocalFree(output.pbData)
+
+def github_connections():
+    data = read_json(GITHUB_CONNECTIONS_FILE, {'active_id':'', 'connections':[]})
+    if not isinstance(data, dict): data = {'active_id':'', 'connections':[]}
+    if not isinstance(data.get('connections'), list): data['connections'] = []
+    return data
+
+def active_github_connection():
+    data = github_connections()
+    return next((x for x in data['connections'] if x.get('id') == data.get('active_id')), None) or (data['connections'][0] if data['connections'] else None)
+
+def active_github_repository():
+    connection = active_github_connection()
+    return str(connection.get('repository') or REPO).strip() if connection else REPO
+
+def github_token_available():
+    return bool(active_github_connection() or os.environ.get('GITHUB_TOKEN'))
+
+def github_access_token(connection=None):
+    connection = connection or active_github_connection()
+    if connection and connection.get('token_encrypted'):
+        return _dpapi_crypt(base64.b64decode(connection['token_encrypted']), decrypt=True)
+    token = os.environ.get('GITHUB_TOKEN', '').strip()
+    if token: return token
+    raise RuntimeError('Добавьте GitHub-подключение и укажите API-токен.')
+
 def github_request(path, method='GET', payload=None):
-    token=os.environ.get('GITHUB_TOKEN')
-    if not token: raise RuntimeError('Задайте GITHUB_TOKEN в окружении и перезапустите сервер.')
+    token=github_access_token()
     raw=json.dumps(payload).encode() if payload is not None else None
     req=urllib.request.Request('https://api.github.com'+path,data=raw,method=method,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'})
     try:
@@ -1942,6 +1989,14 @@ class Handler(SimpleHTTPRequestHandler):
             save_agent_roles([x for x in items if x.get('id') != role_id])
             log_event('agent_role.delete', item.get('name', role_id))
             return self.send_json(200, {'ok': True})
+        if path.startswith('/api/github/connections/'):
+            connection_id=urllib.parse.unquote(path[len('/api/github/connections/'):]).strip()
+            saved=github_connections(); found=next((x for x in saved['connections'] if x.get('id')==connection_id),None)
+            if not found: return self.send_json(404, {'error':'Подключение не найдено'})
+            saved['connections']=[x for x in saved['connections'] if x.get('id')!=connection_id]
+            if saved.get('active_id')==connection_id: saved['active_id']=saved['connections'][0].get('id','') if saved['connections'] else ''
+            write_json(GITHUB_CONNECTIONS_FILE,saved); log_event('github.connection.delete',found.get('repository',''))
+            return self.send_json(200, {'ok':True})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -2001,23 +2056,56 @@ class Handler(SimpleHTTPRequestHandler):
                 items=[{'full_name':x.get('full_name',''),'description':x.get('description') or 'Без описания','html_url':x.get('html_url',''),'stars':x.get('stargazers_count',0),'language':x.get('language') or 'Не указан','license':(x.get('license') or {}).get('spdx_id') or 'Не указана','updated_at':x.get('updated_at','')} for x in result.get('items',[])]
                 return self.send_json(200, {'items':items,'total_count':result.get('total_count',0)})
             except Exception as e: return self.send_json(400, {'error':str(e)})
-        if path=='/api/github': return self.send_json(200, {'repository':REPO,'configured':bool(os.environ.get('GITHUB_TOKEN')),'connected':False,'message':'Токен не задан' if not os.environ.get('GITHUB_TOKEN') else 'Токен задан; нажмите «Проверить подключение»'})
+        if path=='/api/github/connections':
+            saved=github_connections(); items=[]
+            for item in saved['connections']:
+                items.append({'id':item.get('id'),'name':item.get('name',''),'repository':item.get('repository',REPO),'active':item.get('id')==saved.get('active_id'),'has_token':bool(item.get('token_encrypted')),'updated_at':item.get('updated_at','')})
+            return self.send_json(200, {'connections':items,'active_id':saved.get('active_id',''),'encryption':'Windows DPAPI' if sys.platform=='win32' else 'unavailable'})
+        if path=='/api/github':
+            return self.send_json(200, {'repository':active_github_repository(),'configured':github_token_available(),'connected':False,'message':'Добавьте подключение и API-токен' if not github_token_available() else 'Токен настроен; нажмите «Проверить подключение»'})
         if path=='/api/github/check':
-            token=os.environ.get('GITHUB_TOKEN')
-            if not token: return self.send_json(200, {'ok':False,'message':'Задайте GITHUB_TOKEN в окружении перед запуском сервера.'})
-            req=urllib.request.Request('https://api.github.com/repos/'+REPO,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
+            try: token=github_access_token()
+            except Exception as e: return self.send_json(200, {'ok':False,'message':str(e)})
+            repository=active_github_repository()
+            req=urllib.request.Request('https://api.github.com/repos/'+repository,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','User-Agent':'PQlocalAgentOSv3'})
             try:
                 with urllib.request.urlopen(req,timeout=8) as res: data=json.loads(res.read())
-                log_event('github.check',REPO); return self.send_json(200, {'ok':True,'message':'Подключение успешно','repository':data.get('full_name',REPO),'private':data.get('private'),'default_branch':data.get('default_branch')})
+                log_event('github.check',repository); return self.send_json(200, {'ok':True,'message':'Подключение успешно','repository':data.get('full_name',repository),'private':data.get('private'),'default_branch':data.get('default_branch')})
             except urllib.error.HTTPError as e: return self.send_json(200, {'ok':False,'message':'GitHub вернул HTTP '+str(e.code)+'. Проверьте токен и доступ к репозиторию.'})
             except Exception as e: return self.send_json(200, {'ok':False,'message':'Не удалось подключиться к GitHub: '+str(e)[:180]})
         if path=='/api/github/files':
             try:
-                repo=github_request('/repos/'+REPO)
+                repo=github_request('/repos/'+active_github_repository())
                 tree=github_request('/repos/'+REPO+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
                 files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
-                return self.send_json(200, {'repository':REPO,'branch':repo.get('default_branch','main'),'files':files})
+                return self.send_json(200, {'repository':active_github_repository(),'branch':repo.get('default_branch','main'),'files':files})
             except Exception as e: return self.send_json(400, {'error':str(e)})
+        if path=='/api/github/connections':
+            name=str(data.get('name','')).strip()[:100]
+            repository=str(data.get('repository','')).strip()
+            token=str(data.get('token','')).strip()
+            connection_id=str(data.get('id','')).strip()
+            if not name: return self.send_json(400, {'error':'Введите название подключения'})
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository): return self.send_json(400, {'error':'Укажите репозиторий в формате owner/repository'})
+            saved=github_connections()
+            existing=next((x for x in saved['connections'] if x.get('id')==connection_id),None) if connection_id else None
+            if not existing and not token: return self.send_json(400, {'error':'Введите GitHub API-токен'})
+            if token and not token.startswith(('ghp_','github_pat_','gho_','ghu_','ghs_','ghr_')): return self.send_json(400, {'error':'Проверьте формат GitHub-токена'})
+            if token:
+                try: encrypted=base64.b64decode(_dpapi_crypt(token))
+                except Exception as e: return self.send_json(400, {'error':'Не удалось зашифровать токен: '+str(e)})
+            else: encrypted=base64.b64decode(existing.get('token_encrypted',''))
+            item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':base64.b64encode(encrypted).decode('ascii'),'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if existing: saved['connections']=[item if x.get('id')==connection_id else x for x in saved['connections']]
+            else: saved['connections'].insert(0,item)
+            saved['active_id']=item['id']; write_json(GITHUB_CONNECTIONS_FILE,saved)
+            log_event('github.connection.save',repository)
+            return self.send_json(200, {'ok':True,'id':item['id'],'message':'Подключение сохранено; токен зашифрован Windows DPAPI'})
+        if path == '/api/github/connections/active':
+            connection_id=str(data.get('id','')).strip(); saved=github_connections()
+            if not any(x.get('id')==connection_id for x in saved['connections']): return self.send_json(404, {'error':'Подключение не найдено'})
+            saved['active_id']=connection_id; write_json(GITHUB_CONNECTIONS_FILE,saved)
+            return self.send_json(200, {'ok':True})
         if path=='/api/github/file':
             file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
@@ -2585,7 +2673,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not module: return self.send_json(404, {'error':'Модуль не найден'})
             source=str(module.get('source',''))
             if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',source): return self.send_json(400, {'error':'Для этого локального модуля исходники из GitHub недоступны'})
-            request_github=github_request if os.environ.get('GITHUB_TOKEN') else github_public_request
+            request_github=github_request if github_token_available() else github_public_request
             try:
                 branch=str(module.get('default_branch') or 'main')
                 tree=request_github('/repos/'+source+'/git/trees/'+urllib.parse.quote(branch,safe='')+'?recursive=1')
@@ -2637,13 +2725,13 @@ class Handler(SimpleHTTPRequestHandler):
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
             if len(content)>800000: return self.send_json(400, {'error':'Файл слишком большой (максимум 800 КБ)'})
             try:
-                existing=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'))
+                existing=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'))
                 expected_sha=str(data.get('sha',''))
                 if expected_sha and expected_sha != existing.get('sha'): return self.send_json(409, {'error':'Файл изменился в GitHub после загрузки. Перечитайте его перед сохранением.'})
                 import base64
-                branch=github_request('/repos/'+REPO).get('default_branch','main')
-                result=github_request('/repos/'+REPO+'/contents/'+urllib.parse.quote(file_path,safe='/'),'PUT',{'message':message,'content':base64.b64encode(content.encode()).decode(),'sha':existing['sha'],'branch':branch})
-                log_event('github.file.save',file_path)
+                branch=github_request('/repos/'+active_github_repository()).get('default_branch','main')
+                result=github_request('/repos/'+active_github_repository()+'/contents/'+urllib.parse.quote(file_path,safe='/'),'PUT',{'message':message,'content':base64.b64encode(content.encode()).decode(),'sha':existing['sha'],'branch':branch})
+                log_event('github.file.save',active_github_repository()+' · '+file_path)
                 return self.send_json(200, {'ok':True,'path':file_path,'commit':result.get('commit',{}).get('html_url'),'message':'Изменения сохранены в GitHub'})
             except Exception as e: return self.send_json(400, {'error':str(e)})
         if path=='/api/github/check':
