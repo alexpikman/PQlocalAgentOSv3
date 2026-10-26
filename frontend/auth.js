@@ -5,6 +5,7 @@
   let readyResolve;
   let ready = new Promise((resolve) => { readyResolve = resolve; });
   let authenticated = false;
+  let authEnabled = true;
   let username = '';
 
   const style = document.createElement('style');
@@ -223,6 +224,7 @@
   });
 
   window.fetch = async function (input, init) {
+    if (!authEnabled) return rawFetch(input, init);
     const rawUrl = typeof input === 'string' ? input : (input && input.url) || '';
     let url;
     try { url = new URL(rawUrl, window.location.href); } catch (_) { return rawFetch(input, init); }
@@ -247,6 +249,16 @@
     try {
       const response = await rawFetch('/api/auth/status', { cache: 'no-store' });
       const data = await readJson(response);
+      if (data.auth_enabled === false) {
+        authEnabled = false;
+        authenticated = false;
+        username = '';
+        overlay.hidden = true;
+        passwordOverlay.hidden = true;
+        widget.hidden = true;
+        if (readyResolve) readyResolve();
+        return;
+      }
       if (data.authenticated) setAuthenticated(data.username);
       else showLogin('', false);
     } catch (_) {
