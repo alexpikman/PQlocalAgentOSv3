@@ -1263,3 +1263,7 @@ td{border-color:var(--line)}
 .models-layout{grid-template-columns:minmax(280px,.82fr) minmax(0,1.18fr)}
 .model-tabs{flex-wrap:wrap}
 @media(max-width:900px){.models-layout{grid-template-columns:minmax(0,1fr)}}
+
+
+/* Agent role registry page and compact model availability check */
+.agent-role-page-list{display:grid;gap:8px}.agent-role-page-row{margin:0}.agent-role-page-row .entity-row-main{min-width:0}.agent-role-assign-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.agent-role-assign-row select{min-width:0;width:100%}.agent-role-assigned-list{display:grid;gap:8px}.agent-role-assigned-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px}.agent-role-assigned-row span{overflow-wrap:anywhere}.agent-model-test-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:9px}.model-test-loading{display:inline-flex;align-items:center;gap:9px}.model-test-loading .page-loading-mark{width:25px;height:25px;min-width:25px;transform:scale(.42);transform-origin:center;display:inline-block;margin:-12px -9px}.model-test-success{color:var(--success,#178b57);font-weight:700}.model-test-error{color:var(--danger,#c43d4d);font-weight:700}.model-test-preview{display:block;max-width:100%;margin-top:4px;color:var(--muted);overflow-wrap:anywhere}.agent-role-page-row .entity-row-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
