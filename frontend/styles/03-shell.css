@@ -165,3 +165,6 @@ body:not(.chat-page) .topbar{display:none}
 .footer .connection-dot.is-online{background:#22c55e;color:#22c55e}
 .footer .connection-dot.is-offline{background:#ef4444;color:#ef4444}
 
+/* Workspace navigation stays visible and expanded on both desktop and chat pages. */
+.nav-group-fixed .nav-group-label{display:block;cursor:default}
+body.chat-page #nav>.nav-group:not(:first-child){display:none!important}
