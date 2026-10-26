@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time, subprocess
 from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parent
@@ -242,7 +242,7 @@ DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 
 AGENT_ROLES = ['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS']
 AGENT_ROLES_FILE = DATA / 'agent_roles.json'
 AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер','DISPATCHER':'Диспетчер','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Разработчик','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
-AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access'}
+AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access','terminal_access'}
 DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
 AGENT_ROLE_PROMPTS = {
     'MANAGER':'Ты менеджер проекта и руководитель Агент №1. Анализируй цель и результаты диспетчера и профильных агентов, определяй приоритеты, утверждай план и принимай итоговое решение. Не теряй пункты памяти проекта.',
@@ -872,25 +872,39 @@ def run_diagnostics():
 GITHUB_CONNECTIONS_FILE = DATA / 'github-connections.json'
 
 def _dpapi_crypt(value, decrypt=False):
-    """Protect GitHub tokens with Windows DPAPI for the current user."""
+    """Protect GitHub tokens with Windows DPAPI for the current Windows user."""
     if sys.platform != 'win32':
-        raise RuntimeError('Безопасное хранение токенов поддерживается через Windows DPAPI.')
+        raise RuntimeError('Безопасное хранение токенов поддерживается только на Windows (DPAPI).')
+    from ctypes import wintypes
+
     class DATA_BLOB(ctypes.Structure):
-        _fields_ = [('cbData', ctypes.wintypes.DWORD), ('pbData', ctypes.POINTER(ctypes.c_ubyte))]
+        _fields_ = [('cbData', wintypes.DWORD), ('pbData', ctypes.POINTER(ctypes.c_ubyte))]
+
     raw = value if isinstance(value, bytes) else str(value).encode('utf-8')
-    source_buffer = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
-    source = DATA_BLOB(len(raw), ctypes.cast(source_buffer, ctypes.POINTER(ctypes.c_ubyte)))
-    output = DATA_BLOB()
-    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    buffer_in = ctypes.create_string_buffer(raw, max(1, len(raw)))
+    blob_in = DATA_BLOB(len(raw), ctypes.cast(buffer_in, ctypes.POINTER(ctypes.c_ubyte)))
+    blob_out = DATA_BLOB()
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+    crypt32.CryptProtectData.argtypes = [ctypes.POINTER(DATA_BLOB), wintypes.LPCWSTR, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [ctypes.POINTER(DATA_BLOB), ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(DATA_BLOB)]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     if decrypt:
-        ok = crypt32.CryptUnprotectData(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(output))
+        ok = crypt32.CryptUnprotectData(ctypes.byref(blob_in), None, None, None, None, 1, ctypes.byref(blob_out))
     else:
-        ok = crypt32.CryptProtectData(ctypes.byref(source), ctypes.c_wchar_p('PQlocalAgentOSv3 GitHub token'), None, None, None, 1, ctypes.byref(output))
-    if not ok: raise OSError('Windows DPAPI не смог обработать секрет.')
+        description = ctypes.c_wchar_p('PQlocalAgentOSv3')
+        ok = crypt32.CryptProtectData(ctypes.byref(blob_in), description, None, None, None, 1, ctypes.byref(blob_out))
+    if not ok:
+        raise OSError('DPAPI: Не удалось ' + ('расшифровать' if decrypt else 'зашифровать') + ' данные.')
     try:
-        result = ctypes.string_at(output.pbData, output.cbData)
+        result = ctypes.string_at(blob_out.pbData, blob_out.cbData)
         return result.decode('utf-8') if decrypt else base64.b64encode(result).decode('ascii')
-    finally: kernel32.LocalFree(output.pbData)
+    finally:
+        if blob_out.pbData:
+            kernel32.LocalFree(ctypes.cast(blob_out.pbData, ctypes.c_void_p))
 
 def github_connections():
     data = read_json(GITHUB_CONNECTIONS_FILE, {'active_id':'', 'connections':[]})
@@ -1138,7 +1152,7 @@ def run_agent_task(model, task, agent=None, project=None):
             'Зафиксированные факты и результаты: ' + ('; '.join(str(x.get('text', '')) for x in project_memory.get('facts', [])[-15:] if isinstance(x, dict)) or 'нет записей'),
         ]
         system_prompt += '\n\n' + '\n'.join(memory_context)
-    system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
+    system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код, если инструмент run_command не предоставлен. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
     if permissions.get('local_files') and permissions.get('roots'):
         system_prompt += '\n\nРазрешённые корневые папки для файловых инструментов:\n'+'\n'.join(str(root) for root in permissions['roots'][:50])+'\nИспользуй только эти пути. Доступ за пределами этих папок будет отклонён.'
     if (agent or {}).get('permissions',{}).get('github_access') and os.environ.get('GITHUB_TOKEN'):
@@ -1147,6 +1161,13 @@ def run_agent_task(model, task, agent=None, project=None):
     if project:
         prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nПуть (справочная информация; не открывай автоматически): '+str(project.get('path',''))
     available=effective_tools(agent or {},permissions) if agent else []
+    if project:
+        project_dir=str(project.get('path','')).strip() or 'не указана (уточните у пользователя)'
+        github_info='Доступ к GitHub разрешён.' if (agent or {}).get('permissions',{}).get('github_access') else 'Доступ к GitHub не разрешён.'
+        system_prompt += '\n\n=== ИНФОРМАЦИЯ О ТЕКУЩЕМ ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nЛокальная папка проекта: '+project_dir+'\n'+github_info+'\nЕсли нужно читать или изменять файлы, используй локальную папку проекта, если она указана. Не открывай файлы автоматически; сначала вызови разрешённый инструмент. Если папка не указана, используй GitHub только при наличии соответствующего инструмента.'
+    if available:
+        tool_names=[t['function']['name'] for t in available]
+        system_prompt += '\n\n=== ВАШИ ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===\nВы имеете право использовать следующие инструменты: '+', '.join(tool_names)+'. Если инструмента нет в списке, вы не можете его использовать.'
     if not available:
         result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
         return {'response':result.get('response',''),'tool_calls':0,'model':result.get('model',model)}
@@ -2455,8 +2476,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not existing and not token: return self.send_json(400, {'error':'Введите GitHub API-токен'})
             if token and not token.startswith(('ghp_','github_pat_','gho_','ghu_','ghs_','ghr_')): return self.send_json(400, {'error':'Проверьте формат GitHub-токена'})
             if token:
-                try: encrypted=base64.b64decode(_dpapi_crypt(token))
-                except Exception as e: return self.send_json(400, {'error':'Не удалось зашифровать токен: '+str(e)})
+                try:
+                    encrypted=base64.b64decode(_dpapi_crypt(token))
+                except Exception as e:
+                    log_event('github.connection.encrypt_failed', type(e).__name__)
+                    return self.send_json(500, {'error':'Не удалось зашифровать GitHub-токен через Windows DPAPI. Проверьте, что сервер запущен в Windows под обычной учётной записью и перезапустите его. Подробности: '+str(e)[:180]})
             else: encrypted=base64.b64decode(existing.get('token_encrypted',''))
             item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':base64.b64encode(encrypted).decode('ascii'),'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
             if existing: saved['connections']=[item if x.get('id')==connection_id else x for x in saved['connections']]
