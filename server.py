@@ -5,6 +5,20 @@ import urllib.parse
 import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time, subprocess
 from http.cookies import SimpleCookie
 
+try:
+    from llama_cpp import Llama
+except Exception:
+    Llama = None
+
+try:
+    from huggingface_hub import HfApi, hf_hub_download
+except Exception:
+    HfApi = None
+    hf_hub_download = None
+
+_LOCAL_GGUF_MODELS = {}
+_LOCAL_GGUF_LOCK = threading.Lock()
+
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
 ICONS_DIR = FRONTEND / 'icons'
@@ -203,7 +217,31 @@ def provider_items():
     for p in saved:
         if isinstance(p,dict) and p.get('id') not in {x['id'] for x in items}: items.append(p)
     return items
+def get_local_gguf(model_path, n_ctx=4096, n_gpu_layers=-1):
+    """Load and cache a local GGUF model; serialize inference access."""
+    if Llama is None:
+        raise RuntimeError("Библиотека llama-cpp-python не установлена. Выполните: pip install llama-cpp-python")
+    path = Path(str(model_path or '')).expanduser()
+    if not path.is_file() or path.suffix.lower() != '.gguf':
+        raise ValueError("Укажите существующий локальный файл модели с расширением .gguf")
+    resolved = str(path.resolve())
+    ctx = max(512, min(int(n_ctx or 4096), 131072))
+    gpu_layers = max(-1, min(200, int(n_gpu_layers if n_gpu_layers is not None else -1)))
+    cache_key = (resolved, ctx, gpu_layers)
+    with _LOCAL_GGUF_LOCK:
+        model = _LOCAL_GGUF_MODELS.get(cache_key)
+        if model is None:
+            model = Llama(model_path=resolved, n_ctx=ctx, n_gpu_layers=gpu_layers, verbose=False)
+            _LOCAL_GGUF_MODELS[cache_key] = model
+        return model
+
+
 def provider_models(p):
+    if str(p.get('kind') or '') == 'file' or str(p.get('format') or '') == 'gguf':
+        path = Path(str(p.get('base_url') or '')).expanduser()
+        if path.is_file() and path.suffix.lower() == '.gguf':
+            return [{'name': path.name, 'size': path.stat().st_size, 'parameter_size': 'GGUF'}]
+        return []
     base=str(p.get('base_url','')).rstrip('/'); fmt=p.get('format','openai'); headers={'User-Agent':'PQlocalAgentOSv3'}
     key=str(p.get('api_key','')).strip()
     if key: headers['Authorization']='Bearer '+key
@@ -756,6 +794,22 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
     base=str(provider.get('base_url') or (OLLAMA_URL if fmt=='ollama' else '')).strip().rstrip('/')
     key=str(provider.get('api_key','') or '').strip()
     requested_model=str(model or '').strip()[:200]
+    if str(provider.get('kind') or '') == 'file' or fmt == 'gguf':
+        model_path = str(provider.get('base_url') or '').strip()
+        model_obj = get_local_gguf(model_path, provider.get('n_ctx', 4096), provider.get('n_gpu_layers', -1))
+        with _LOCAL_GGUF_LOCK:
+            output = model_obj.create_chat_completion(
+                messages=messages,
+                max_tokens=max(1, min(int(max_tokens or 2048), 8192)),
+                temperature=float(provider.get('temperature', 0.7)),
+                top_p=float(provider.get('top_p', 0.9)),
+                repeat_penalty=float(provider.get('repeat_penalty', 1.1)),
+            )
+        choices = output.get('choices') or []
+        answer = ((choices[0].get('message') or {}).get('content') if choices else '') or ''
+        if not answer.strip():
+            raise ValueError('GGUF-модель вернула пустой ответ')
+        return {'model': Path(model_path).name, 'response': answer, 'done': True}
     if not requested_model:
         raise ValueError('Не указана модель провайдера')
     if not base:
@@ -2353,11 +2407,29 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {'ok':True,'count':min(limit,len(_TELEMETRY_HISTORY)),'maxSamples':360,'samples':_TELEMETRY_HISTORY[-limit:]})
             except (ValueError,TypeError) as exc:
                 return self.send_json(400, {'ok':False,'error':'Параметр limit должен быть числом от 1 до 360','detail':str(exc)[:120]})
+        if path == '/api/models/search/hf':
+            query = parse_qs(urlparse(self.path).query)
+            q = str((query.get('q') or [''])[0]).strip()[:200]
+            try: limit = max(1, min(20, int((query.get('limit') or ['10'])[0])))
+            except (TypeError, ValueError): limit = 10
+            if not q: return self.send_json(400, {'error':'Введите запрос для поиска на Hugging Face'})
+            if HfApi is None: return self.send_json(503, {'error':'Библиотека huggingface_hub не установлена'})
+            try:
+                api = HfApi()
+                found = api.list_models(search=q, filter='gguf', sort='downloads', direction=-1, limit=limit)
+                items = []
+                for info in found:
+                    repo_id = str(getattr(info, 'id', '') or '')
+                    try: files = [name for name in api.list_repo_files(repo_id=repo_id, repo_type='model') if name.lower().endswith('.gguf') and '..' not in Path(name).parts]
+                    except Exception: files = []
+                    items.append({'id':repo_id,'downloads':int(getattr(info,'downloads',0) or 0),'likes':int(getattr(info,'likes',0) or 0),'tags':list(getattr(info,'tags',[]) or []),'files':files[:100]})
+                return self.send_json(200, {'items':items,'total':len(items),'query':q})
+            except Exception as exc: return self.send_json(502, {'error':'Поиск Hugging Face не выполнен: '+str(exc)[:220]})
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
                 found=[]; connected=False
-                if p.get('kind')=='local' or p.get('api_key'):
+                if p.get('kind') in ('local','file') or p.get('api_key'):
                     try: found=provider_models(p); connected=True
                     except Exception: pass
                 p['connected']=connected; p['model_count']=len(found); p['api_key_set']=bool(p.get('api_key'))
@@ -2465,6 +2537,20 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/models/download':
+            repo_id = str(data.get('repo_id') or '').strip()[:200]
+            filename = str(data.get('filename') or '').strip().replace('\\\\', '/')
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo_id): return self.send_json(400, {'error':'Некорректный repo_id Hugging Face'})
+            if not filename or not filename.lower().endswith('.gguf') or filename.startswith('/') or '..' in Path(filename).parts: return self.send_json(400, {'error':'Выберите корректный файл .gguf'})
+            if hf_hub_download is None: return self.send_json(503, {'error':'Библиотека huggingface_hub не установлена'})
+            try:
+                model_dir = DATA / 'models'; model_dir.mkdir(parents=True, exist_ok=True)
+                downloaded = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=str(model_dir))
+                model_path = str(Path(downloaded).resolve())
+                if not Path(model_path).is_file() or Path(model_path).suffix.lower() != '.gguf': raise ValueError('Загруженный файл не найден')
+                log_event('model.gguf.download', repo_id + '/' + filename)
+                return self.send_json(200, {'ok':True,'repo_id':repo_id,'filename':filename,'path':model_path})
+            except Exception as exc: return self.send_json(502, {'error':'Не удалось скачать GGUF с Hugging Face: '+str(exc)[:220]})
         if path == '/api/terminal':
             command=data.get('command')
             cwd_raw=str(data.get('cwd','')).strip()
@@ -2744,16 +2830,27 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 return self.send_json(502, {'error':'Не удалось получить ответ модели: '+str(exc)[:180]})
         if path=='/api/providers':
-            pid=str(data.get('id','')).strip(); name=str(data.get('name','')).strip()[:80]; kind=str(data.get('kind','local')).strip(); base=str(data.get('base_url','')).strip().rstrip('/'); fmt=str(data.get('format','openai')).strip()
-            if not name or not base or kind not in ('local','cloud'): return self.send_json(400, {'error':'Укажите имя, тип и адрес провайдера'})
-            if not re.match(r'^https?://',base): return self.send_json(400, {'error':'Адрес должен начинаться с http:// или https://'})
-            if fmt not in ('ollama','openai','anthropic','gemini'): return self.send_json(400, {'error':'Неподдерживаемый формат доступа'})
+            pid=str(data.get('id','')).strip(); name=str(data.get('name','')).strip()[:80]; kind=str(data.get('kind','local')).strip(); base=str(data.get('base_url','')).strip(); fmt=str(data.get('format','openai')).strip()
+            if not name or not base or kind not in ('local','cloud','file'): return self.send_json(400, {'error':'Укажите имя, тип и адрес провайдера'})
+            if kind == 'file':
+                model_path=Path(base).expanduser()
+                if fmt != 'gguf' or model_path.suffix.lower() != '.gguf': return self.send_json(400, {'error':'Файловый провайдер должен указывать на файл .gguf'})
+                if not model_path.is_file(): return self.send_json(400, {'error':'Файл .gguf не найден: проверьте путь'})
+                base=str(model_path.resolve())
+            else:
+                base=base.rstrip('/')
+                if not re.match(r'^https?://',base): return self.send_json(400, {'error':'Адрес должен начинаться с http:// или https://'})
+                if fmt not in ('ollama','openai','anthropic','gemini'): return self.send_json(400, {'error':'Неподдерживаемый формат доступа'})
             items=read_json(PROVIDER_FILE,[]); items=items if isinstance(items,list) else []; existing=next((x for x in items if x.get('id')==pid),None) if pid else None
             if not pid: pid=re.sub(r'[^a-z0-9-]+','-',name.lower()).strip('-')[:48]+'-'+uuid.uuid4().hex[:6]
             builtin=pid in {'ollama','lm-studio','openai','anthropic','google-gemini','openrouter','groq'}
             old=existing or next((x for x in provider_items() if x.get('id')==pid),{})
             if existing is None and builtin and pid not in {x.get('id') for x in provider_items()}: return self.send_json(400, {'error':'Неизвестный встроенный провайдер'})
             item={'id':pid,'name':name,'kind':kind,'base_url':base,'format':fmt,'builtin':builtin,'created_at':(old or {}).get('created_at') or (datetime.datetime.now().astimezone().isoformat(timespec='seconds') if not existing and not builtin else '')}
+            if kind == 'file':
+                for setting, default, cast, low, high in (('n_ctx',4096,int,512,131072),('n_gpu_layers',-1,int,-1,200),('temperature',0.7,float,0.0,2.0),('top_p',0.9,float,0.0,1.0),('repeat_penalty',1.1,float,0.5,2.0)):
+                    try: item[setting]=max(low,min(high,cast(data.get(setting,old.get(setting,default))))
+                    except (TypeError,ValueError): item[setting]=default
             key=str(data.get('api_key','')).strip()
             if key: item['api_key']=key
             elif old.get('api_key'): item['api_key']=old['api_key']
