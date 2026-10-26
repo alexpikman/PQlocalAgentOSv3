@@ -365,6 +365,17 @@ td{border-color:var(--line)}
 .project-memory-facts{display:grid;gap:8px;margin-top:14px}
 .project-memory-facts .fact{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);overflow-wrap:anywhere}
 .project-memory-facts .fact small{display:block;margin-top:5px;color:var(--muted)}
-#pq-memory-nav-modal .modal-card{display:flex;flex-direction:column;max-height:min(88vh,860px);overflow:hidden}
-#pq-memory-nav-modal .modal-card-body{min-height:0;overflow:auto;overscroll-behavior:contain}
+#pq-memory-nav-modal .modal-card{display:flex;flex-direction:column;width:min(760px,calc(100vw - 32px));max-height:min(88vh,860px);overflow:hidden}
+#pq-memory-nav-modal .modal-card-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0;padding:16px 18px;border-bottom:1px solid var(--line)}
+#pq-memory-nav-modal .modal-card-head h2{margin:0;font-size:16px;line-height:1.35}
+#pq-memory-nav-modal .modal-card-head p{margin:4px 0 0;font-size:11px;color:var(--muted)}
+#pq-memory-nav-modal .modal-card-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:16px 18px}
+#pq-memory-nav-modal .project-memory-pane[hidden]{display:none!important}
+#pq-memory-nav-modal .project-memory-tabs{position:sticky;top:-16px;z-index:2;background:var(--panel);padding:0 0 10px}
+#pq-memory-nav-modal .project-memory-tab{font:inherit;font-size:12px;line-height:18px}
+#pq-memory-nav-modal textarea{width:100%;min-width:0;resize:vertical;box-sizing:border-box}
+#pq-memory-nav-modal .modal-card-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+#pq-memory-nav-modal .entity-row{margin-bottom:8px}
+#pq-memory-nav-modal .task-context-description,#pq-memory-nav-modal .task-result{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:720px){#pq-memory-nav-modal .modal-card{width:calc(100vw - 20px);max-height:92vh}#pq-memory-nav-modal .modal-card-head,#pq-memory-nav-modal .modal-card-body{padding:12px}#pq-memory-nav-modal .modal-card-head{align-items:flex-start}#pq-memory-nav-modal .modal-card-head>[data-memory-nav-close]{flex:0 0 auto}}
 @media(max-width:720px){.project-entity-row{grid-template-columns:80px minmax(0,1fr);gap:12px}.project-entity-row>.entity-row-actions{grid-column:2}.project-card-main>.entity-row-heading{align-items:flex-start}.project-logo-editor-row{flex-direction:column}}
