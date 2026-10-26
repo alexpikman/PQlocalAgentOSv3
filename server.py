@@ -128,6 +128,88 @@ AGENT_ROLE_PROMPTS = {
     'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии, ошибки обработки данных, безопасность и воспроизводимые критерии приёмки.',
     'DEVOPS':'Ты инженер инфраструктуры. Учитывай воспроизводимые сборки, конфигурацию окружения, логи, мониторинг, откат и минимальные привилегии.'
 }
+
+SYSTEM_INSTRUCTIONS_FILE = DATA / 'system_instructions.json'
+SYSTEM_INSTRUCTION_ACTIVITY = {
+    'MANAGER': "Координация проекта, распределение задач, контроль сроков и приоритетов",
+    'ARCHITECT': "Проектирование модульной структуры, контрактов, потоков данных",
+    'ANALYST': "Анализ требований, проверка полноты, разделение фактов и предположений",
+    'DESIGNER': "Проектирование интерфейсов, доступность, визуальная иерархия",
+    'COPYWRITER': "Тексты, редактура, ясность и конкретность формулировок",
+    'CODER': "Написание и ревью кода, тесты, безопасность, сопровождение",
+    'TESTER': "Поиск граничных случаев, регрессий, критериев приёмки",
+    'DEVOPS': "Инфраструктура, сборки, конфигурация, мониторинг, откат"
+}
+SYSTEM_INSTRUCTION_ROLE_NAMES = {
+    'MANAGER': 'Менеджер проекта', 'ARCHITECT': 'Архитектор',
+    'ANALYST': 'Аналитик', 'DESIGNER': 'Дизайнер',
+    'COPYWRITER': 'Копирайтер', 'CODER': 'Инженер-программист',
+    'TESTER': 'Тестировщик', 'DEVOPS': 'Инженер DevOps'
+}
+def ensure_system_instructions():
+    if SYSTEM_INSTRUCTIONS_FILE.exists():
+        current = read_json(SYSTEM_INSTRUCTIONS_FILE, None)
+        if isinstance(current, dict) and isinstance(current.get('instructions'), list):
+            return current['instructions']
+    now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    instructions = [{
+        'id': 'instr-' + role.lower(),
+        'name': SYSTEM_INSTRUCTION_ROLE_NAMES[role] + ' (по умолчанию',
+        'role': role, 'system_prompt': AGENT_ROLE_PROMPTS[role],
+        'activity': SYSTEM_INSTRUCTION_ACTIVITY[role], 'is_default': True,
+        'interaction_plan': [], 'created_at': now, 'updated_at': now
+    } for role in AGENT_ROLES]
+    for item in instructions:
+        item['name'] += ')'
+    write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': instructions})
+    return instructions
+def save_system_instructions(items):
+    write_json(SYSTEM_INSTRUCTIONS_FILE, {'instructions': items})
+def system_instruction_defaults():
+    return {role: {'system_prompt': AGENT_ROLE_PROMPTS[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
+def validate_interaction_plan(value):
+    if not isinstance(value, list) or len(value) > 50:
+        raise ValueError('План взаимодействия должен быть массивом не более 50 правил')
+    validated = []
+    allowed_from = set(AGENT_ROLES) | {'USER', 'ANY'}
+    allowed_to = set(AGENT_ROLES) | {'USER'}
+    allowed_fallback = set(AGENT_ROLES) | {'MANAGER', ''}
+    limits = {'trigger': 120, 'condition': 240, 'action': 1000}
+    for index, row in enumerate(value):
+        if not isinstance(row, dict):
+            raise ValueError('Правило ' + str(index + 1) + ' должно быть объектом')
+        source = str(row.get('from', 'USER')).upper().strip()
+        target = str(row.get('to', 'USER')).upper().strip()
+        fallback = str(row.get('fallback', '')).upper().strip()
+        if source not in allowed_from: raise ValueError('Недопустимая роль источника в правиле ' + str(index + 1))
+        if target not in allowed_to: return ValueError('Недопустимый получатель в правиле ' + str(index + 1))
+        if fallback not in allowed_fallback: raise ValueError('Недопустимый fallback в правиле ' + str(index + 1))
+        item = {'from': source, 'to': target, 'fallback': fallback}
+        for key, limit in limits.items():
+            text_value = row.get(key, '')
+            if not isinstance(text_value, str): raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' должно быть строкой')
+            if len(text_value) > limit: raise ValueError('Поле ' + key + ' в правиле ' + str(index + 1) + ' превышает ' + str(limit) + ' символов')
+            item[key] = text_value.strip()
+        validated.append(item)
+    return validated
+def system_instruction_warnings(items):
+    incoming = {}
+    edges = []
+    for instruction in items:
+        plan = instruction.get('interaction_plan', [])
+        for rule in plan if isinstance(plan, list) else []:
+            source, target = rule.get('from'), rule.get('to')
+            if source and target in AGENT_ROLES:
+                incoming.setdefault(target, set()).add(source)
+                edges.append((source, target))
+    warnings, seen = [], set()
+    for source, target in edges:
+        key = (source, target)
+        if source in ('USER', 'ANY') or key in seen: continue
+        seen.add(key)
+        if source not in incoming.get(target, set()) and 'ANY' not in incoming.get(target, set()):
+            warnings.append({'from': source, 'to': target, 'message': 'У ' + target + ' нет входящего триггера от ' + source})
+    return warnings
 def domain_items(kind):
     fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'description':'Координация проекта и распределение задач.'}] if kind=='agents' else []
     items = read_json(DOMAIN_FILES[kind],fallback)
@@ -1179,6 +1261,20 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/system-instructions/defaults':
+            ensure_system_instructions()
+            return self.send_json(200, {'defaults': system_instruction_defaults()})
+        if path == '/api/system-instructions/validate':
+            return self.send_json(200, {'warnings': system_instruction_warnings(ensure_system_instructions())})
+        if path == '/api/system-instructions':
+            items = ensure_system_instructions()
+            return self.send_json(200, {'instructions': items, 'total': len(items)})
+        if path.startswith('/api/system-instructions/'):
+            instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
+            if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            item = next((x for x in ensure_system_instructions() if x.get('id') == instruction_id), None)
+            if not item: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            return self.send_json(200, item)
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
         if path=='/api/system/stats':
             try:
@@ -1301,6 +1397,42 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/system-instructions':
+            try:
+                name = data.get('name'); role = str(data.get('role', '')).upper().strip()
+                if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120: return self.send_json(400, {'error': 'Название должно содержать от 1 до 120 символов'})
+                if role not in AGENT_ROLES: return self.send_json(400, {'error': 'Неизвестная роль агента'})
+                system_prompt = data.get('system_prompt', ''); activity = data.get('activity', '')
+                if not isinstance(system_prompt, str) or len(system_prompt) > 8000: return self.send_json(400, {'error': 'Системная инструкция должна быть строкой до 8000 символов'})
+                if not isinstance(activity, str) or len(activity) > 2000: return self.send_json(400, {'error': 'Основная деятельность должна быть строкой до 2000 символов'})
+                plan = validate_interaction_plan(data.get('interaction_plan', [])); items = ensure_system_instructions()
+                is_default = not any(x.get('role') == role and x.get('is_default') for x in items)
+                now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                item = {'id': 'instr-' + uuid.uuid4().hex[:12], 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'is_default': is_default, 'interaction_plan': plan, 'created_at': now, 'updated_at': now}
+                items.append(item); save_system_instructions(items); log_event('system_instruction.create', item['name'])
+                return self.send_json(201, item)
+            except ValueError as exc: return self.send_json(400, {'error': str(exc)})
+            except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
+        if path.startswith('/api/system-instructions/'):
+            instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
+            if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            try:
+                items = ensure_system_instructions()
+                index = next((i for i, x in enumerate(items) if x.get('id') == instruction_id), None)
+                if index is None: return self.send_json(404, {'error': 'Инструкция не найдена'})
+                existing = items[index]
+                role = str(data.get('role', existing.get('role', ''))).upper().strip()
+                name = data.get('name', existing.get('name', '')); system_prompt = data.get('system_prompt', existing.get('system_prompt', '')); activity = data.get('activity', existing.get('activity', ''))
+                if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120: return self.send_json(400, {'error': 'Название должно содержать от 1 до 120 символов'})
+                if role not in AGENT_ROLES: return self.send_json(400, {'error': 'Неизвестная роль агента'})
+                if not isinstance(system_prompt, str) or len(system_prompt) > 8000: return self.send_json(400, {'error': 'Системная инструкция должна быть строкой до 8000 символов'})
+                if not isinstance(activity, str) or len(activity) > 2000: return self.send_json(400, {'error': 'Основная деятельность должна быть строкой до 2000 символов'})
+                plan = validate_interaction_plan(data.get('interaction_plan', existing.get('interaction_plan', [])))
+                updated = {**existing, 'name': name.strip(), 'role': role, 'system_prompt': system_prompt, 'activity': activity, 'interaction_plan': plan, 'updated_at': datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                items[index] = updated; save_system_instructions(items); log_event('system_instruction.update', updated['name'])
+                return self.send_json(200, updated)
+            except ValueError as exc: return self.send_json(400, {'error': str(exc)})
+            except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
         if path == '/api/chat':
             agent_id = str(data.get('agent_id', '')).strip()[:160]
             model = str(data.get('model', '')).strip()[:160]
@@ -1751,6 +1883,16 @@ class Handler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         path=urlparse(self.path).path
         if path.startswith('/api/') and not self.require_auth(): return
+        if path.startswith('/api/system-instructions/'):
+            instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
+            if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            items = ensure_system_instructions()
+            item = next((x for x in items if x.get('id') == instruction_id), None)
+            if not item: return self.send_json(404, {'error': 'Инструкция не найдена'})
+            if item.get('is_default'): return self.send_json(403, {'error': 'Инструкцию по умолчанию нельзя удалить'})
+            save_system_instructions([x for x in items if x.get('id') != instruction_id])
+            log_event('system_instruction.delete', item.get('name', instruction_id))
+            return self.send_json(200, {'ok': True})
         if path.startswith('/api/icons/'):
             icon_id = urllib.parse.unquote(path[len('/api/icons/'):])
             if not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', icon_id):
@@ -1806,7 +1948,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_GET_HEAD(self): pass
 if __name__=='__main__':
-    settings(); pages(); log_event('server.start',f'http://{HOST}:{PORT}')
+    settings(); pages(); ensure_system_instructions(); log_event('server.start',f'http://{HOST}:{PORT}')
     _start_gpu_background()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
