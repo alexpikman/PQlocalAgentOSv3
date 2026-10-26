@@ -2076,7 +2076,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/github/files':
             try:
                 repo=github_request('/repos/'+active_github_repository())
-                tree=github_request('/repos/'+REPO+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
+                tree=github_request('/repos/'+active_github_repository()+'/git/trees/'+repo.get('default_branch','main')+'?recursive=1')
                 files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
                 return self.send_json(200, {'repository':active_github_repository(),'branch':repo.get('default_branch','main'),'files':files})
             except Exception as e: return self.send_json(400, {'error':str(e)})
