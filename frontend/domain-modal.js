@@ -120,7 +120,7 @@ function openDomainModal(kind,id){
       +'<div class="si-pane" data-si-pane="plan"><div id="domain-interaction-plan"></div><button type="button" class="btn secondary" id="domain-add-rule" style="margin-top:8px" hidden>＋ Добавить правило</button><div id="domain-plan-note" class="notice" hidden></div></div>'
       +'</div>';
   }else if(kind==='projects'){
-    html=field('Название','name',item?.name||'','text','required maxlength="120"')+field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')+field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"');
+    html=field('Название','name',item?.name||'','text','required maxlength="120"')+field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')+field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WebP или GIF. Максимум 1 МБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
   }else{
     const taskRoles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
     const activeRoles=Array.isArray(item?.active_roles)?item.active_roles:taskRoles;
@@ -218,6 +218,18 @@ async function deleteDomainItem(kind,id){
 function bindDomainModal(){
   if(domainModalBound)return;domainModalBound=true;
   document.addEventListener('submit',event=>{if(event.target?.matches('#domain-modal-form'))void saveDomainItem(event)});
+  document.addEventListener('change',event=>{
+    const input=event.target;
+    if(!(input instanceof HTMLInputElement)||input.id!=='domain-project-logo-file')return;
+    const file=input.files?.[0];if(!file)return;
+    const status=$('#domain-modal-status');
+    if(!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type)){if(status)status.innerHTML='<div class="notice warning">Выберите изображение PNG, JPG, WebP или GIF.</div>';input.value='';return}
+    if(file.size>1024*1024){if(status)status.innerHTML='<div class="notice warning">Логотип должен быть не больше 1 МБ.</div>';input.value='';return}
+    const reader=new FileReader();
+    reader.onload=()=>{const value=String(reader.result||''),hidden=$('#domain-project-logo'),preview=$('#domain-project-logo-preview'),empty=$('#domain-project-logo-empty'),clear=$('#domain-project-logo-clear');if(hidden)hidden.value=value;if(preview){preview.src=value;preview.hidden=false}if(empty)empty.hidden=true;if(clear)clear.hidden=false;if(status)status.innerHTML=''};
+    reader.onerror=()=>{if(status)status.innerHTML='<div class="notice warning">Не удалось прочитать файл логотипа.</div>'};
+    reader.readAsDataURL(file);
+  });
   document.addEventListener('input',event=>{
     const field=event.target;
     if(field instanceof Element&&field.matches('#domain-modal-form [required]'))field.setCustomValidity?.('');
@@ -225,6 +237,7 @@ function bindDomainModal(){
   });
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
+    const clearLogo=target.closest('#domain-project-logo-clear');if(clearLogo){const hidden=$('#domain-project-logo'),preview=$('#domain-project-logo-preview'),empty=$('#domain-project-logo-empty'),file=$('#domain-project-logo-file');if(hidden)hidden.value='';if(preview){preview.removeAttribute('src');preview.hidden=true}if(empty)empty.hidden=false;if(file)file.value='';clearLogo.hidden=true;return}
     const close=target.closest('[data-domain-modal-close]');if(close){const modal=$('#domain-modal');if(modal)modal.hidden=true;return}
     const tab=target.closest('[data-domain-tab]');if(tab){
       const form=$('#domain-modal-form'),avatarEl=$('#domain-modal-avatar'),isAvatar=tab.dataset.domainTab==='avatar';
