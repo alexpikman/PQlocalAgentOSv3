@@ -219,3 +219,22 @@
 .sysmon-chart-stats small{font-size:9px;color:var(--muted)}
 .sysmon-chart-stats b{font-size:14px;font-weight:700;letter-spacing:-.3px}
 @media(max-width:560px){.sysmon-chart-modal{padding:10px}.sysmon-chart-card{padding:14px}.sysmon-chart-stats{gap:6px}}
+
+
+/* Initial workspace loading state — visible before application data arrives. */
+.page-loading{min-height:clamp(320px,55vh,620px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 20px;animation:page-loading-appear .35s ease-out both}
+.page-loading-mark{position:relative;width:104px;height:104px;display:grid;place-items:center;margin-bottom:26px}
+.page-loading-core{width:54px;height:54px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));border-radius:18px;background:linear-gradient(145deg,var(--panel),color-mix(in srgb,var(--accent) 10%,var(--panel)));box-shadow:0 8px 28px color-mix(in srgb,var(--accent) 16%,transparent),inset 0 1px 0 rgba(255,255,255,.75);font-size:19px;font-weight:800;letter-spacing:-1.2px;color:var(--accent);z-index:2}
+.page-loading-orbit{position:absolute;inset:5px;border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);border-radius:31px;transform:rotate(35deg);animation:page-loading-spin 2.8s linear infinite}
+.page-loading-orbit-a{border-top:2px solid var(--accent);border-right-color:transparent}
+.page-loading-orbit-b{inset:0;border-radius:50%;border-color:color-mix(in srgb,var(--accent) 16%,transparent);border-bottom:2px solid color-mix(in srgb,var(--accent) 70%,#fff);animation-duration:1.9s;animation-direction:reverse}
+.page-loading-spark{position:absolute;top:9px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent),0 0 18px color-mix(in srgb,var(--accent) 45%,transparent);animation:page-loading-pulse 1.6s ease-in-out infinite}
+.page-loading-title{font-size:17px;font-weight:700;letter-spacing:-.35px;color:var(--text);margin-bottom:8px}
+.page-loading-description{font-size:13px;color:var(--muted);line-height:1.5}
+.page-loading-track{width:172px;height:3px;margin-top:24px;border-radius:99px;overflow:hidden;background:color-mix(in srgb,var(--accent) 12%,var(--line))}
+.page-loading-track span{display:block;width:42%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 60%,#fff),var(--accent));animation:page-loading-progress 1.5s ease-in-out infinite}
+@keyframes page-loading-spin{to{transform:rotate(395deg)}}
+@keyframes page-loading-pulse{0%,100%{transform:scale(.85);opacity:.7}50%{transform:scale(1.12);opacity:1}}
+@keyframes page-loading-progress{0%{transform:translateX(-110%)}100%{transform:translateX(360%)}}
+@keyframes page-loading-appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.page-loading,.page-loading-orbit,.page-loading-spark,.page-loading-track span{animation:none}.page-loading-track span{width:70%;margin-left:15%}}
