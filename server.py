@@ -155,7 +155,28 @@ def ensure_system_instructions():
     if SYSTEM_INSTRUCTIONS_FILE.exists():
         current = read_json(SYSTEM_INSTRUCTIONS_FILE, None)
         if isinstance(current, dict) and isinstance(current.get('instructions'), list):
-            return current['instructions']
+            instructions = current['instructions']
+            changed = False
+            for item in instructions:
+                if not isinstance(item, dict) or item.get('role') not in AGENT_ROLES:
+                    continue
+                role = item['role']
+                if role != 'MANAGER':
+                    fixed_plan = system_instruction_agent_plan()
+                    if item.get('interaction_plan') != fixed_plan:
+                        item['interaction_plan'] = fixed_plan
+                        changed = True
+                elif isinstance(item.get('interaction_plan'), list):
+                    try:
+                        normalized = validate_manager_interaction_plan(item['interaction_plan'])
+                    except ValueError:
+                        normalized = []
+                    if item.get('interaction_plan') != normalized:
+                        item['interaction_plan'] = normalized
+                        changed = True
+            if changed:
+                save_system_instructions(instructions)
+            return instructions
     now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
     instructions = []
     for role in AGENT_ROLES:
@@ -200,21 +221,21 @@ def validate_manager_interaction_plan(value):
         validated.append(item)
     return validated
 def system_instruction_warnings(items):
-    manager = next((item for item in items if item.get('role') == 'MANAGER'), None)
     warnings = []
-    if not manager:
-        return warnings
-    for rule in manager.get('interaction_plan', []):
-        if not isinstance(rule, dict):
+    for manager in items:
+        if manager.get('role') != 'MANAGER':
             continue
-        target = str(rule.get('to', '')).strip()
-        fallback = str(rule.get('fallback', '')).strip()
-        if target in AGENT_ROLES and not fallback:
-            warnings.append({
-                'trigger': str(rule.get('trigger', '')),
-                'to': target,
-                'message': 'Правило "' + str(rule.get('trigger', '')) + '" ведёт на ' + target + ', но fallback не задан'
-            })
+        for rule in manager.get('interaction_plan', []):
+            if not isinstance(rule, dict):
+                continue
+            target = str(rule.get('to', '')).strip()
+            fallback = str(rule.get('fallback', '')).strip()
+            if target in AGENT_ROLES and not fallback:
+                warnings.append({
+                    'trigger': str(rule.get('trigger', '')),
+                    'to': target,
+                    'message': 'Правило "' + str(rule.get('trigger', '')) + '" ведёт на ' + target + ', но fallback не задан'
+                })
     return warnings
 
 def domain_items(kind):
