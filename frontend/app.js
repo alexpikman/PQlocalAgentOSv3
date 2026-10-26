@@ -166,7 +166,7 @@ state.providers=state.providers||[];
 state.providerModels=state.providerModels||[];
 const results=await Promise.allSettled([
 api('/pages'),api('/settings'),api('/log'),api('/modules'),api('/models'),loadProviders(),
-api('/agents'),api('/projects'),api('/tasks'),api('/permissions'),api('/modules/runs'),api('/system-instructions'),api('/agent-roles'),api('/permissions')
+api('/agents'),api('/projects'),api('/tasks'),api('/permissions'),api('/modules/runs'),api('/system-instructions'),api('/agent-roles')
 ]);
 const value=(index,fallback)=>results[index].status==='fulfilled'?results[index].value:fallback;
 const loadedPages=value(0,null);
@@ -188,7 +188,7 @@ state.permissions=value(9,state.permissions||{local_files:false,roots:[]});
 state.moduleRuns=value(10,state.moduleRuns||[]);
 state.systemInstructions=value(11,[]).instructions||[];
 state.agentRoles=value(12,[]).roles||[];
-state.permissions=value(13,state.permissions||{local_files:false,roots:[]});
+state.permissions=value(9,state.permissions||{local_files:false,roots:[]});
 if(!state.moduleRun&&state.moduleRuns.length)state.moduleRun=state.moduleRuns[0];
 }window.PQRefresh=()=>reload().then(()=>render());if(window.PQDomainModal?.configure)window.PQDomainModal.configure({getState:()=>state,api,esc,toast,refresh:()=>window.PQRefresh?.()});async function boot(){let h;try{h=await api('/health');const serverStatus=$('#server-status');if(serverStatus)serverStatus.textContent='Работает · :'+h.port;const serverDot=$('#server-running-dot'),apiDot=$('#api-connection-dot');if(serverDot){serverDot.classList.remove('is-offline');serverDot.classList.add('is-online')}if(apiDot){apiDot.classList.remove('is-offline');apiDot.classList.add('is-online')}$('#footer-status').textContent='API подключён'}catch(e){const serverStatus=$('#server-status');if(serverStatus)serverStatus.textContent='Нет соединения';['server-running-dot','api-connection-dot'].forEach(id=>{const dot=$('#'+id);if(dot){dot.classList.remove('is-online');dot.classList.add('is-offline')}});$('#content').innerHTML=`<div class="notice warning">Не удалось подключиться к backend. Запустите приложение через <span class="mono">start.bat</span>.<br>${esc(e.message)}</div>`;$('#footer-status').textContent='API недоступен';return}try{await reload();const requested=new URLSearchParams(window.location.search).get('page');if(requested&&(state.pages.some(p=>p.id===requested)||requested==='ssh'||requested==='agent-roles'))state.current=requested;render();const urlParams=new URLSearchParams(window.location.search);const editAgentId=urlParams.get('edit_agent');const returnToChat=urlParams.get('return_to_chat')==='1';if(editAgentId){setTimeout(()=>window.PQDomainModal?.open?.('agents',editAgentId),150)}if(returnToChat&&editAgentId){document.body.addEventListener('click',e=>{if(e.target.closest('[data-domain-modal-close]')||e.target.closest('.modal-backdrop')){window.location.href='/chat.html?agent_id='+encodeURIComponent(editAgentId)}});document.addEventListener('pq-agent-saved',()=>{window.location.href='/chat.html?agent_id='+encodeURIComponent(editAgentId)})}$('#footer-status').textContent='API подключён'}catch(e){$('#footer-status').textContent='API подключён · ошибка загрузки данных';$('#content').innerHTML=`<div class="notice warning">Сервер доступен, но не удалось загрузить данные разделов.<br>${esc(e.message)}</div>`}}const sidebarWidthMediaQuery=window.matchMedia('(max-width:720px)');sidebarWidthMediaQuery.addEventListener('change',()=>applySettings());boot();
 
