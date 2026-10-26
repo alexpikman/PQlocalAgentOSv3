@@ -1292,12 +1292,12 @@ def run_agent_task(model, task, agent=None, project=None):
         prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nПуть (справочная информация; не открывай автоматически): '+str(project.get('path',''))
     available=effective_tools(agent or {},permissions) if agent else []
     if project:
-        project_dir=str(project.get('path','')).strip() or 'не указана (уточните у пользователя)'
+        project_dir=str(project.get('path','')).strip() or 'не указана'
         github_info='Доступ к GitHub разрешён.' if (agent or {}).get('permissions',{}).get('github_access') else 'Доступ к GitHub не разрешён.'
-        system_prompt += '\n\n=== ИНФОРМАЦИЯ О ТЕКУЩЕМ ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nЛокальная папка проекта: '+project_dir+'\n'+github_info+'\nЕсли нужно читать или изменять файлы, используй локальную папку проекта, если она указана. Не открывай файлы автоматически; сначала вызови разрешённый инструмент. Если папка не указана, используй GitHub только при наличии соответствующего инструмента.'
+        system_prompt += '\n\n=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nРабочая папка проекта: '+project_dir+'\nОписание: '+str(project.get('description',''))+'\n'+github_info+'\nВАЖНО: если работаешь с файлами проекта, используй только указанную рабочую папку и разрешённые файловые инструменты. Не обращайся к другим папкам и не утверждай, что файл прочитан или изменён без результата инструмента.'
     if available:
         tool_names=[t['function']['name'] for t in available]
-        system_prompt += '\n\n=== ВАШИ ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===\nВы имеете право использовать следующие инструменты: '+', '.join(tool_names)+'. Если инструмента нет в списке, вы не можете его использовать.'
+        system_prompt += '\n\n=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===\nТвои доступные инструменты: '+', '.join(tool_names)+'. Не пытайся вызывать другие инструменты.'
     if not available:
         result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
         return {'response':result.get('response',''),'tool_calls':0,'model':result.get('model',model)}
@@ -2884,6 +2884,7 @@ class Handler(SimpleHTTPRequestHandler):
                         if isinstance(entry,dict) and entry.get('role') in ('user','assistant'): transcript.append(str(entry.get('role'))+': '+str(entry.get('content',''))[:1800])
                     if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\n'+'\n'.join(transcript))
                 if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\n\n'+'\n\n'.join(recent_chat_context)[-14000:]})
+            project = next((x for x in domain_items('projects') if isinstance(x, dict) and x.get('id') == project_id), None) if project_id else None
             if agent:
                 system_prompt = str(agent.get('system_prompt', '').strip())
                 role_prompt = {
@@ -2899,6 +2900,17 @@ class Handler(SimpleHTTPRequestHandler):
                 instruction = resolve_agent_system_prompt(agent) or system_prompt or role_prompt
                 if instruction:
                     validated_messages.insert(0, {'role':'system','content':instruction})
+                if project:
+                    project_dir = str(project.get('path', '')).strip() or 'не указана'
+                    project_context = (
+                        '=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\\n'
+                        + 'Название: ' + str(project.get('name', '')) + '\\n'
+                        + 'Рабочая папка проекта: ' + project_dir + '\\n'
+                        + 'Описание: ' + str(project.get('description', '')) + '\\n'
+                        + 'ВАЖНО: если работаешь с файлами, используй только рабочую папку проекта и доступные разрешённые инструменты. '
+                        + 'Не утверждай, что файл прочитан или изменён, пока инструмент не вернул результат.'
+                    )
+                    validated_messages.insert(0, {'role':'system','content':project_context})
             model = requested_model
             provider_id = str((agent or {}).get('provider_id') or data.get('provider_id') or '').strip()[:120]
             provider = provider_for_model(model, provider_id)
@@ -2916,7 +2928,6 @@ class Handler(SimpleHTTPRequestHandler):
                     from agent_tools import effective_tools, execute_tool
                     permission_config=permission_settings()
                     available_tools=effective_tools(agent,permission_config)
-                    project=next((x for x in domain_items('projects') if x.get('id')==project_id),None) if project_id else None
                     if available_tools:
                         tool_names=[x['function']['name'] for x in available_tools]
                         project_context=''
