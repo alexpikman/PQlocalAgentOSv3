@@ -10,6 +10,7 @@ import re
 import urllib.parse
 import urllib.request
 import urllib.error
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'github_list_files','description':'List files in the configured GitHub repository. Path is repository-relative; use an empty string for root. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_read_file','description':'Read a UTF-8 text file from the configured GitHub repository using a repository-relative path. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_search_code','description':'Search code in the configured GitHub repository for a symbol or distinctive text. Requires github_access.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
+    {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'},'cwd':{'type':'string'}},'required':['command']}}},
 ]
 
 PERMISSION_FOR_TOOL = {
@@ -38,7 +40,7 @@ PERMISSION_FOR_TOOL = {
     'move_file':('file_moving',), 'delete_file':('file_deletion',),
     'create_directory':('directory_creation',), 'delete_directory':('directory_deletion',),
     'github_list_files':('github_access',), 'github_read_file':('github_access',),
-    'github_search_code':('github_access',),
+    'github_search_code':('github_access',), 'run_command':('terminal_access',),
 }
 
 def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -132,6 +134,20 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             q=urllib.parse.quote(query+' repo:'+repo)
             result=_github_request('/search/code?q='+q+'&per_page=10')
             return {'items':[{'path':x.get('path'),'url':x.get('html_url')} for x in result.get('items',[])]}
+        if name=='run_command':
+            command=args.get('command')
+            if not isinstance(command,str) or not command.strip() or len(command)>4000: return {'error':'Укажите команду длиной от 1 до 4000 символов.'}
+            cwd_raw=str(args.get('cwd','')).strip()
+            if not cwd_raw: return {'error':'Не задан путь проекта для выполнения команды.'}
+            cwd=resolve_authorized_path(cwd_raw,permission_config,must_exist=True)
+            if not cwd.is_dir(): return {'error':'Рабочий путь проекта не является папкой.'}
+            try:
+                completed=subprocess.run(command,shell=True,cwd=str(cwd),capture_output=True,text=True,timeout=30,encoding='utf-8',errors='replace')
+                return {'cwd':str(cwd),'stdout':completed.stdout[-60000:],'stderr':completed.stderr[-30000:],'exit_code':completed.returncode}
+            except subprocess.TimeoutExpired as exc:
+                stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
+                stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
+                return {'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
         path=None if name=='move_file' else resolve_authorized_path(str(args.get('path','')),permission_config,must_exist=name in {'list_files','read_file','search_files','delete_file','delete_directory'})
         if name=='list_files':
             if not path.is_dir(): return {'error':'Указанный путь не является папкой.'}
