@@ -2383,7 +2383,7 @@ class Handler(SimpleHTTPRequestHandler):
                     'DEVOPS':'Ты инженер инфраструктуры. Учитывай конфигурацию, логи, мониторинг и откат.'
                 }.get(str(agent.get('role','')).upper(), '')
                 instruction = (resolve_agent_system_prompt(agent) or system_prompt or role_prompt) if agent else role_prompt
-                if instruction and not any(m.get('role') == 'system' for m in validated_messages):
+                if instruction:
                     validated_messages.insert(0, {'role':'system','content':instruction})
             request_body = json.dumps({
                 'model': model,
