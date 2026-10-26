@@ -226,6 +226,8 @@ def log_event(action, detail=''):
 OLLAMA_URL = os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
 DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 'tasks': DATA/'tasks.json'}
 AGENT_ROLES = ['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS']
+AGENT_ROLES_FILE = DATA / 'agent_roles.json'
+AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер проекта','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Инженер-программист','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
 AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access'}
 DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
 AGENT_ROLE_PROMPTS = {
@@ -450,6 +452,32 @@ def save_system_instructions(items):
 def system_instruction_defaults():
     prompts = read_all_system_prompt_templates()
     return {role: {'system_prompt': prompts[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
+def ensure_agent_roles():
+    """Load persisted agent roles, seeding built-in roles without overwriting user edits."""
+    current = read_json(AGENT_ROLES_FILE, [])
+    if not isinstance(current, list):
+        current = []
+    known = {str(x.get('code', '')).upper() for x in current if isinstance(x, dict)}
+    instructions = ensure_system_instructions()
+    now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    for code in AGENT_ROLES:
+        if code in known:
+            continue
+        instr = next((x for x in instructions if isinstance(x, dict) and x.get('role') == code and x.get('is_default')), None)
+        defaults = system_instruction_defaults().get(code, {})
+        current.append({
+            'id': code, 'code': code, 'name': AGENT_ROLE_DISPLAY_NAMES.get(code, code),
+            'activity': (instr or {}).get('activity') or defaults.get('activity', ''),
+            'system_prompt': (instr or {}).get('system_prompt') or defaults.get('system_prompt', AGENT_ROLE_PROMPTS.get(code, '')),
+            'is_system': True, 'created_at': now, 'updated_at': now
+        })
+    if current != read_json(AGENT_ROLES_FILE, []):
+        write_json(AGENT_ROLES_FILE, current)
+    return current
+
+def save_agent_roles(items):
+    write_json(AGENT_ROLES_FILE, items)
+
 def validate_manager_interaction_plan(value):
     if not isinstance(value, list) or len(value) > 50:
         raise ValueError('План взаимодействия MANAGER должен быть массивом не более 50 правил')
@@ -769,10 +797,17 @@ def execute_module_graph(data):
 
 
 def resolve_agent_system_prompt(agent: dict | None) -> str:
-    """Промпт агента: из system_instructions.json по роли, fallback — AGENT_ROLE_PROMPTS."""
-    role = str((agent or {}).get('role', 'ANALYST')).upper()
+    """Resolve the assigned role prompt first, then legacy system instructions and defaults."""
+    role = str((agent or {}).get('role', 'ANALYST')).upper().strip()
+    try:
+        roles = read_json(AGENT_ROLES_FILE, [])
+        role_item = next((x for x in roles if isinstance(x, dict) and str(x.get('code', '')).upper() == role), None) if isinstance(roles, list) else None
+        if role_item and str(role_item.get('system_prompt', '')).strip():
+            return str(role_item['system_prompt']).strip()
+    except Exception:
+        pass
     if role not in AGENT_ROLES:
-        role = 'ANALYST'
+        return AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
     try:
         instructions = read_json(DATA / 'system_instructions.json', {}).get('instructions', [])
     except Exception:
@@ -1830,6 +1865,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'defaults': system_instruction_defaults()})
         if path == '/api/system-instructions/validate':
             return self.send_json(200, {'warnings': system_instruction_warnings(ensure_system_instructions())})
+        if path == '/api/agent-roles':
+            items = ensure_agent_roles()
+            return self.send_json(200, {'roles': items, 'total': len(items)})
         if path == '/api/system-instructions':
             items = ensure_system_instructions()
             return self.send_json(200, {'instructions': items, 'total': len(items)})
@@ -1879,6 +1917,17 @@ class Handler(SimpleHTTPRequestHandler):
             history = read_json(_system_instruction_history_path(), [])
             if not isinstance(history, list): history = []
             return self.send_json(200, {'id': instruction_id, 'history': [entry for entry in history if isinstance(entry, dict) and entry.get('id') == instruction_id][:50]})
+        if path.startswith('/api/agent-roles/'):
+            role_id = urllib.parse.unquote(path[len('/api/agent-roles/'):])
+            items = ensure_agent_roles()
+            item = next((x for x in items if x.get('id') == role_id), None)
+            if not item: return self.send_json(404, {'error': 'Роль не найдена'})
+            if item.get('is_system'): return self.send_json(403, {'error': 'Системную роль нельзя удалить'})
+            assigned = [a.get('name', a.get('id', '')) for a in domain_items('agents') if str(a.get('role', '')).upper() == str(item.get('code', '')).upper()]
+            if assigned: return self.send_json(409, {'error': 'Роль назначена агентам: ' + ', '.join(assigned[:5]) + '. Сначала назначьте им другие роли.'})
+            save_agent_roles([x for x in items if x.get('id') != role_id])
+            log_event('agent_role.delete', item.get('name', role_id))
+            return self.send_json(200, {'ok': True})
         if path.startswith('/api/system-instructions/'):
             instruction_id = urllib.parse.unquote(path[len('/api/system-instructions/'):])
             if not instruction_id or '/' in instruction_id: return self.send_json(404, {'error': 'Инструкция не найдена'})
@@ -2007,6 +2056,33 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/agent-roles':
+            try:
+                items = ensure_agent_roles()
+                role_id = str(data.get('id', '')).strip()
+                existing = next((x for x in items if x.get('id') == role_id), None) if role_id else None
+                name = data.get('name', existing.get('name', '') if existing else '')
+                activity = data.get('activity', existing.get('activity', '') if existing else '')
+                system_prompt = data.get('system_prompt', existing.get('system_prompt', '') if existing else '')
+                if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
+                    return self.send_json(400, {'error': 'Название роли должно содержать от 1 до 120 символов'})
+                if not isinstance(activity, str) or len(activity) > 2000:
+                    return self.send_json(400, {'error': 'Описание роли должно быть строкой до 2000 символов'})
+                if not isinstance(system_prompt, str) or not 1 <= len(system_prompt.strip()) <= 8000:
+                    return self.send_json(400, {'error': 'Системная инструкция должна содержать от 1 до 8000 символов'})
+                now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                if existing:
+                    existing.update({'name': name.strip(), 'activity': activity.strip(), 'system_prompt': system_prompt.strip(), 'updated_at': now})
+                    item = existing
+                else:
+                    code = 'CUSTOM_' + uuid.uuid4().hex[:10].upper()
+                    item = {'id': code, 'code': code, 'name': name.strip(), 'activity': activity.strip(), 'system_prompt': system_prompt.strip(), 'is_system': False, 'created_at': now, 'updated_at': now}
+                    items.append(item)
+                save_agent_roles(items)
+                log_event('agent_role.save', item['name'])
+                return self.send_json(200 if existing else 201, item)
+            except Exception as exc:
+                return self.send_json(500, {'error': str(exc)[:240]})
         if path == '/api/system-instructions':
             try:
                 name = data.get('name'); role = str(data.get('role', '')).upper().strip()
@@ -2113,7 +2189,7 @@ class Handler(SimpleHTTPRequestHandler):
                     'TESTER':'Ты инженер по тестированию. Ищи граничные случаи, регрессии и воспроизводимые критерии приёмки.',
                     'DEVOPS':'Ты инженер инфраструктуры. Учитывай конфигурацию, логи, мониторинг и откат.'
                 }.get(str(agent.get('role','')).upper(), '')
-                instruction = system_prompt or role_prompt
+                instruction = system_prompt or (resolve_agent_system_prompt(agent) if agent else role_prompt)
                 if instruction and not any(m.get('role') == 'system' for m in validated_messages):
                     validated_messages.insert(0, {'role':'system','content':instruction})
             request_body = json.dumps({
@@ -2616,7 +2692,7 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_GET_HEAD(self): pass
 if __name__=='__main__':
-    settings(); pages(); initialize_system_prompt_templates(); ensure_system_instructions(); log_event('server.start',f'http://{HOST}:{PORT}')
+    settings(); pages(); initialize_system_prompt_templates(); ensure_system_instructions(); ensure_agent_roles(); log_event('server.start',f'http://{HOST}:{PORT}')
     _start_gpu_background()
     server=ThreadingHTTPServer((HOST,PORT),Handler)
     print(f'PQlocalAgentOSv3: http://{HOST}:{PORT}  (Ctrl+C to stop)')
