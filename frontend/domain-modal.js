@@ -59,11 +59,12 @@ function renderInteractionPlan(role,plan){
       +'<td><select data-rule="fallback"'+disabled+'>'+selectOptions(row.fallback||'',true)+'</select></td>'
       +'<td>'+(isManager?'<button type="button" class="rule-remove" data-rule-remove aria-label="Удалить правило">×</button>':'')+'</td></tr>';
   });
-  html+='</tbody></table></div>'+(rows.length?'':'<div class="small muted">Правил пока нет.</div>')+'</div>';
+  html+='</tbody></table></div>'+(rows.length?'':'<div class="small muted system-instruction-plan-empty">Правил пока нет.</div>')+'</div>';
   container.innerHTML=html;
 }
 function addInteractionRule(){
   const body=$('#domain-interaction-plan tbody');if(!body)return;
+  $('#domain-interaction-plan .system-instruction-plan-empty')?.remove();
   const roles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
   const optionList=(values,selected)=>values.map(role=>'<option value="'+role+'" '+(role===selected?'selected':'')+'>'+(role||'—')+'</option>').join('');
   const tr=document.createElement('tr');tr.dataset.ruleRow='new';
