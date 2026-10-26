@@ -26,14 +26,14 @@ function domainModalMarkup(){return '<div class="modal-overlay domain-modal mode
 function ensureDomainModal(){let modal=$('#domain-modal');if(!modal){document.body.insertAdjacentHTML('beforeend',domainModalMarkup());modal=$('#domain-modal')}bindDomainModal();return modal}
 function fixedSystemInstructionPlan(){
   return [
-    {from:'MANAGER',trigger:'task_received',condition:'Задача получена',action:'Выполнить работу и вернуть результат',to:'MANAGER',fallback:''},
-    {from:'MANAGER',trigger:'need_clarification',condition:'Не хватает данных',action:'Запросить уточнение у MANAGER',to:'MANAGER',fallback:''}
+    {from:'MANAGER',trigger:'task_received',condition:'Задача получена',action_instruction:'Выполнить работу и вернуть результат',target_role:'MANAGER',fallback_role:''},
+    {from:'MANAGER',trigger:'need_clarification',condition:'Не хватает данных',action_instruction:'Запросить уточнение у MANAGER',target_role:'MANAGER',fallback_role:''}
   ];
 }
 function readInteractionPlan(){
   return Array.from(document.querySelectorAll('#domain-interaction-plan tbody tr[data-rule-row]')).map(tr=>{
     const get=key=>tr.querySelector('[data-rule="'+key+'"]')?.value||'';
-    return {trigger:get('trigger').trim(),condition:get('condition').trim(),action:get('action').trim(),to:get('to')||'MANAGER',fallback:get('fallback')};
+    return {trigger:get('trigger').trim(),condition:get('condition').trim(),action_instruction:get('action_instruction').trim(),target_role:get('target_role')||'MANAGER',fallback_role:get('fallback_role')};
   });
 }
 function renderInteractionPlan(role,plan){
@@ -54,9 +54,9 @@ function renderInteractionPlan(role,plan){
       +(isManager?'':'<td><select data-rule="from" disabled><option value="MANAGER">MANAGER</option></select></td>')
       +'<td><input data-rule="trigger" maxlength="120" value="'+esc(row.trigger||'')+'" '+disabled+'></td>'
       +'<td><input data-rule="condition" maxlength="240" value="'+esc(row.condition||'')+'" '+disabled+'></td>'
-      +'<td><textarea data-rule="action" rows="2" maxlength="1000" '+disabled+'>'+esc(row.action||'')+'</textarea></td>'
-      +'<td><select data-rule="to"'+disabled+'>'+selectOptions(row.to||'MANAGER',false)+'</select></td>'
-      +'<td><select data-rule="fallback"'+disabled+'>'+selectOptions(row.fallback||'',true)+'</select></td>'
+      +'<td><textarea data-rule="action_instruction" rows="2" maxlength="1000" '+disabled+'>'+esc(row.action_instruction||'')+'</textarea></td>'
+      +'<td><select data-rule="target_role"'+disabled+'>'+selectOptions(row.target_role||'MANAGER',false)+'</select></td>'
+      +'<td><select data-rule="fallback_role"'+disabled+'>'+selectOptions(row.fallback_role||'',true)+'</select></td>'
       +'<td>'+(isManager?'<button type="button" class="rule-remove" data-rule-remove aria-label="Удалить правило">×</button>':'')+'</td></tr>';
   });
   html+='</tbody></table></div>'+(rows.length?'':'<div class="small muted system-instruction-plan-empty">Правил пока нет.</div>')+'</div>';
@@ -70,9 +70,9 @@ function addInteractionRule(){
   const tr=document.createElement('tr');tr.dataset.ruleRow='new';
   tr.innerHTML='<td><input data-rule="trigger" maxlength="120" placeholder="new_task"></td>'
     +'<td><input data-rule="condition" maxlength="240" placeholder="Есть ARCHITECT"></td>'
-    +'<td><textarea data-rule="action" rows="2" maxlength="1000" placeholder="Декомпозиция и передача"></textarea></td>'
-    +'<td><select data-rule="to">'+optionList(roles,'MANAGER')+'</select></td>'
-    +'<td><select data-rule="fallback">'+optionList(['',...roles],'')+'</select></td>'
+    +'<td><textarea data-rule="action_instruction" rows="2" maxlength="1000" placeholder="Декомпозиция и передача"></textarea></td>'
+    +'<td><select data-rule="target_role">'+optionList(roles,'MANAGER')+'</select></td>'
+    +'<td><select data-rule="fallback_role">'+optionList(['',...roles],'')+'</select></td>'
     +'<td><button type="button" class="rule-remove" data-rule-remove aria-label="Удалить правило">×</button></td>';
   body.appendChild(tr);
 }
