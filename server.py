@@ -2,7 +2,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import urllib.parse
-import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys
+import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time
 from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parent
@@ -72,6 +72,20 @@ def write_project_memory(project_id: str, memory: dict):
     write_json(_project_memory_path(project_id), memory)
 
 
+def _append_project_memory_fact(memory: dict, fact: dict):
+    """Append a project fact unless the same text/source is already in recent memory."""
+    facts = memory.get('facts')
+    if not isinstance(facts, list):
+        facts = []
+        memory['facts'] = facts
+    for existing in reversed(facts[-MEMORY_FACTS_LIMIT:]):
+        if (isinstance(existing, dict)
+                and existing.get('text') == fact.get('text')
+                and existing.get('source') == fact.get('source')):
+            return
+    facts.append(fact)
+
+
 def update_project_memory_after_task(task: dict, team_result: list, agent: dict | None):
     project_id = str(task.get('project_id', '')).strip()
     if not project_id:
@@ -107,11 +121,11 @@ def update_project_memory_after_task(task: dict, team_result: list, agent: dict 
             resp = str(stage.get('response', '')).strip()
             if role and resp:
                 fact_text = (role + ': ' + resp[:150]).replace('\n', ' ').strip()
-                memory['facts'].append({'text': fact_text, 'source': task_id, 'at': now})
+                _append_project_memory_fact(memory, {'text': fact_text, 'source': task_id, 'at': now})
     elif status == 'failed':
         err = str(task.get('error', ''))[:200].replace('\n', ' ')
         memory['summary'] = (title + ' — ОШИБКА: ' + err).strip(' —')[:400]
-        memory['facts'].append({'text': 'Задача "' + title + '" завершилась ошибкой: ' + err, 'source': task_id, 'at': now})
+        _append_project_memory_fact(memory, {'text': 'Задача "' + title + '" завершилась ошибкой: ' + err, 'source': task_id, 'at': now})
     write_project_memory(project_id, memory)
 
 
@@ -268,7 +282,7 @@ SYSTEM_INSTRUCTION_ACTIVITY = {
     'DEVOPS': "Инфраструктура, сборки, конфигурация, мониторинг, откат"
 }
 SYSTEM_INSTRUCTION_ROLE_NAMES = {
-    'MANAGER': 'Менеджер проекта', 'ARCHITECT': 'Архитектор',
+    'MANAGER': 'Менеджер проекта', 'DISPATCHER': 'Диспетчер', 'ARCHITECT': 'Архитектор',
     'ANALYST': 'Аналитик', 'DESIGNER': 'Дизайнер',
     'COPYWRITER': 'Копирайтер', 'CODER': 'Инженер-программист',
     'TESTER': 'Тестировщик', 'DEVOPS': 'DevOps-инженер'
@@ -455,25 +469,39 @@ def system_instruction_defaults():
     prompts = read_all_system_prompt_templates()
     return {role: {'system_prompt': prompts[role], 'activity': SYSTEM_INSTRUCTION_ACTIVITY[role]} for role in AGENT_ROLES}
 def ensure_agent_roles():
-    """Load persisted agent roles, seeding built-in roles without overwriting user edits."""
+    """Load persisted agent roles and seed missing built-ins without initializing instruction storage."""
     current = read_json(AGENT_ROLES_FILE, [])
     if not isinstance(current, list):
         current = []
-    known = {str(x.get('code', '')).upper() for x in current if isinstance(x, dict)}
-    instructions = ensure_system_instructions()
     now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    changed = False
+
+    # Repair only missing values; preserve customized prompts and activity descriptions.
+    for item in current:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get('code', '')).upper()
+        if code not in AGENT_ROLES:
+            continue
+        if not str(item.get('activity', '')).strip():
+            item['activity'] = SYSTEM_INSTRUCTION_ACTIVITY.get(code, '')
+            changed = True
+        if not str(item.get('system_prompt', '')).strip():
+            item['system_prompt'] = SYSTEM_INSTRUCTION_PROMPTS.get(code, AGENT_ROLE_PROMPTS.get(code, ''))
+            changed = True
+
+    known = {str(x.get('code', '')).upper() for x in current if isinstance(x, dict)}
     for code in AGENT_ROLES:
         if code in known:
             continue
-        instr = next((x for x in instructions if isinstance(x, dict) and x.get('role') == code and x.get('is_default')), None)
-        defaults = system_instruction_defaults().get(code, {})
         current.append({
             'id': code, 'code': code, 'name': AGENT_ROLE_DISPLAY_NAMES.get(code, code),
-            'activity': (instr or {}).get('activity') or defaults.get('activity', ''),
-            'system_prompt': (instr or {}).get('system_prompt') or defaults.get('system_prompt', AGENT_ROLE_PROMPTS.get(code, '')),
+            'activity': SYSTEM_INSTRUCTION_ACTIVITY.get(code, ''),
+            'system_prompt': SYSTEM_INSTRUCTION_PROMPTS.get(code, AGENT_ROLE_PROMPTS.get(code, '')),
             'is_system': True, 'created_at': now, 'updated_at': now
         })
-    if current != read_json(AGENT_ROLES_FILE, []):
+        changed = True
+    if changed:
         write_json(AGENT_ROLES_FILE, current)
     return current
 
@@ -1158,6 +1186,9 @@ def run_agent_team(model, task, agent=None, project=None):
 
         requested_role = str(decision.get('next_role', '')).upper()
         next_role = resolve_fallback_role(requested_role, manager_plan, active_roles)
+        # DISPATCHER routes project work but is never a worker for an ordinary task.
+        if next_role == 'DISPATCHER':
+            next_role = 'MANAGER' if 'MANAGER' in active_roles else ('ANALYST' if 'ANALYST' in active_roles else '')
         if not next_role:
             return {
                 'response': 'MANAGER не смог выбрать активного исполнителя. Ответ: ' + str(content)[:400],
@@ -1370,7 +1401,6 @@ def _start_gpu_background():
     threading.Thread(target=worker, daemon=True).start()
 
 def _gpu_stats():
-    import time
     global _GPU_CACHE, _GPU_CACHE_AT
     now = time.monotonic()
     if _GPU_CACHE is None:
@@ -2142,32 +2172,6 @@ class Handler(SimpleHTTPRequestHandler):
                 files=[{'path':x['path'],'size':x.get('size',0)} for x in tree.get('tree',[]) if x.get('type')=='blob'][:500]
                 return self.send_json(200, {'repository':active_github_repository(),'branch':repo.get('default_branch','main'),'files':files})
             except Exception as e: return self.send_json(400, {'error':str(e)})
-        if path=='/api/github/connections':
-            name=str(data.get('name','')).strip()[:100]
-            repository=str(data.get('repository','')).strip()
-            token=str(data.get('token','')).strip()
-            connection_id=str(data.get('id','')).strip()
-            if not name: return self.send_json(400, {'error':'Введите название подключения'})
-            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository): return self.send_json(400, {'error':'Укажите репозиторий в формате owner/repository'})
-            saved=github_connections()
-            existing=next((x for x in saved['connections'] if x.get('id')==connection_id),None) if connection_id else None
-            if not existing and not token: return self.send_json(400, {'error':'Введите GitHub API-токен'})
-            if token and not token.startswith(('ghp_','github_pat_','gho_','ghu_','ghs_','ghr_')): return self.send_json(400, {'error':'Проверьте формат GitHub-токена'})
-            if token:
-                try: encrypted=base64.b64decode(_dpapi_crypt(token))
-                except Exception as e: return self.send_json(400, {'error':'Не удалось зашифровать токен: '+str(e)})
-            else: encrypted=base64.b64decode(existing.get('token_encrypted',''))
-            item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':base64.b64encode(encrypted).decode('ascii'),'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
-            if existing: saved['connections']=[item if x.get('id')==connection_id else x for x in saved['connections']]
-            else: saved['connections'].insert(0,item)
-            saved['active_id']=item['id']; write_json(GITHUB_CONNECTIONS_FILE,saved)
-            log_event('github.connection.save',repository)
-            return self.send_json(200, {'ok':True,'id':item['id'],'message':'Подключение сохранено; токен зашифрован Windows DPAPI'})
-        if path == '/api/github/connections/active':
-            connection_id=str(data.get('id','')).strip(); saved=github_connections()
-            if not any(x.get('id')==connection_id for x in saved['connections']): return self.send_json(404, {'error':'Подключение не найдено'})
-            saved['active_id']=connection_id; write_json(GITHUB_CONNECTIONS_FILE,saved)
-            return self.send_json(200, {'ok':True})
         if path=='/api/github/file':
             file_path=parse_qs(urlparse(self.path).query).get('path',[''])[0]
             if not file_path or file_path.startswith('/') or '..' in Path(file_path).parts: return self.send_json(400, {'error':'Некорректный путь файла'})
@@ -2220,6 +2224,32 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path=='/api/github/connections':
+            name=str(data.get('name','')).strip()[:100]
+            repository=str(data.get('repository','')).strip()
+            token=str(data.get('token','')).strip()
+            connection_id=str(data.get('id','')).strip()
+            if not name: return self.send_json(400, {'error':'Введите название подключения'})
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',repository): return self.send_json(400, {'error':'Укажите репозиторий в формате owner/repository'})
+            saved=github_connections()
+            existing=next((x for x in saved['connections'] if x.get('id')==connection_id),None) if connection_id else None
+            if not existing and not token: return self.send_json(400, {'error':'Введите GitHub API-токен'})
+            if token and not token.startswith(('ghp_','github_pat_','gho_','ghu_','ghs_','ghr_')): return self.send_json(400, {'error':'Проверьте формат GitHub-токена'})
+            if token:
+                try: encrypted=base64.b64decode(_dpapi_crypt(token))
+                except Exception as e: return self.send_json(400, {'error':'Не удалось зашифровать токен: '+str(e)})
+            else: encrypted=base64.b64decode(existing.get('token_encrypted',''))
+            item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':base64.b64encode(encrypted).decode('ascii'),'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+            if existing: saved['connections']=[item if x.get('id')==connection_id else x for x in saved['connections']]
+            else: saved['connections'].insert(0,item)
+            saved['active_id']=item['id']; write_json(GITHUB_CONNECTIONS_FILE,saved)
+            log_event('github.connection.save',repository)
+            return self.send_json(200, {'ok':True,'id':item['id'],'message':'Подключение сохранено; токен зашифрован Windows DPAPI'})
+        if path == '/api/github/connections/active':
+            connection_id=str(data.get('id','')).strip(); saved=github_connections()
+            if not any(x.get('id')==connection_id for x in saved['connections']): return self.send_json(404, {'error':'Подключение не найдено'})
+            saved['active_id']=connection_id; write_json(GITHUB_CONNECTIONS_FILE,saved)
+            return self.send_json(200, {'ok':True})
         if path == '/api/agent-roles':
             try:
                 items = ensure_agent_roles()
