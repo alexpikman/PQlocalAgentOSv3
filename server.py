@@ -699,9 +699,9 @@ def provider_for_model(model, preferred_id=''):
     for p in providers:
         pid=str(p.get('id','')).lower()
         pname=str(p.get('name','')).lower()
-        if pid and (name.startswith(pid+'/') or name.startswith(pid+':') or name==pid):
+        if pid and (name.startswith(pid+'/') or name.startswith(pid+':') or name.startswith(pid+'-') or name==pid):
             return p
-        if pname and name.startswith(pname+'/'):
+        if pname and (name.startswith(pname+'/') or name.startswith(pname+'-')):
             return p
     if name.startswith('claude-') or 'claude' in name:
         return next((p for p in providers if p.get('format')=='anthropic'), None) or next((p for p in providers if p.get('id')=='anthropic'), None)
