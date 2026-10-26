@@ -168,3 +168,6 @@ body:not(.chat-page) .topbar{display:none}
 /* Workspace navigation stays visible and expanded on both desktop and chat pages. */
 .nav-group-fixed .nav-group-label{display:block;cursor:default}
 body.chat-page #nav>.nav-group:not(:first-child){display:none!important}
+
+/* Do not expose the static sidebar while the dashboard is loading its real navigation. */
+body.nav-loading #nav{visibility:hidden}
