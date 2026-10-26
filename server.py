@@ -687,7 +687,7 @@ def resolve_ollama_model(model, timeout=4):
 
 
 def provider_for_model(model, preferred_id=''):
-    """Find the configured provider for a model; Ollama remains the safe default."""
+    """Resolve an agent's provider, preferring explicit IDs and known model/provider names."""
     providers=provider_items()
     preferred=str(preferred_id or '').strip()
     if preferred:
@@ -695,7 +695,7 @@ def provider_for_model(model, preferred_id=''):
         if match:
             return match
     name=str(model or '').strip().lower()
-    # Explicit provider/model IDs (e.g. anthropic/claude-sonnet-5) take priority.
+    # Provider-qualified model IDs and provider names.
     for p in providers:
         pid=str(p.get('id','')).lower()
         pname=str(p.get('name','')).lower()
@@ -703,12 +703,30 @@ def provider_for_model(model, preferred_id=''):
             return p
         if pname and (name.startswith(pname+'/') or name.startswith(pname+'-')):
             return p
-    if name.startswith('claude-') or 'claude' in name:
-        return next((p for p in providers if p.get('format')=='anthropic'), None) or next((p for p in providers if p.get('id')=='anthropic'), None)
-    if name.startswith('gemini-') or 'gemini' in name:
-        return next((p for p in providers if p.get('format')=='gemini'), None)
+    # Recognize common cloud model families even if the provider has a custom ID.
+    if 'claude' in name:
+        match=next((p for p in providers if p.get('format')=='anthropic' and p.get('kind')=='cloud'),None)
+        if match: return match
+    if 'gemini' in name:
+        match=next((p for p in providers if p.get('format')=='gemini' and p.get('kind')=='cloud'),None)
+        if match: return match
     if name.startswith(('gpt-','o1-','o3-','o4-')):
-        return next((p for p in providers if p.get('id')=='openai'), None)
+        match=next((p for p in providers if p.get('id')=='openai' and p.get('kind')=='cloud'),None)
+        if match: return match
+    if 'deepseek' in name:
+        match=next((p for p in providers if 'deepseek' in (str(p.get('id',''))+' '+str(p.get('name',''))).lower() and p.get('kind')=='cloud'),None)
+        if match: return match
+    # Preserve known local models on Ollama. For a non-local model without an explicit
+    # provider, use the sole configured custom cloud provider rather than misrouting to Ollama.
+    local_prefixes=('qwen3.5:','qwen2.5-coder:','llama3.1:','nomic-embed-text:')
+    if name.startswith(local_prefixes) or name in ('qwen3.5','llama3.1','nomic-embed-text'):
+        return next((p for p in providers if p.get('id')=='ollama'), {'id':'ollama','name':'Ollama','kind':'local','base_url':OLLAMA_URL,'format':'ollama'})
+    clouds=[p for p in providers if p.get('kind')=='cloud' and p.get('api_key') and p.get('base_url')]
+    custom_clouds=[p for p in clouds if not p.get('builtin')]
+    if len(custom_clouds)==1:
+        return custom_clouds[0]
+    if len(clouds)==1:
+        return clouds[0]
     return next((p for p in providers if p.get('id')=='ollama'), {'id':'ollama','name':'Ollama','kind':'local','base_url':OLLAMA_URL,'format':'ollama'})
 
 
