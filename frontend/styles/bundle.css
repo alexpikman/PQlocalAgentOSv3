@@ -1169,3 +1169,14 @@ td{border-color:var(--line)}
 #domain-si-history[hidden],#domain-si-history-picker[hidden]{display:none}
 
 .pq-memory-nav-modal[hidden]{display:none!important}
+
+
+/* === Project/task card footer actions === */
+.entity-row-footer-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:7px;width:100%;margin-top:12px}
+.entity-row-footer-actions .btn{flex:0 0 auto}
+
+/* The memory modal body must stack tabs and panes vertically, not use the global two-column modal grid. */
+.pq-memory-nav-modal .modal-card-body{display:block;min-width:0;overflow:auto}
+.pq-memory-nav-modal .project-memory-tabs{width:100%}
+.pq-memory-nav-modal .project-memory-pane{width:100%;min-width:0}
+.pq-memory-nav-modal .project-memory-pane textarea{box-sizing:border-box;display:block;max-width:100%}
