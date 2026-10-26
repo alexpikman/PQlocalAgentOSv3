@@ -802,11 +802,11 @@ def resolve_agent_system_prompt(agent: dict | None) -> str:
     try:
         roles = read_json(AGENT_ROLES_FILE, [])
         role_item = next((x for x in roles if isinstance(x, dict) and str(x.get('code', '')).upper() == role), None) if isinstance(roles, list) else None
+    except Exception:
+        role_item = None
+    if role not in AGENT_ROLES:
         if role_item and str(role_item.get('system_prompt', '')).strip():
             return str(role_item['system_prompt']).strip()
-    except Exception:
-        pass
-    if role not in AGENT_ROLES:
         return AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
     try:
         instructions = read_json(DATA / 'system_instructions.json', {}).get('instructions', [])
@@ -819,6 +819,8 @@ def resolve_agent_system_prompt(agent: dict | None) -> str:
             instr = next((x for x in instructions if isinstance(x, dict) and x.get('role') == role), None)
     if instr and isinstance(instr.get('system_prompt'), str) and instr['system_prompt'].strip():
         return instr['system_prompt'].strip()
+    if role_item and str(role_item.get('system_prompt', '')).strip():
+        return str(role_item['system_prompt']).strip()
     return AGENT_ROLE_PROMPTS.get(role, AGENT_ROLE_PROMPTS['ANALYST'])
 
 
@@ -2079,6 +2081,12 @@ class Handler(SimpleHTTPRequestHandler):
                     item = {'id': code, 'code': code, 'name': name.strip(), 'activity': activity.strip(), 'system_prompt': system_prompt.strip(), 'is_system': False, 'created_at': now, 'updated_at': now}
                     items.append(item)
                 save_agent_roles(items)
+                if item.get('is_system'):
+                    instructions = ensure_system_instructions()
+                    instruction = next((x for x in instructions if isinstance(x, dict) and x.get('role') == item.get('code') and x.get('is_default')), None)
+                    if instruction:
+                        instruction.update({'name': item['name'] + ' (по умолчанию)', 'activity': item['activity'], 'system_prompt': item['system_prompt'], 'updated_at': now})
+                        save_system_instructions(instructions)
                 log_event('agent_role.save', item['name'])
                 return self.send_json(200 if existing else 201, item)
             except Exception as exc:
