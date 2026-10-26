@@ -333,13 +333,15 @@ def _chat_file_upload(handler, chat_id):
     parts = raw.split(b'--' + boundary)
     uploaded = None
     for part in parts:
-        part = part.strip(b'\r\n')
-        if not part or part == b'--':
+        if part.startswith(b'\\r\\n'):
+            part = part[2:]
+        if part.endswith(b'\\r\\n'):
+            part = part[:-2]
+        if not part or part.startswith(b'--'):
             continue
-        header_blob, separator, payload = part.partition(b'\r\n\r\n')
+        header_blob, separator, payload = part.partition(b'\\r\\n\\r\\n')
         if not separator:
             continue
-        payload = payload.removesuffix(b'\r\n')
         header_text = header_blob.decode('latin-1', 'replace')
         disposition = re.search(r'Content-Disposition:[^\r\n]*filename="([^"]*)"', header_text, re.I)
         if not disposition:
