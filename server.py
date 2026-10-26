@@ -913,6 +913,18 @@ def run_agent_task(model, task, agent=None, project=None):
         system_prompt += '\n\nПрофиль агента: '+str(agent.get('name',''))+'\nНазначение: '+str(agent.get('description',''))[:1000]
         memory=str(agent.get('memory','')).strip()
         if memory: system_prompt += '\n\nДолговременная память агента (пользовательские заметки):\n'+memory[:8000]
+    project_id = str((task or {}).get('project_id') or ((project or {}).get('id') if isinstance(project, dict) else '')).strip()
+    if project_id:
+        project_memory = read_project_memory(project_id)
+        memory_context = [
+            'СВЯЗАННАЯ ПАМЯТЬ ПРОЕКТА — учитывать все пункты при каждом продолжении работы.',
+            'Сводка: ' + str(project_memory.get('summary') or 'не заполнена'),
+            'Ограничения: ' + ('; '.join(str(x) for x in project_memory.get('constraints', [])) or 'нет записей'),
+            'Открытые вопросы: ' + ('; '.join(str(x) for x in project_memory.get('open_questions', [])) or 'нет записей'),
+            'Следующие шаги: ' + ('; '.join(str(x) for x in project_memory.get('next_steps', [])) or 'нет записей'),
+            'Зафиксированные факты и результаты: ' + ('; '.join(str(x.get('text', '')) for x in project_memory.get('facts', [])[-15:] if isinstance(x, dict)) or 'нет записей'),
+        ]
+        system_prompt += '\n\n' + '\n'.join(memory_context)
     system_prompt += '\n\nТы работаешь в локальной платформе PQlocalAgentOSv3. Отвечай по-русски. Используй только инструменты, переданные в текущем запросе. Не запускай команды, PowerShell, SSH, программы или произвольный код. Не утверждай, что действие выполнено, пока инструмент не вернул успех.'
     if permissions.get('local_files') and permissions.get('roots'):
         system_prompt += '\n\nРазрешённые корневые папки для файловых инструментов:\n'+'\n'.join(str(root) for root in permissions['roots'][:50])+'\nИспользуй только эти пути. Доступ за пределами этих папок будет отклонён.'
@@ -980,11 +992,13 @@ def load_manager_plan():
 
 
 def find_agent_by_role(role, agents):
-    """Первый агент с нужной ролью или временный."""
+    """Вернуть включённого системного агента нужной роли; иначе пользовательского."""
     role = str(role).upper()
-    for a in agents:
-        if isinstance(a, dict) and str(a.get('role', '')).upper() == role:
-            return a
+    matches = [a for a in agents if isinstance(a, dict) and str(a.get('role', '')).upper() == role]
+    enabled_system = next((a for a in matches if a.get('system') and a.get('system_enabled', True)), None)
+    if enabled_system: return enabled_system
+    custom = next((a for a in matches if not a.get('system')), None)
+    if custom: return custom
     return {'id': None, 'name': role, 'role': role, 'system_prompt': '', 'permissions': {}, 'description': ''}
 
 
@@ -1086,6 +1100,18 @@ def run_agent_team(model, task, agent=None, project=None):
     history = []
     total_tool_calls = 0
     max_steps = 10
+    # All project work is first routed through the dispatcher, whose report becomes manager context.
+    if 'DISPATCHER' in active_roles:
+        dispatcher = find_agent_by_role('DISPATCHER', agents)
+        if dispatcher.get('id') and (not dispatcher.get('system') or dispatcher.get('system_enabled', True)):
+            dispatch_task = {
+                'title': str(task.get('title', '')) + ' — маршрутизация диспетчером',
+                'description': 'Передай менеджеру полный структурированный контекст задачи. Проверь все разделы памяти проекта: сводку, ограничения, открытые вопросы, следующие шаги и накопленные факты. Определи какие специалисты нужны, зависимости, существующие решения и что нельзя потерять. Не выполняй работу вместо специалистов; верни краткий маршрут и риски.',
+                'project_id': task.get('project_id', '') or ((project or {}).get('id', '') if isinstance(project, dict) else ''),
+            }
+            dispatched = run_agent_task(str(dispatcher.get('model') or model), dispatch_task, dispatcher, project)
+            history.append({'role':'DISPATCHER','name':dispatcher.get('name') or 'Диспетчер','model':dispatched.get('model',model),'response':dispatched.get('response',''),'tool_calls':dispatched.get('tool_calls',0),'warning':dispatched.get('warning','')})
+            total_tool_calls += int(dispatched.get('tool_calls',0) or 0)
 
     for _step in range(max_steps):
         context = build_orchestrator_context(task, history, active_roles, manager_plan)
