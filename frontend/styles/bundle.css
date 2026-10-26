@@ -1258,3 +1258,8 @@ td{border-color:var(--line)}
 .github-connection-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .github-connection-row .entity-row-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 @media(max-width:760px){.github-connection-row{align-items:flex-start;flex-direction:column}.github-connection-actions{justify-content:flex-start;width:100%}.github-connection-actions .btn{flex:1}}
+
+/* Models page: providers on the left, model inventory on the right */
+.models-layout{grid-template-columns:minmax(280px,.82fr) minmax(0,1.18fr)}
+.model-tabs{flex-wrap:wrap}
+@media(max-width:900px){.models-layout{grid-template-columns:minmax(0,1fr)}}
