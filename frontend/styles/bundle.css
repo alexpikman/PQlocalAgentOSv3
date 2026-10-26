@@ -1321,3 +1321,12 @@ td{border-color:var(--line)}
   flex-shrink:0;
   width:auto;
 }
+
+
+/* Chat workspace tree, SVG-only controls and model availability. */
+.sidebar-chat-actions .btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-right:7px;vertical-align:middle}
+.sidebar-chat-item-label{display:flex;align-items:center;gap:7px;min-width:0;text-align:left}.sidebar-chat-item-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-tree-chevron,.chat-tree-folder,.sidebar-chat-item-action svg{width:16px;height:16px;flex:0 0 16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.chat-tree-chevron{width:12px;height:12px;flex-basis:12px;transition:transform .15s ease}.sidebar-chat-item-label.is-expanded .chat-tree-chevron{transform:rotate(90deg)}.chat-tree-folder{color:var(--accent)}
+.sidebar-chat-item-actions{display:flex;align-items:center;gap:2px;flex:0 0 auto;opacity:.8}.sidebar-chat-item-action{display:grid;place-items:center;width:25px;height:25px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer}.sidebar-chat-item-action:hover{background:var(--panel2);color:var(--text)}.sidebar-chat-item-action.is-danger:hover{color:#dc4545}.chat-project-add{font-size:0}.chat-project-add svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chat-model-availability{display:inline-block;width:9px;height:9px;flex:0 0 9px;border-radius:50%;background:#9a9a9a;box-shadow:0 0 0 3px color-mix(in srgb,#9a9a9a 16%,transparent);margin-left:3px}.chat-model-availability.is-available{background:#22a06b;box-shadow:0 0 0 3px color-mix(in srgb,#22a06b 18%,transparent)}.chat-model-availability.is-unavailable{background:#dc4545;box-shadow:0 0 0 3px color-mix(in srgb,#dc4545 16%,transparent)}.chat-model-info{grid-template-columns:auto auto minmax(0,auto) auto;align-items:center;column-gap:8px}
+@media(max-width:720px){.sidebar-chat-item-actions{opacity:1}.chat-model-info{grid-template-columns:auto auto minmax(0,1fr) auto}}
