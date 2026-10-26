@@ -103,6 +103,22 @@ class ChatProviderTests(unittest.TestCase):
         with patch.object(server,'provider_items',return_value=providers):
             self.assertEqual(server.provider_for_model('claude-sonnet-5')['id'],'anthropic')
 
+    def test_deepseek_model_uses_single_configured_custom_cloud_provider(self):
+        providers=[
+            {'id':'ollama','name':'Ollama','kind':'local','format':'ollama','base_url':'http://127.0.0.1:11434'},
+            {'id':'fastypass','name':'FastBypass','kind':'cloud','format':'openai','base_url':'https://api.fastypass.com/v1','api_key':'test-key'}
+        ]
+        with patch.object(server,'provider_items',return_value=providers):
+            self.assertEqual(server.provider_for_model('deepseek-flash')['id'],'fastypass')
+
+    def test_known_local_model_still_uses_ollama(self):
+        providers=[
+            {'id':'ollama','name':'Ollama','kind':'local','format':'ollama','base_url':'http://127.0.0.1:11434'},
+            {'id':'fastypass','name':'FastBypass','kind':'cloud','format':'openai','base_url':'https://api.fastypass.com/v1','api_key':'test-key'}
+        ]
+        with patch.object(server,'provider_items',return_value=providers):
+            self.assertEqual(server.provider_for_model('qwen3.5:4b')['id'],'ollama')
+
     def test_anthropic_request_uses_messages_api_and_parses_text(self):
         import io
         provider={'id':'anthropic','name':'Anthropic','kind':'cloud','format':'anthropic','base_url':'https://api.example.test/v1','api_key':'secret'}
