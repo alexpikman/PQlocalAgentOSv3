@@ -1343,20 +1343,6 @@ def run_agent_task(model, task, agent=None, project=None):
     return {'response':message.get('content','') if isinstance(message,dict) and isinstance(message.get('content',''),str) else '', 'tool_calls':total,'model':last.get('model',model) if isinstance(last,dict) else model,'warning':'Достигнут лимит циклов вызова инструментов.'}
 
 
-def load_manager_plan():
-    """interaction_plan MANAGER из system_instructions.json."""
-    try:
-        data = read_json(DATA / 'system_instructions.json', {})
-        items = data.get('instructions', []) if isinstance(data, dict) else []
-        for x in items:
-            if isinstance(x, dict) and x.get('role') == 'MANAGER':
-                plan = x.get('interaction_plan') or []
-                return plan if isinstance(plan, list) else []
-    except Exception:
-        pass
-    return []
-
-
 def find_agent_by_role(role, agents):
     """Вернуть включённого системного агента нужной роли; иначе пользовательского."""
     role = str(role).upper()
@@ -1366,22 +1352,6 @@ def find_agent_by_role(role, agents):
     custom = next((a for a in matches if not a.get('system')), None)
     if custom: return custom
     return {'id': None, 'name': role, 'role': role, 'system_prompt': '', 'permissions': {}, 'description': ''}
-
-
-def resolve_fallback_role(target_role, manager_plan, active_roles):
-    """Если target_role не в active_roles — искать fallback_role в плане."""
-    target_role = str(target_role).upper()
-    if target_role in active_roles:
-        return target_role
-    for rule in manager_plan:
-        if not isinstance(rule, dict):
-            continue
-        if str(rule.get('target_role', '')).upper() != target_role:
-            continue
-        fallback = str(rule.get('fallback_role', '')).upper()
-        if fallback and fallback in active_roles:
-            return fallback
-    return None
 
 
 def parse_orchestrator_decision(text):
@@ -1396,59 +1366,6 @@ def parse_orchestrator_decision(text):
         return json.loads(text[start:end + 1])
     except (ValueError, TypeError):
         return None
-
-
-def build_orchestrator_context(task, history, active_roles, manager_plan):
-    lines = [
-        'Задача: ' + str(task.get('title', '')),
-        'Описание: ' + str(task.get('description', '')),
-        '',
-        'Активные роли: ' + ', '.join(active_roles),
-        '',
-        'План взаимодействия (правила маршрутизации):',
-    ]
-    project_id = str(task.get('project_id', '')).strip()
-    if project_id:
-        mem = read_project_memory(project_id)
-        lines.extend(['', '=== Память проекта ==='])
-        if mem.get('summary'):
-            lines.append('Сводка: ' + str(mem['summary'])[:600])
-        if mem.get('constraints'):
-            lines.append('Ограничения проекта (соблюдать строго):')
-            for c in mem['constraints'][:10]: lines.append('- ' + str(c)[:300])
-        if mem.get('facts'):
-            lines.append('Известные факты (последние ' + str(len(mem['facts'])) + '):')
-            for fact in mem['facts'][-10:]:
-                if isinstance(fact, dict) and fact.get('text'): lines.append('- ' + str(fact['text'])[:300])
-        if mem.get('open_questions'):
-            lines.append('Открытые вопросы:')
-            for question in mem['open_questions'][:10]: lines.append('- ' + str(question)[:300])
-        if mem.get('next_steps'):
-            lines.append('Следующие шаги:')
-            for step in mem['next_steps'][:10]: lines.append('- ' + str(step)[:300])
-        lines.append('=== Конец памяти проекта ===')
-    valid_rules = [rule for rule in manager_plan if isinstance(rule, dict)] if isinstance(manager_plan, list) else []
-    if valid_rules:
-        for rule in valid_rules:
-            lines.append(
-                '- trigger=' + str(rule.get('trigger', '')) +
-                ' | condition=' + str(rule.get('condition', '')) +
-                ' | target_role=' + str(rule.get('target_role', '')) +
-                ' | fallback_role=' + str(rule.get('fallback_role', '')) +
-                ' | action=' + str(rule.get('action_instruction', ''))
-            )
-    else:
-        lines.append('(план пуст — действуй по общим правилам роли)')
-    lines.extend(['', 'История шагов:'])
-    if not history:
-        lines.append('(пока нет)')
-    else:
-        for i, item in enumerate(history, 1):
-            lines.append('Шаг ' + str(i) + ' · ' + str(item.get('name', '')) + ' (' + str(item.get('role', '')) + '):')
-            lines.append(str(item.get('response', ''))[:1500])
-            lines.append('')
-    lines.append('Твой ход. Верни JSON строго по формату.')
-    return '\n'.join(lines)
 
 
 def run_agent_team(model, task, agent=None, project=None):
