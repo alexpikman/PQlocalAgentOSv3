@@ -599,9 +599,11 @@ def _gpu_stats():
                 'fanPercent': None}
     if now - _GPU_CACHE_AT < GPU_CACHE_TTL:
         return _GPU_CACHE
-    # Cache is stale: refresh asynchronously and return the last known sample immediately.
-    _start_gpu_background()
-    return _GPU_CACHE
+    result = _gpu_stats_uncached()
+    with _GPU_CACHE_LOCK:
+        _GPU_CACHE = result
+        _GPU_CACHE_AT = time.monotonic()
+    return result
 
 def _disk_stats():
     disks = []
