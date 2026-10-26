@@ -24,6 +24,7 @@ def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8'); tmp.replace(path)
 AUTH_FILE = DATA/'auth.json'
+AUTH_ENABLED = os.environ.get('PQ_AUTH_ENABLED', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 AUTH_ITERATIONS = 310000
 AUTH_SESSIONS = {}
 AUTH_SESSIONS_LOCK = threading.Lock()
@@ -1111,6 +1112,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
             return session
     def require_auth(self):
+        if not AUTH_ENABLED: return True
         if self.auth_session(): return True
         self.send_json(401, {'error':'Требуется вход в систему', 'auth_required':True})
         return False
@@ -1125,7 +1127,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/auth/status':
             session = self.auth_session()
             config = read_json(AUTH_FILE, {})
-            return self.send_json(200, {'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
+            return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
         if path=='/api/diagnostics': return self.send_json(200, run_diagnostics())
