@@ -96,10 +96,10 @@ def provider_models(p):
     if fmt=='gemini':
         if not key: return []
         req=urllib.request.Request(base+'/models?key='+urllib.parse.quote(key),headers=headers)
-        with urllib.request.urlopen(req,timeout=5) as r: raw=json.loads(r.read())
+        with urllib.request.urlopen(req,timeout=3) as r: raw=json.loads(r.read())
         return [{'name':x.get('name','').removeprefix('models/')} for x in raw.get('models',[]) if x.get('name') and 'generateContent' in x.get('supportedGenerationMethods',[])]
     req=urllib.request.Request(base+'/models',headers=headers)
-    with urllib.request.urlopen(req,timeout=4) as r: raw=json.loads(r.read())
+    with urllib.request.urlopen(req,timeout=1.5) as r: raw=json.loads(r.read())
     return [{'name':x.get('id','')} for x in raw.get('data',[]) if x.get('id')]
 def public_provider(p):
     return {k:v for k,v in p.items() if k!='api_key'} | {'api_key_set':bool(p.get('api_key'))}
