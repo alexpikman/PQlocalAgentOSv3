@@ -34,7 +34,7 @@ MEMORY_TASKS_LIMIT = 50
 def _empty_project_memory(project_id):
     return {
         'project_id': project_id, 'updated_at': '', 'summary': '',
-        'constraints': [], 'facts': [], 'open_questions': [], 'next_steps': [],
+        'constraints': [], 'facts': [], 'open_questions': [], 'next_steps': [], 'chats': [],
         'task_ids': [], 'agent_ids': [],
     }
 
@@ -2274,12 +2274,21 @@ class Handler(SimpleHTTPRequestHandler):
         if path.startswith('/api/projects/') and path.endswith('/memory'):
             pid = urllib.parse.unquote(path.split('/')[-2])
             mem = read_project_memory(pid)
-            for key in ('summary', 'constraints', 'open_questions', 'next_steps'):
+            for key in ('summary', 'constraints', 'open_questions', 'next_steps', 'chats'):
                 if key not in data: continue
-                if key == 'summary':
-                    mem[key] = str(data[key])[:400]
-                elif isinstance(data[key], list):
-                    mem[key] = [str(value)[:300] for value in data[key][:20]]
+                if key == 'summary': mem[key] = str(data[key])[:400]
+                elif key == 'chats' and isinstance(data[key], list):
+                    safe_chats=[]
+                    for chat in data[key][-100:]:
+                        if not isinstance(chat,dict) or not str(chat.get('id','')).strip(): continue
+                        messages=[]
+                        source_messages=chat.get('messages',[])
+                        for message in (source_messages[-80:] if isinstance(source_messages,list) else []):
+                            if isinstance(message,dict) and message.get('role') in ('user','assistant'):
+                                messages.append({'role':message['role'],'content':str(message.get('content',''))[:12000],'time':str(message.get('time',''))[:40]})
+                        safe_chats.append({'id':str(chat.get('id',''))[:120],'title':str(chat.get('title','Новый чат'))[:120],'updated_at':str(chat.get('updated_at',''))[:40],'agent_id':str(chat.get('agent_id',''))[:160],'messages':messages})
+                    mem['chats']=safe_chats
+                elif isinstance(data[key], list): mem[key] = [str(value)[:300] for value in data[key][:20]]
             write_project_memory(pid, mem)
             log_event('project.memory.update', pid)
             return self.send_json(200, mem)
@@ -2351,8 +2360,18 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in ('system', 'user', 'assistant') or not isinstance(content, str):
                     return self.send_json(400, {'error': 'У сообщения некорректная роль или содержимое'})
                 validated_messages.append({'role': role, 'content': content})
+            project_id = str(data.get('project_id', '')).strip()[:160]
+            if project_id:
+                project_memory = read_project_memory(project_id); chat_entries = project_memory.get('chats') if isinstance(project_memory.get('chats'),list) else []; recent_chat_context=[]
+                for chat_entry in chat_entries[-8:]:
+                    if not isinstance(chat_entry,dict): continue
+                    transcript=[]
+                    for entry in (chat_entry.get('messages') or [])[-12:]:
+                        if isinstance(entry,dict) and entry.get('role') in ('user','assistant'): transcript.append(str(entry.get('role'))+': '+str(entry.get('content',''))[:1800])
+                    if transcript: recent_chat_context.append('Чат «'+str(chat_entry.get('title',''))[:120]+'»:\\n'+'\\n'.join(transcript))
+                if recent_chat_context: validated_messages.insert(0,{'role':'system','content':'Контекст предыдущих чатов этого проекта (используй для продолжения разработки, если относится к запросу):\\n\\n'+'\\n\\n'.join(recent_chat_context)[-14000:]})
             if agent:
-                system_prompt = str(agent.get('system_prompt', '')).strip()
+                system_prompt = str(agent.get('system_prompt', '').strip())
                 role_prompt = {
                     'MANAGER':'Ты Агент №1 — координатор проекта. Помогай пользователю управлять проектом, уточняй цели и предлагай проверяемые следующие шаги.',
                     'ARCHITECT':'Ты системный архитектор. Учитывай структуру, зависимости, масштабируемость и безопасность.',
