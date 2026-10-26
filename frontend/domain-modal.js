@@ -143,7 +143,7 @@ function bindDomainModal(){
     const field=event.target;
     if(field instanceof Element&&field.matches('#domain-modal-form [required]'))field.setCustomValidity?.('');
   });
-  document.addEventListener('click',event=>{
+  document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
     const close=target.closest('[data-domain-modal-close]');if(close){const modal=$('#domain-modal');if(modal)modal.hidden=true;return}
     const tab=target.closest('[data-domain-tab]');if(tab){
