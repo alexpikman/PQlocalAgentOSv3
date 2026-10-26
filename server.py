@@ -846,9 +846,34 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
         model_path = str(provider.get('base_url') or '').strip()
         try:
             model_obj = get_local_gguf(model_path, provider.get('n_ctx', 4096), provider.get('n_gpu_layers', -1))
+
+            # llama-cpp-python requires any system instruction to precede the
+            # conversation. The chat route can prepend project/agent context
+            # independently, while the browser may also include system entries.
+            # Merge them into one leading system message for GGUF only.
+            gguf_messages = []
+            system_parts = []
+            for message in messages if isinstance(messages, list) else []:
+                if not isinstance(message, dict):
+                    continue
+                role = str(message.get('role', '')).strip()
+                content = message.get('content', '')
+                if not isinstance(content, str):
+                    continue
+                if role == 'system':
+                    if content.strip():
+                        system_parts.append(content.strip())
+                elif role in ('user', 'assistant'):
+                    gguf_messages.append({'role': role, 'content': content})
+            if system_parts:
+                gguf_messages.insert(0, {'role': 'system', 'content': '\\n\\n'.join(system_parts)})
+
+            if not gguf_messages:
+                raise ValueError('История сообщений GGUF пуста после проверки ролей')
+
             with _LOCAL_GGUF_LOCK:
                 output = model_obj.create_chat_completion(
-                    messages=messages,
+                    messages=gguf_messages,
                     max_tokens=max(1, min(int(max_tokens or provider.get('max_tokens', 2048)), 8192)),
                     temperature=float(provider.get('temperature', 0.7)),
                     top_p=float(provider.get('top_p', 0.9)),
