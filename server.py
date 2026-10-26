@@ -675,10 +675,17 @@ def resolve_ollama_model(model, timeout=4):
 
     # Some catalogs spell Ollama's tag separator as a hyphen (qwen3-8b),
     # while Ollama uses a colon (qwen3:8b). Try that common size-suffix form.
-    ollama_candidate = re.sub(r'-(\d+(?:\.\d+)?b(?:[-:].*)?)    raise ValueError(
+    ollama_candidate = re.sub(r'-(\d+(?:\.\d+)?b(?:[-:].*)?)$', r':\1', candidate, flags=re.IGNORECASE)
+    if ollama_candidate != candidate and ollama_candidate in available:
+        return ollama_candidate
+
+    model_list = ', '.join(available) if available else '(нет установленных моделей)'
+    raise ValueError(
         'Модель «' + (requested or '(не указана)') + '» не найдена в Ollama. '
         'Доступные модели: ' + model_list
     )
+
+
 def run_diagnostics():
     checks=[]
     def check(name,status,message,detail=''):
