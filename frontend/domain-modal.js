@@ -104,7 +104,7 @@ function openDomainModal(kind,id){
   const field=(label,key,value,type,attrs)=>'<div class="field" style="grid-column:1/-1"><label for="domain-'+key+'">'+label+'</label>'+(type==='textarea'?'<textarea id="domain-'+key+'" name="'+key+'" '+(attrs||'')+'>'+esc(value)+'</textarea>':'<input id="domain-'+key+'" name="'+key+'" type="text" value="'+esc(value)+'" '+(attrs||'')+'></div>');
   let html='';
   if(kind==='agents'){
-    html=field('Название','name',item?.name||'','text','required maxlength="80"')+'<div class="field"><label for="domain-role">Роль</label><select id="domain-role" name="role">'+['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].map(x=>'<option '+(x===(item?.role||'ANALYST')?'selected':'')+'>'+x+'</option>').join('')+'</select></div>'+((state.models?.models||[]).length?'<div class="field"><label for="domain-model">Модель</label><select id="domain-model" name="model"><option value="">Не назначена</option>'+state.models.models.map(x=>'<option value="'+esc(x.name)+'" '+(x.name===(item?.model||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>':field('Модель','model',item?.model||'','text','maxlength="160"'))+field('Краткое описание','description',item?.description||'','textarea','rows="2" maxlength="1000"')+field('Системная инструкция','system_prompt',item?.system_prompt||'','textarea','rows="4" maxlength="4000"')+field('Долговременная память','memory',item?.memory||'','textarea','rows="3" maxlength="8000"')+'<div class="field" style="grid-column:1/-1"><b>Разрешения агента</b><div class="agent-permission-list">'+[['file_loading','Чтение и поиск файлов'],['file_saving','Создание и изменение файлов'],['file_moving','Перемещение файлов'],['directory_moving','Перемещение папок'],['file_deletion','Удаление файлов'],['directory_creation','Создание папок'],['directory_deletion','Удаление пустых папок'],['github_access','Доступ к GitHub']].map(([key,label])=>'<label><input type="checkbox" name="perm_'+key+'" '+(item?.permissions?.[key]?'checked':'')+'> '+label+'</label>').join('')+'</div></div>';
+    html=field('Название','name',item?.name||'','text','required maxlength="80"')+'<div class="field"><label for="domain-role">Роль</label><select id="domain-role" name="role">'+['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'].map(x=>'<option '+(x===(item?.role||'ANALYST')?'selected':'')+'>'+x+'</option>').join('')+'</select></div>'+((state.models?.models||[]).length?'<div class="field"><label for="domain-model">Модель</label><select id="domain-model" name="model"><option value="">Не назначена</option>'+state.models.models.map(x=>'<option value="'+esc(x.name)+'" '+(x.name===(item?.model||'')?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>':field('Модель','model',item?.model||'','text','maxlength="160"'))+field('Краткое описание','description',item?.description||'','textarea','rows="2" maxlength="1000"')+'<div class="field" style="grid-column:1/-1"><b>Инструкция и план</b><div class="agent-instruction-links"><button type="button" class="btn secondary" data-open-si="prompt">Системная инструкция</button><button type="button" class="btn secondary" data-open-si="plan">План взаимодействия</button></div></div>'+'<div class="field" style="grid-column:1/-1"><b>Разрешения агента</b><div class="agent-permission-list">'+[['file_loading','Чтение и поиск файлов'],['file_saving','Создание и изменение файлов'],['file_moving','Перемещение файлов'],['directory_moving','Перемещение папок'],['file_deletion','Удаление файлов'],['directory_creation','Создание папок'],['directory_deletion','Удаление пустых папок'],['github_access','Доступ к GitHub']].map(([key,label])=>'<label><input type="checkbox" name="perm_'+key+'" '+(item?.permissions?.[key]?'checked':'')+'> '+label+'</label>').join('')+'</div></div>';
   }else if(kind==='system-instructions'){
     const roles=['MANAGER','ARCHITECT','ANALYST','DESIGNER','COPYWRITER','CODER','TESTER','DEVOPS'];
     html='<div class="si-header">'
@@ -162,6 +162,7 @@ async function saveDomainItem(event){
   }
   for(const [key,value] of fd.entries())if(!key.startsWith('perm_'))payload[key]=value;
   if(editor.kind==='agents'){
+    delete payload.system_prompt;delete payload.memory;
     payload.avatar=JSON.stringify(avatarState);payload.permissions={};
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access'].forEach(key=>payload.permissions[key]=fd.get('perm_'+key)==='on');
   }
@@ -224,6 +225,16 @@ function bindDomainModal(){
       if(form)form.style.display=isAvatar?'none':'grid';if(avatarEl)avatarEl.style.display=isAvatar?'block':'none';
       if(!isAvatar&&form)form.querySelectorAll('[required]').forEach(field=>field.setCustomValidity?.(''));
       if(isAvatar&&avatarEl){avatarEl.innerHTML=avatarStudioMarkup();initAvatarPickers();syncAvatarState();bindAvatarControls();updateAvatarPreview()}
+      return;
+    }
+    const openSi=target.closest('[data-open-si]');if(openSi){
+      const role=$('#domain-role')?.value||'ANALYST';
+      const state=context.getState?context.getState():{},instrs=state.systemInstructions||[];
+      const instr=instrs.find(x=>x.role===role&&x.is_default===true)||instrs.find(x=>x.role===role);
+      if(!instr){if(typeof context.toast==='function')context.toast('Нет инструкции для роли '+role+'. Создайте её в разделе «Системные инструкции».');return}
+      const modal=$('#domain-modal');if(modal)modal.hidden=true;
+      openDomainModal('system-instructions',instr.id);
+      if(openSi.dataset.openSi==='plan')setTimeout(()=>{const tab=document.querySelector('[data-si-tab="plan"]');if(tab)tab.click()},0);
       return;
     }
     const reset=target.closest('#domain-reset-default');if(reset){
