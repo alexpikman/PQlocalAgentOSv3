@@ -2498,12 +2498,12 @@ class Handler(SimpleHTTPRequestHandler):
             if token and not token.startswith(('ghp_','github_pat_','gho_','ghu_','ghs_','ghr_')): return self.send_json(400, {'error':'Проверьте формат GitHub-токена'})
             if token:
                 try:
-                    encrypted=base64.b64decode(_dpapi_crypt(token))
+                    encrypted=_dpapi_crypt(token)
                 except Exception as e:
                     log_event('github.connection.encrypt_failed', type(e).__name__)
-                    return self.send_json(500, {'error':'Не удалось зашифровать GitHub-токен через Windows DPAPI. Проверьте, что сервер запущен в Windows под обычной учётной записью и перезапустите его. Подробности: '+str(e)[:180]})
-            else: encrypted=base64.b64decode(existing.get('token_encrypted',''))
-            item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':base64.b64encode(encrypted).decode('ascii'),'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                    return self.send_json(400, {'error':'Ошибка шифрования: '+str(e)[:180]})
+            else: encrypted=existing.get('token_encrypted','')
+            item={'id':connection_id or 'gh-'+uuid.uuid4().hex[:12],'name':name,'repository':repository,'token_encrypted':encrypted,'updated_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
             if existing: saved['connections']=[item if x.get('id')==connection_id else x for x in saved['connections']]
             else: saved['connections'].insert(0,item)
             saved['active_id']=item['id']; write_json(GITHUB_CONNECTIONS_FILE,saved)
