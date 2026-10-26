@@ -1271,3 +1271,19 @@ td{border-color:var(--line)}
 
 /* Project memory registry, displayed with the task-list pattern */
 .project-memory-list-row{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer}.project-memory-list-content{display:flex;align-items:flex-start;gap:14px;min-width:0;flex:1}.project-memory-list-logo{display:grid;place-items:center;width:64px;height:64px;min-width:64px;object-fit:contain;border-radius:10px;border:1px solid var(--line);background:var(--surface-2,#f5f7fa)}.project-memory-list-logo-empty{font-size:30px;color:var(--muted)}.project-memory-list-content .entity-row-main{min-width:0}.project-memory-list-content .entity-row-main p{margin:5px 0}.project-memory-list-summary{margin-top:8px;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.project-memory-list-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@media(max-width:640px){.project-memory-list-row{align-items:flex-start;flex-direction:column}.project-memory-list-row .entity-row-actions{width:100%;justify-content:flex-end}.project-memory-list-logo{width:48px;height:48px;min-width:48px}}
+
+/* Project memory as a full page */
+.project-memory-page{display:grid;gap:14px;min-width:0}
+.project-memory-back{justify-self:start}
+.project-memory-page .project-memory-page-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.project-memory-page-heading h2{margin:0 0 6px;font-size:18px}
+.project-memory-page-heading p{margin:0}
+.project-memory-page .project-memory-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.project-memory-page .project-memory-pane{display:none;min-width:0}
+.project-memory-page .project-memory-pane.active{display:block}
+.project-memory-page .project-memory-pane[hidden]{display:none}
+.project-memory-page .project-memory-pane .field{display:block;margin:0 0 16px}
+.project-memory-page .project-memory-pane textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:84px}
+.project-memory-page .project-memory-facts{display:grid;gap:10px;margin:16px 0}
+.project-memory-page .modal-card-actions{display:flex;justify-content:flex-end;position:static;padding-top:12px}
+@media(max-width:720px){.project-memory-page .project-memory-page-heading{display:block}.project-memory-page .project-memory-tabs{gap:6px}}
