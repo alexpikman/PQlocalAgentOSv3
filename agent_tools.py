@@ -47,9 +47,9 @@ def is_blocked_shell_command(command: str) -> bool:
     """Basic guardrail against a few catastrophic/destructive shell commands."""
     value = str(command or '').strip()
     checks = (
-        r'(?i)\\brm\\s+-rf\\s+/(?:\\s|$|\\*)',
-        r'(?i)(?:^|[;&|]\\s*|\\s)format(?:\\.com)?(?:\\s|$)',
-        r'(?i)\\bdel\\s+/f\\s+/s\\s+/q(?:\\s|$)',
+        r'(?i)\brm\s+-rf\s+/(?:\s|$|\*)',
+        r'(?i)(?:^|[;&|]\s*|\s)format(?:\.com)?(?:\s|$)',
+        r'(?i)\bdel\s+/f\s+/s\s+/q(?:\s|$)',
     )
     return any(re.search(pattern, value) for pattern in checks)
 
