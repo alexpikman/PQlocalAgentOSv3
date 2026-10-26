@@ -38,3 +38,13 @@
 Архитектура и контракт описаны в `docs/MODULE_ARCHITECTURE.md`, настройки меню — в `docs/INTERFACE_AND_MENU.md`, схема манифеста — `module-contract.schema.json`.
 
 Локальные данные находятся в `data/` и не коммитятся. Установленные модули в `modules/<id>/` также исключены из Git по умолчанию.
+## Шаблоны системных инструкций
+
+Базовые промпты для восьми ролей хранятся в `agents/templates/{ROLE}.md`:
+`MANAGER.md`, `ARCHITECT.md`, `ANALYST.md`, `DESIGNER.md`, `COPYWRITER.md`, `CODER.md`, `TESTER.md`, `DEVOPS.md`.
+
+- При первом запуске сервер создаёт восемь инструкций в `data/system_instructions.json`, беря `system_prompt` из файлов шаблонов.
+- Кнопка «По умолчанию» в модалке загружает актуальные `system_prompt` и `activity`; текущий `interaction_plan` при этом не изменяется.
+- Файлы читаются при запросе `GET /api/system-instructions/defaults`, поэтому изменения на диске доступны без перезапуска сервера.
+- Если файл отсутствует, пуст или не читается, используется встроенный fallback `SYSTEM_INSTRUCTION_PROMPTS` из `server.py`. При старте отсутствие файла записывается в журнал, сервер продолжает запуск.
+- Шаблоны входят в репозиторий. Не помещайте в них секреты и не удаляйте каталог `agents/templates/`.
