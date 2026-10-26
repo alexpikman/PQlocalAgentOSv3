@@ -2,6 +2,8 @@
 (function () {
   'use strict';
 
+  let telemetryBusy = false;
+
   const iconCache = {};
   async function loadInlineIcons() {
     const icons = document.querySelectorAll('[data-icon]');
@@ -49,8 +51,13 @@
   }
 
   async function fetchStats() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     try {
-      const response = await fetch('/api/system/stats', { cache: 'no-store' });
+      const response = await fetch('/api/system/stats', {
+        cache: 'no-store',
+        signal: controller.signal
+      });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const data = await response.json();
       setConnectionStatus(true, window.location.port || '8765');
@@ -58,6 +65,8 @@
     } catch (error) {
       setConnectionStatus(false);
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -204,25 +213,31 @@
   }
 
   async function tick() {
+    if (telemetryBusy) return;
+    telemetryBusy = true;
     try {
-      render(await fetchStats());
-    } catch (error) {
-      renderState(null, error);
-      ['cpu', 'ram', 'gpu'].forEach(key => {
-        const value = document.getElementById('sysmon-' + key + '-val');
-        if (value) value.textContent = '—';
-        setBar('sysmon-' + key + '-bar', null);
-      });
-      const cpuName = document.getElementById('sysmon-cpu-name');
-      const ramDetail = document.getElementById('sysmon-ram-detail');
-      const gpuDetail = document.getElementById('sysmon-gpu-detail');
-      if (cpuName) cpuName.textContent = 'Нет соединения с локальным сервером';
-      if (ramDetail) ramDetail.textContent = 'Данные памяти недоступны';
-      if (gpuDetail) gpuDetail.textContent = 'Данные GPU недоступны';
-      // В компактной телеметрии отображаются только CPU, RAM и GPU.
+      try {
+        render(await fetchStats());
+      } catch (error) {
+        renderState(null, error);
+        ['cpu', 'ram', 'gpu'].forEach(key => {
+          const value = document.getElementById('sysmon-' + key + '-val');
+          if (value) value.textContent = '—';
+          setBar('sysmon-' + key + '-bar', null);
+        });
+        const cpuName = document.getElementById('sysmon-cpu-name');
+        const ramDetail = document.getElementById('sysmon-ram-detail');
+        const gpuDetail = document.getElementById('sysmon-gpu-detail');
+        if (cpuName) cpuName.textContent = 'Нет соединения с локальным сервером';
+        if (ramDetail) ramDetail.textContent = 'Данные памяти недоступны';
+        if (gpuDetail) gpuDetail.textContent = 'Данные GPU недоступны';
+        // В компактной телеметрии отображаются только CPU, RAM и GPU.
+      }
+      const modal = document.getElementById('sysmon-chart-modal');
+      if (modal && !modal.hidden) drawChart(currentChart);
+    } finally {
+      telemetryBusy = false;
     }
-    const modal = document.getElementById('sysmon-chart-modal');
-    if (modal && !modal.hidden) drawChart(currentChart);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
