@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
   const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], chatGroups: [], activeConversationId: '', activeProjectId: '', modelAvailable: false, loadingChats: false };
   const elements = {};
+  let chatSaveQueue = Promise.resolve();
 
   async function chatApi(path, options) {
     const settings = options || {};
@@ -143,8 +144,8 @@
     };
   }
 
-  async function saveConversation(conversation) {
-    if (!conversation) return;
+  function saveConversation(conversation) {
+    if (!conversation) return Promise.resolve();
     const payload = {
       id: conversation.id, title: conversation.title || 'Новый чат',
       project_id: conversation.projectId || '', group_id: conversation.groupId || '',
@@ -153,13 +154,16 @@
       created_at: conversation.createdAt || new Date().toISOString(),
       updated_at: conversation.updatedAt || new Date().toISOString()
     };
-    try {
-      const result = await chatApi('/chats', { method: 'POST', body: JSON.stringify(payload) });
-      if (result.chat) Object.assign(conversation, normalizeChat(result.chat));
-      rebuildProjectTree();
-    } catch (error) {
-      showNotice('Не удалось сохранить историю на сервере: ' + error.message, 'warning');
-    }
+    chatSaveQueue = chatSaveQueue.catch(() => {}).then(async () => {
+      try {
+        const result = await chatApi('/chats', { method: 'POST', body: JSON.stringify(payload) });
+        if (result.chat) Object.assign(conversation, normalizeChat(result.chat));
+        rebuildProjectTree();
+      } catch (error) {
+        showNotice('Не удалось сохранить историю на сервере: ' + error.message, 'warning');
+      }
+    });
+    return chatSaveQueue;
   }
 
   function persistActiveConversation() {
@@ -310,7 +314,7 @@
   async function createConversation(projectId, groupId) {
     if (state.sending) return;
     const conversation = {
-      id: makeId('chat'), title: 'Новый чат', projectId: projectId || '', groupId: groupId || '',
+      id: makeId('chat'), title: 'Новый чат', projectId: projectId || '', groupId: projectId ? '' : (groupId || ''),
       agentId: state.agent, messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workingDir: ''
     };
     state.conversations.unshift(conversation);
