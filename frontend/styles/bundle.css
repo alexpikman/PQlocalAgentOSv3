@@ -1202,3 +1202,9 @@ td{border-color:var(--line)}
 .project-logo-editor-controls input[type=file]{max-width:100%;font-size:12px}
 .project-logo-editor-controls small{color:var(--muted);font-size:11px}
 @media(max-width:620px){.project-entity-row{grid-template-columns:80px minmax(0,1fr);gap:10px}.project-entity-row>.entity-row-actions{grid-column:1/-1;justify-content:flex-start}}
+
+
+/* FIX: keep project memory button at the intended readable size in the served bundle. */
+.project-logo-column .project-memory-logo-btn{display:flex!important;box-sizing:border-box!important;align-items:center!important;justify-content:center!important;gap:4px!important;width:80px!important;min-width:80px!important;max-width:80px!important;height:20px!important;min-height:20px!important;max-height:20px!important;padding:0 4px!important;margin:0!important;font-size:10px!important;line-height:18px!important;white-space:nowrap!important}
+.project-logo-column .project-memory-logo-btn svg{display:block!important;width:13px!important;height:13px!important;min-width:13px!important;min-height:13px!important;flex:0 0 13px!important}
+.project-logo-column .project-memory-logo-btn span{display:inline!important;font-size:10px!important;line-height:18px!important}
