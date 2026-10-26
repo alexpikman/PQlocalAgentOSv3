@@ -1108,7 +1108,8 @@ def run_agent_team(model, task, agent=None, project=None):
     total_tool_calls = 0
     max_steps = 10
     # All project work is first routed through the dispatcher, whose report becomes manager context.
-    if 'DISPATCHER' in active_roles:
+    has_project_context = bool(str(task.get('project_id', '')).strip() or (isinstance(project, dict) and str(project.get('id', '')).strip()))
+    if 'DISPATCHER' in active_roles and has_project_context:
         dispatcher = find_agent_by_role('DISPATCHER', agents)
         if dispatcher.get('id') and (not dispatcher.get('system') or dispatcher.get('system_enabled', True)):
             dispatch_task = {
