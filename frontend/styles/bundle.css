@@ -1095,3 +1095,11 @@ td{border-color:var(--line)}
 .system-instruction-warning li+li{margin-top:4px}
 #domain-modal:has(.system-instruction-plan) .modal-card{width:min(1200px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto}
 @media(max-width:720px){#domain-modal:has(.system-instruction-plan) .modal-card{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.system-instruction-plan table{min-width:900px}}
+
+.system-instruction-plan td select:disabled,.system-instruction-plan td input:disabled,.system-instruction-plan td textarea:disabled{opacity:.62;cursor:not-allowed}
+.system-instruction-plan td textarea{min-width:140px}
+.system-instruction-plan-field{min-width:0}
+#domain-plan-note{margin:8px 0;padding:8px 10px}
+.system-instruction-plan-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.system-instruction-plan table{min-width:900px}
+@media(max-width:720px){#domain-modal:has(.system-instruction-plan) .modal-card{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.system-instruction-plan table{min-width:850px}}
