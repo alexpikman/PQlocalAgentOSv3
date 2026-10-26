@@ -55,7 +55,7 @@ function bindMemoryNavigation(){
     const target=event.target instanceof Element?event.target:null;if(!target)return;
     if(target.closest('[data-memory-nav-close]')){ensureProjectMemoryNavModal().hidden=true;return}
     const mem=target.closest('[data-project-memory]');if(mem){void openProjectMemoryModal(mem.dataset.projectMemory);return}
-    const agentTasks=target.closest('[data-agent-tasks]');if(agentTasks){void openAgentTasks(agentTasks.dataset.agentTasks);return}
+    const agentTasks=target.closest('[data-agent-tasks]');if(agentTasks){event.preventDefault();void openAgentTasks(agentTasks.dataset.agentTasks);return}
     const taskOpen=target.closest('[data-memory-task-open]');if(taskOpen){void openTaskFromMemory(taskOpen.dataset.memoryTaskOpen);return}
     const projectMem=target.closest('[data-memory-open]');if(projectMem){void openProjectMemoryModal(projectMem.dataset.memoryOpen);return}
     const projectLink=target.closest('[data-memory-open-project]');if(projectLink){go('projects');ensureProjectMemoryNavModal().hidden=true;requestAnimationFrame(()=>window.PQDomainModal?.open?.('projects',projectLink.dataset.memoryOpenProject));return}
