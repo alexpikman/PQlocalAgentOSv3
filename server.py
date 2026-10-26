@@ -756,6 +756,26 @@ def provider_for_model(model, preferred_id=''):
             }
             if name in file_names or name == str(model_path.resolve()).lower():
                 return p
+
+    # Some UI/legacy agent records keep a decorated GGUF label instead of the
+    # exact filename. Resolve that label locally instead of sending it to HTTP.
+    if '.gguf' in name:
+        file_providers=[
+            p for p in providers
+            if str(p.get('kind') or '').lower() == 'file'
+            or str(p.get('format') or '').lower() in ('file','gguf')
+        ]
+        for p in file_providers:
+            raw_path=str(p.get('base_url') or '').strip()
+            if not raw_path:
+                continue
+            model_path=Path(raw_path).expanduser()
+            candidates=(model_path.name.lower(),model_path.stem.lower(),str(p.get('name') or '').strip().lower())
+            if any(candidate and candidate in name for candidate in candidates):
+                return p
+        if len(file_providers)==1:
+            return file_providers[0]
+
     if preferred:
         match=next((p for p in providers if str(p.get('id',''))==preferred),None)
         if match:
