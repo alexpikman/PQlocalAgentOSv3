@@ -193,6 +193,7 @@ async function saveDomainItem(event){
   const savedKind=editor.kind,savedId=editor.id;
   try{
     const savedItem=await api('/'+savedKind+(savedId?'/'+encodeURIComponent(savedId):''),{method:'POST',body:JSON.stringify(payload)});
+    if(savedKind==='agents')document.dispatchEvent(new Event('pq-agent-saved'));
     $('#domain-modal').hidden=true;
     await refresh();
     if(savedKind==='system-instructions'){
