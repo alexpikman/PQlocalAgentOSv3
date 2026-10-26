@@ -2361,13 +2361,45 @@ class Handler(SimpleHTTPRequestHandler):
             agent['model']=model; agent['provider_id']=pid; save_domain('agents',agents); log_event('model.assign',agent.get('name','')+' ← '+prov.get('name','')+'/'+model)
             return self.send_json(200, {'ok':True})
         if path=='/api/models/test':
-            model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Проверь, что модель отвечает.')).strip()[:4000]
+            model=str(data.get('model','')).strip()[:160]; prompt=str(data.get('prompt','Ответь одним коротким предложением на приветствие.')).strip()[:4000]
+            provider_id=str(data.get('provider_id','')).strip()[:120]
             if not model: return self.send_json(400, {'error':'Выберите модель'})
+            provider=next((p for p in provider_items() if str(p.get('id',''))==provider_id),None) if provider_id else None
             try:
-                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':256}},timeout=180)
-                log_event('model.test',model)
-                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':result.get('response',''),'done':bool(result.get('done',False))})
-            except Exception as e: return self.send_json(502, {'error':'Ошибка запроса к локальной модели: '+str(e)[:200]})
+                if provider and provider.get('kind')=='cloud':
+                    base=str(provider.get('base_url','')).rstrip('/'); fmt=str(provider.get('format','openai')).lower(); key=str(provider.get('api_key','')).strip()
+                    if not base or not key: return self.send_json(400, {'error':'У облачного провайдера не настроен адрес или API-ключ'})
+                    headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3','Authorization':'Bearer '+key}
+                    if fmt=='anthropic':
+                        headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','User-Agent':'PQlocalAgentOSv3'}; endpoint=base+'/messages'; body={'model':model,'max_tokens':80,'messages':[{'role':'user','content':prompt}]}
+                    elif fmt=='gemini':
+                        endpoint=base+'/models/'+urllib.parse.quote(model,safe='')+':generateContent?key='+urllib.parse.quote(key); headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}; body={'contents':[{'parts':[{'text':prompt}]}],'generationConfig':{'maxOutputTokens':80}}
+                    else:
+                        endpoint=base+'/chat/completions'; body={'model':model,'messages':[{'role':'user','content':prompt}],'max_tokens':80,'stream':False}
+                    req=urllib.request.Request(endpoint,data=json.dumps(body).encode('utf-8'),headers=headers,method='POST')
+                    with urllib.request.urlopen(req,timeout=45) as response: raw=json.loads(response.read().decode('utf-8'))
+                    if fmt=='anthropic': answer=''.join(x.get('text','') for x in raw.get('content',[]) if x.get('type')=='text')
+                    elif fmt=='gemini': answer=''.join(x.get('text','') for x in (raw.get('candidates') or [{}])[0].get('content',{}).get('parts',[]))
+                    else: answer=str((((raw.get('choices') or [{}])[0].get('message') or {}).get('content')) or '')
+                    if not answer.strip(): raise ValueError('Провайдер вернул пустой ответ')
+                    result={'model':model,'response':answer,'done':True}
+                elif provider and provider.get('format')=='ollama':
+                    result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':80}},timeout=60)
+                elif provider and provider.get('base_url') and provider.get('format') in ('openai','openai-compatible'):
+                    base=str(provider.get('base_url','')).rstrip('/'); headers={'Content-Type':'application/json','User-Agent':'PQlocalAgentOSv3'}
+                    if provider.get('api_key'): headers['Authorization']='Bearer '+str(provider['api_key'])
+                    req=urllib.request.Request(base+'/chat/completions',data=json.dumps({'model':model,'messages':[{'role':'user','content':prompt}],'max_tokens':80,'stream':False}).encode('utf-8'),headers=headers,method='POST')
+                    with urllib.request.urlopen(req,timeout=45) as response: raw=json.loads(response.read().decode('utf-8'))
+                    answer=str((((raw.get('choices') or [{}])[0].get('message') or {}).get('content')) or '')
+                    if not answer.strip(): raise ValueError('Провайдер вернул пустой ответ')
+                    result={'model':model,'response':answer,'done':True}
+                else: result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':80}},timeout=60)
+                answer=str(result.get('response','')).strip()
+                if not answer: raise ValueError('Модель вернула пустой ответ')
+                log_event('model.test',str(provider.get('name') if provider else 'Ollama')+'/'+model)
+                return self.send_json(200, {'ok':True,'model':result.get('model',model),'response':answer,'done':bool(result.get('done',True))})
+            except Exception as e:
+                return self.send_json(502, {'error':'Модель не ответила: '+str(e)[:220]})
         if path in ('/api/agents','/api/projects','/api/tasks'):
             kind=path.split('/')[-1]; items=domain_items(kind); field='title' if kind=='tasks' else 'name'
             name=str(data.get(field,'')).strip()[:160]
