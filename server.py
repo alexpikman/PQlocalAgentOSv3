@@ -249,7 +249,7 @@ ORCHESTRATOR_JSON_INSTRUCTION = '''
 {"done": true, "final_answer": "<итоговый ответ пользователю>"}
 
 Правила:
-- "next_role" — одна из ролей: MANAGER, ARCHITECT, ANALYST, DESIGNER, COPYWRITER, CODER, TESTER, DEVOPS.
+- "next_role" — одна из ролей: MANAGER, DISPATCHER, ARCHITECT, ANALYST, CODER, DESIGNER, COPYWRITER, TESTER, DEVOPS.
 - Если нужной роли нет в активных, используй fallback_role из плана взаимодействия.
 - Не вызывай одну и ту же роль дважды без причины.
 - Если задача выполнена — верни {"done": true, "final_answer": "..."}.
@@ -258,6 +258,7 @@ ORCHESTRATOR_JSON_INSTRUCTION = '''
 SYSTEM_INSTRUCTIONS_FILE = DATA / 'system_instructions.json'
 SYSTEM_INSTRUCTION_ACTIVITY = {
     'MANAGER': "Координация проекта, распределение задач, контроль сроков и приоритетов",
+    'DISPATCHER': "Маршрутизация запросов, задач, артефактов и памяти; передача сводного отчёта менеджеру",
     'ARCHITECT': "Проектирование модульной структуры, контрактов, потоков данных",
     'ANALYST': "Анализ требований, проверка полноты, разделение фактов и предположений",
     'DESIGNER': "Проектирование интерфейсов, доступность, визуальная иерархия",
