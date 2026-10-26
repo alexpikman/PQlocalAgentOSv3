@@ -392,3 +392,21 @@ td{border-color:var(--line)}
 .task-error-button svg{display:block;width:14px;height:14px;flex:0 0 14px;fill:#facc15;stroke:#a16207;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .task-error-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
 @media(max-width:640px){.project-card-footer{align-items:flex-start}.project-task-warning{flex-basis:100%}}
+
+
+/* Agent roles registry and editor modal */
+.agent-roles-modal .modal-card{width:min(1120px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto}
+.agent-role-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(340px,1.1fr);gap:18px;padding:18px}
+.agent-role-list,.agent-role-form{min-width:0}
+.agent-role-list>.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+.agent-role-list>.section-title h3{margin:0}
+.agent-role-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}
+.agent-role-main{min-width:0;display:grid;gap:5px}
+.agent-role-main b{overflow-wrap:anywhere}
+.agent-role-main small{color:var(--muted);font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.agent-role-actions{display:flex;gap:6px;flex-shrink:0}
+.agent-role-form{display:grid;align-content:start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.agent-role-form .field{min-width:0}
+.agent-role-form textarea{width:100%;resize:vertical}
+.agent-role-form .setting-actions{margin-top:0}
+@media(max-width:760px){.agent-role-layout{grid-template-columns:1fr;padding:12px}.agent-roles-modal .modal-card{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.agent-role-row{align-items:flex-start;flex-direction:column}.agent-role-actions{width:100%;flex-wrap:wrap}}
