@@ -1420,3 +1420,24 @@ td{border-color:var(--line)}
 .sidebar-project-add img{display:block;width:16px;height:16px;object-fit:contain}
 .sidebar-project-add:hover{background:var(--accent-soft);border-color:transparent}
 @media(max-width:520px){.sidebar-chat-project-row{padding:4px 5px}.sidebar-chat-project-label{font-size:12px;gap:6px}}
+
+ 
+/* Terminal UI and chat tool-call status. */
+.chat-tool-calls{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.chat-tool-badge{display:inline-flex;align-items:center;max-width:100%;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.terminal-panel{min-width:0}
+.terminal-form{display:grid;gap:14px;max-width:900px;margin-top:18px}
+.terminal-form textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:76px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.terminal-form input{width:100%;box-sizing:border-box}
+.terminal-form button{justify-self:start}
+.terminal-history{margin-top:24px}
+.terminal-history>h3{font-size:14px;margin:0 0 12px}
+.terminal-result{min-width:0;margin:10px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.terminal-result-head{display:flex;justify-content:space-between;align-items:center;gap:10px;min-width:0;color:var(--muted);font-size:11px}
+.terminal-result-head code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.terminal-command,.terminal-stdout,.terminal-stderr{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:360px;overflow:auto;margin:9px 0 0;padding:9px 10px;border-radius:6px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.terminal-command{background:var(--panel2);color:var(--text)}
+.terminal-stdout{background:var(--bg);color:var(--text)}
+.terminal-stderr,.terminal-error{background:var(--status-failed-bg);color:var(--status-failed-fg)}
+.terminal-error{padding:9px 10px;border-radius:6px;overflow-wrap:anywhere}
+@media(max-width:640px){.terminal-result-head{align-items:flex-start;flex-direction:column}.terminal-form button{width:100%}}
