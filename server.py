@@ -912,10 +912,10 @@ def _ai_runtime_stats():
 def _telemetry_snapshot():
     import time
     global _TELEMETRY_CACHE, _TELEMETRY_CACHE_AT
-    # Один сбор раз в 5 секунд; блокировка не даёт параллельным запросам дублировать сбор.
+    # Один сбор раз в 2 секунды; блокировка не даёт параллельным запросам дублировать сбор.
     with _TELEMETRY_CACHE_LOCK:
         now = time.monotonic()
-        if _TELEMETRY_CACHE is not None and now - _TELEMETRY_CACHE_AT < 5:
+        if _TELEMETRY_CACHE is not None and now - _TELEMETRY_CACHE_AT < 2:
             return _TELEMETRY_CACHE
         data = system_stats()
         sample = {'timestamp': data.get('timestamp'),
