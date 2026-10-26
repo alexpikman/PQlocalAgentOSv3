@@ -2425,6 +2425,27 @@ class Handler(SimpleHTTPRequestHandler):
                     items.append({'id':repo_id,'downloads':int(getattr(info,'downloads',0) or 0),'likes':int(getattr(info,'likes',0) or 0),'tags':list(getattr(info,'tags',[]) or []),'files':files[:100]})
                 return self.send_json(200, {'items':items,'total':len(items),'query':q})
             except Exception as exc: return self.send_json(502, {'error':'Поиск Hugging Face не выполнен: '+str(exc)[:220]})
+        if path == '/api/models/folders':
+            folders = read_json(DATA/'model_folders.json', [])
+            if not isinstance(folders, list): folders = []
+            return self.send_json(200, {'folders':[str(x) for x in folders if isinstance(x, str)]})
+        if path == '/api/models/local-files':
+            folders = read_json(DATA/'model_folders.json', [])
+            files = []
+            for raw in folders if isinstance(folders, list) else []:
+                try:
+                    root = Path(str(raw)).expanduser().resolve()
+                    if not root.is_dir(): continue
+                    for candidate in root.rglob('*.gguf'):
+                        try:
+                            if candidate.is_file() and not any(part.startswith('.') for part in candidate.relative_to(root).parts):
+                                files.append({'name':candidate.name,'path':str(candidate.resolve()),'size':candidate.stat().st_size})
+                        except OSError: pass
+                        if len(files) >= 1000: break
+                except (OSError, ValueError, RuntimeError): pass
+                if len(files) >= 1000: break
+            files.sort(key=lambda item:item['name'].lower())
+            return self.send_json(200, {'files':files,'total':len(files)})
         if path=='/api/providers':
             items=provider_items(); models=[]
             for p in items:
@@ -2537,6 +2558,23 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/models/folders':
+            action = str(data.get('action') or 'add').strip().lower()
+            raw_path = str(data.get('path') or '').strip()
+            if not raw_path: return self.send_json(400, {'error':'Укажите путь к папке'})
+            try: folder = Path(raw_path).expanduser().resolve(strict=True)
+            except (OSError, RuntimeError, ValueError): return self.send_json(400, {'error':'Папка не существует или путь некорректен'})
+            if not folder.is_dir(): return self.send_json(400, {'error':'Указанный путь не является папкой'})
+            folders = read_json(DATA/'model_folders.json', [])
+            folders = folders if isinstance(folders, list) else []
+            normalized = str(folder)
+            if action == 'remove': folders = [str(x) for x in folders if str(x).lower() != normalized.lower()]
+            elif action == 'add':
+                if not any(str(x).lower() == normalized.lower() for x in folders): folders.append(normalized)
+            else: return self.send_json(400, {'error':'action должен быть add или remove'})
+            write_json(DATA/'model_folders.json', folders)
+            log_event('model.folders.' + action, normalized)
+            return self.send_json(200, {'ok':True,'folders':folders})
         if path == '/api/models/download':
             repo_id = str(data.get('repo_id') or '').strip()[:200]
             filename = str(data.get('filename') or '').strip().replace('\\\\', '/')
@@ -2548,8 +2586,18 @@ class Handler(SimpleHTTPRequestHandler):
                 downloaded = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=str(model_dir))
                 model_path = str(Path(downloaded).resolve())
                 if not Path(model_path).is_file() or Path(model_path).suffix.lower() != '.gguf': raise ValueError('Загруженный файл не найден')
+                providers = read_json(PROVIDER_FILE, [])
+                providers = providers if isinstance(providers, list) else []
+                existing = next((p for p in providers if isinstance(p, dict) and p.get('kind') == 'file' and str(p.get('base_url','')).lower() == model_path.lower()), None)
+                if not existing:
+                    model_name = Path(model_path).stem[:80] or repo_id.split('/')[-1]
+                    raw_layers = data.get('n_gpu_layers', -1)
+                    try: gpu_layers = max(-1, min(200, int(raw_layers)))
+                    except (TypeError, ValueError): gpu_layers = -1
+                    provider = {'id':'gguf-' + uuid.uuid4().hex[:12], 'name':model_name, 'kind':'file', 'format':'gguf', 'base_url':model_path, 'n_ctx':4096, 'n_gpu_layers':gpu_layers, 'temperature':0.7, 'top_p':0.9, 'repeat_penalty':1.1, 'builtin':False, 'created_at':datetime.datetime.now().astimezone().isoformat(timespec='seconds')}
+                    providers.append(provider); write_json(PROVIDER_FILE, providers)
                 log_event('model.gguf.download', repo_id + '/' + filename)
-                return self.send_json(200, {'ok':True,'repo_id':repo_id,'filename':filename,'path':model_path})
+                return self.send_json(200, {'ok':True,'repo_id':repo_id,'filename':filename,'path':model_path,'provider_created':not bool(existing)})
             except Exception as exc: return self.send_json(502, {'error':'Не удалось скачать GGUF с Hugging Face: '+str(exc)[:220]})
         if path == '/api/terminal':
             command=data.get('command')
