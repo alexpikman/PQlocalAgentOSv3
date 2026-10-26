@@ -2465,6 +2465,7 @@ class Handler(SimpleHTTPRequestHandler):
             write_json(AUTH_FILE, config)
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
+        if path.startswith('/api/') and not self.require_auth(): return
         if path == '/api/terminal':
             command=data.get('command')
             cwd_raw=str(data.get('cwd','')).strip()
