@@ -130,6 +130,19 @@ AGENT_ROLE_PROMPTS = {
     'DEVOPS':'Ты инженер инфраструктуры. Учитывай воспроизводимые сборки, конфигурацию окружения, логи, мониторинг, откат и минимальные привилегии.'
 }
 
+ORCHESTRATOR_JSON_INSTRUCTION = '''
+ФОРМАТ ОТВЕТА — строго JSON, без markdown, без пояснений:
+{"done": false, "next_role": "<роль>", "task": "<что должен сделать агент>", "reason": "<почему>"}
+или, если работа завершена:
+{"done": true, "final_answer": "<итоговый ответ пользователю>"}
+
+Правила:
+- "next_role" — одна из ролей: MANAGER, ARCHITECT, ANALYST, DESIGNER, COPYWRITER, CODER, TESTER, DEVOPS.
+- Если нужной роли нет в активных, используй fallback_role из плана взаимодействия.
+- Не вызывай одну и ту же роль дважды без причины.
+- Если задача выполнена — верни {"done": true, "final_answer": "..."}.
+'''
+
 SYSTEM_INSTRUCTIONS_FILE = DATA / 'system_instructions.json'
 SYSTEM_INSTRUCTION_ACTIVITY = {
     'MANAGER': "Координация проекта, распределение задач, контроль сроков и приоритетов",
@@ -685,8 +698,180 @@ def run_agent_task(model, task, agent=None, project=None):
     return {'response':message.get('content','') if isinstance(message,dict) and isinstance(message.get('content',''),str) else '', 'tool_calls':total,'model':last.get('model',model) if isinstance(last,dict) else model,'warning':'Достигнут лимит циклов вызова инструментов.'}
 
 
+def load_manager_plan():
+    """interaction_plan MANAGER из system_instructions.json."""
+    try:
+        data = read_json(DATA / 'system_instructions.json', {})
+        items = data.get('instructions', []) if isinstance(data, dict) else []
+        for x in items:
+            if isinstance(x, dict) and x.get('role') == 'MANAGER':
+                plan = x.get('interaction_plan') or []
+                return plan if isinstance(plan, list) else []
+    except Exception:
+        pass
+    return []
+
+
+def find_agent_by_role(role, agents):
+    """Первый агент с нужной ролью или временный."""
+    role = str(role).upper()
+    for a in agents:
+        if isinstance(a, dict) and str(a.get('role', '')).upper() == role:
+            return a
+    return {'id': None, 'name': role, 'role': role, 'system_prompt': '', 'permissions': {}, 'description': ''}
+
+
+def resolve_fallback_role(target_role, manager_plan, active_roles):
+    """Если target_role не в active_roles — искать fallback_role в плане."""
+    target_role = str(target_role).upper()
+    if target_role in active_roles:
+        return target_role
+    for rule in manager_plan:
+        if not isinstance(rule, dict):
+            continue
+        if str(rule.get('target_role', '')).upper() != target_role:
+            continue
+        fallback = str(rule.get('fallback_role', '')).upper()
+        if fallback and fallback in active_roles:
+            return fallback
+    return None
+
+
+def parse_orchestrator_decision(text):
+    """Достать JSON из ответа MANAGER. None, если не удалось."""
+    if not isinstance(text, str):
+        return None
+    start = text.find('{')
+    end = text.rfind('}')
+    if start < 0 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except (ValueError, TypeError):
+        return None
+
+
+def build_orchestrator_context(task, history, active_roles, manager_plan):
+    lines = [
+        'Задача: ' + str(task.get('title', '')),
+        'Описание: ' + str(task.get('description', '')),
+        '',
+        'Активные роли: ' + ', '.join(active_roles),
+        '',
+        'План взаимодействия (правила маршрутизации):',
+    ]
+    valid_rules = [rule for rule in manager_plan if isinstance(rule, dict)] if isinstance(manager_plan, list) else []
+    if valid_rules:
+        for rule in valid_rules:
+            lines.append(
+                '- trigger=' + str(rule.get('trigger', '')) +
+                ' | condition=' + str(rule.get('condition', '')) +
+                ' | target_role=' + str(rule.get('target_role', '')) +
+                ' | fallback_role=' + str(rule.get('fallback_role', '')) +
+                ' | action=' + str(rule.get('action_instruction', ''))
+            )
+    else:
+        lines.append('(план пуст — действуй по общим правилам роли)')
+    lines.extend(['', 'История шагов:'])
+    if not history:
+        lines.append('(пока нет)')
+    else:
+        for i, item in enumerate(history, 1):
+            lines.append('Шаг ' + str(i) + ' · ' + str(item.get('name', '')) + ' (' + str(item.get('role', '')) + '):')
+            lines.append(str(item.get('response', ''))[:1500])
+            lines.append('')
+    lines.append('Твой ход. Верни JSON строго по формату.')
+    return '\n'.join(lines)
+
+
 def run_agent_team(model, task, agent=None, project=None):
-    """Run a bounded manager -> specialist -> reviewer workflow."""
+    """Оркестрация через interaction_plan MANAGER. Fallback — старая логика."""
+    agents = domain_items('agents')
+    active_roles = task.get('active_roles')
+    if not isinstance(active_roles, list) or not active_roles:
+        active_roles = list(AGENT_ROLES)
+    active_roles = [str(role).upper() for role in active_roles if str(role).upper() in AGENT_ROLES]
+    if 'MANAGER' not in active_roles:
+        active_roles.insert(0, 'MANAGER')
+
+    manager_plan = load_manager_plan()
+    manager_system = read_system_prompt_template('MANAGER') + '\n\n' + ORCHESTRATOR_JSON_INSTRUCTION
+    history = []
+    total_tool_calls = 0
+    max_steps = 10
+
+    for _step in range(max_steps):
+        context = build_orchestrator_context(task, history, active_roles, manager_plan)
+        try:
+            response = ollama_request('/api/chat', {
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': manager_system},
+                    {'role': 'user', 'content': context},
+                ],
+                'stream': False,
+                'options': {'num_predict': 2048},
+            }, timeout=240)
+        except Exception as exc:
+            return _run_agent_team_legacy(model, task, agent, project,
+                                          reason='MANAGER недоступен: ' + str(exc)[:160])
+
+        message = response.get('message', {}) if isinstance(response, dict) else {}
+        content = message.get('content', '') if isinstance(message, dict) else ''
+        decision = parse_orchestrator_decision(content)
+        if not isinstance(decision, dict):
+            return _run_agent_team_legacy(model, task, agent, project,
+                                          reason='MANAGER вернул не-JSON: ' + str(content)[:200])
+
+        if decision.get('done') is True:
+            final = str(decision.get('final_answer', '')).strip()
+            if not final:
+                final = 'MANAGER завершил без итогового ответа.'
+            return {
+                'response': final,
+                'team_result': history,
+                'tool_calls': total_tool_calls,
+                'model': model,
+            }
+
+        requested_role = str(decision.get('next_role', '')).upper()
+        next_role = resolve_fallback_role(requested_role, manager_plan, active_roles)
+        if not next_role:
+            return {
+                'response': 'MANAGER не смог выбрать активного исполнителя. Ответ: ' + str(content)[:400],
+                'team_result': history,
+                'tool_calls': total_tool_calls,
+                'model': model,
+                'warning': 'no_active_role',
+            }
+
+        worker = find_agent_by_role(next_role, agents)
+        worker_task = {
+            'title': str(task.get('title', '')) + ' — ' + next_role,
+            'description': str(decision.get('task', ''))[:5000],
+        }
+        worker_result = run_agent_task(model, worker_task, worker, project)
+        history.append({
+            'role': next_role,
+            'name': worker.get('name') or next_role,
+            'model': worker_result.get('model', model),
+            'response': worker_result.get('response', ''),
+            'tool_calls': worker_result.get('tool_calls', 0),
+            'warning': worker_result.get('warning', ''),
+        })
+        total_tool_calls += int(worker_result.get('tool_calls', 0) or 0)
+
+    return {
+        'response': 'Достигнут лимит шагов оркестрации (' + str(max_steps) + '). Последний шаг: ' + (history[-1]['name'] if history else '—'),
+        'team_result': history,
+        'tool_calls': total_tool_calls,
+        'model': model,
+        'warning': 'max_steps_reached',
+    }
+
+
+def _run_agent_team_legacy(model, task, agent=None, project=None, reason=''):
+    """Старое поведение: manager → specialist → reviewer."""
     base_description=str(task.get('description',''))
     manager_agent={'id':None,'name':'Менеджер команды','role':'MANAGER','system_prompt':AGENT_ROLE_PROMPTS['MANAGER'],'permissions':{}}
     manager_task={'title':str(task.get('title',''))+' — планирование','description':base_description+'\n\nСоставь краткий план выполнения, критерии готовности и риски. Не выполняй саму работу.'}
@@ -703,8 +888,10 @@ def run_agent_team(model, task, agent=None, project=None):
         {'role':specialist.get('role','ANALYST'),'name':specialist.get('name','Специалист'),'model':specialist_result.get('model',specialist_model),'response':specialist_result.get('response',''),'tool_calls':specialist_result.get('tool_calls',0),'warning':specialist_result.get('warning','')},
         {'role':'TESTER','name':'Контроль качества','model':review.get('model',model),'response':review.get('response',''),'tool_calls':review.get('tool_calls',0),'warning':review.get('warning','')}
     ]
-    return {'response':review.get('response',''),'team_result':stages,'tool_calls':sum(int(x.get('tool_calls',0) or 0) for x in stages),'model':model}
-
+    result={'response':review.get('response',''),'team_result':stages,'tool_calls':sum(int(x.get('tool_calls',0) or 0) for x in stages),'model':model}
+    if reason:
+        result['warning'] = (str(result.get('warning', '')).strip() + ' | legacy: ' + reason).strip(' |')
+    return result
 
 def _filetime_value(value):
     return (value.dwHighDateTime << 32) | value.dwLowDateTime
@@ -1741,7 +1928,15 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in AGENT_ROLES: return self.send_json(400, {'error':'Неизвестная роль агента'})
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects': item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'status':'active'})
-            else: item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'team_mode':bool(data.get('team_mode',False)),'status':'pending','result':'','error':'','team_result':[]})
+            else:
+                raw_roles = data.get('active_roles')
+                if isinstance(raw_roles, list):
+                    active = [str(role).upper() for role in raw_roles if str(role).upper() in AGENT_ROLES]
+                else:
+                    active = list(AGENT_ROLES)
+                if 'MANAGER' not in active:
+                    active.insert(0, 'MANAGER')
+                item.update({'description':str(data.get('description','')).strip()[:5000],'model':str(data.get('model','')).strip()[:160],'agent_id':str(data.get('agent_id','')).strip()[:80],'project_id':str(data.get('project_id','')).strip()[:80],'team_mode':bool(data.get('team_mode',False)),'active_roles':active,'status':'pending','result':'','error':'','team_result':[]})
             items.insert(0,item); save_domain(kind,items); log_event(kind[:-1]+'.create',name)
             return self.send_json(201,item)
         if path.startswith('/api/tasks/') and (path.endswith('/run') or path.endswith('/run-team')):
@@ -1777,7 +1972,7 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar'},'projects':{'name','path','description'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
             for key in allowed:
                 if key not in data: continue
                 if kind=='agents' and key=='permissions':
@@ -1785,6 +1980,11 @@ class Handler(SimpleHTTPRequestHandler):
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
                 elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
+                elif kind=='tasks' and key=='active_roles':
+                    if not isinstance(data[key], list): return self.send_json(400, {'error':'active_roles должен быть списком ролей'})
+                    active = [str(role).upper() for role in data[key] if str(role).upper() in AGENT_ROLES]
+                    if 'MANAGER' not in active: active.insert(0, 'MANAGER')
+                    item[key] = active
                 else: item[key]=str(data[key]).strip()[:5000]
             save_domain(kind,items); log_event(kind[:-1]+'.update',item.get('name',item.get('title','')))
             return self.send_json(200,item)
