@@ -159,8 +159,10 @@
         const result = await chatApi('/chats', { method: 'POST', body: JSON.stringify(payload) });
         if (result.chat) Object.assign(conversation, normalizeChat(result.chat));
         rebuildProjectTree();
+        return true;
       } catch (error) {
         showNotice('Не удалось сохранить историю на сервере: ' + error.message, 'warning');
+        return false;
       }
     });
     return chatSaveQueue;
@@ -247,7 +249,7 @@
     const modal = document.getElementById('chat-new-modal');
     modal.querySelectorAll('[data-chat-new-close]').forEach(button => button.onclick = () => { modal.hidden = true; });
     document.getElementById('chat-new-submit').onclick = async () => {
-      const projectId = document.getElementById('chat-new-project').value;
+      let projectId = document.getElementById('chat-new-project').value;
       let groupId = document.getElementById('chat-new-group').value;
       const status = document.getElementById('chat-new-status');
       const submit = document.getElementById('chat-new-submit');
@@ -260,6 +262,7 @@
           if (result.group) state.chatGroups.unshift({ ...result.group, expanded: true });
           groupId = result.group?.id || '';
         }
+        if (groupId) projectId = '';
         modal.hidden = true;
         await createConversation(projectId, groupId);
       } catch (error) {
@@ -332,6 +335,8 @@
       const index = state.conversations.findIndex(item => item.id === conversation.id);
       if (index >= 0) state.conversations[index] = conversation; else state.conversations.unshift(conversation);
       state.activeConversationId = conversation.id; state.activeProjectId = conversation.projectId;
+      elements.workingDir.textContent = conversation.workingDir ? 'Рабочая папка: ' + conversation.workingDir : 'Указать рабочую папку';
+      elements.workingDir.title = conversation.workingDir || 'Путь будет добавлен в разрешённые папки для локальных файловых инструментов';
       state.messages = conversation.messages.slice();
       if (conversation.agentId && state.agents.some(agent => agent.id === conversation.agentId)) {
         state.agent = conversation.agentId; elements.agent.value = state.agent;
@@ -796,7 +801,8 @@
       if (!path) { showNotice('Укажите полный путь к рабочей папке.', 'warning'); return; }
       conversation.workingDir = path;
       try {
-        await saveConversation(conversation);
+        const saved = await saveConversation(conversation);
+        if (!saved) return;
         elements.workingDir.textContent = 'Рабочая папка: ' + path;
         elements.workingDir.title = path + ' — добавлено в разрешённые папки';
         showNotice('Рабочая папка сохранена и добавлена в разрешённые пути.', 'info');
