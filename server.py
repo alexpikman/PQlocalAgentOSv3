@@ -5,6 +5,20 @@ import urllib.parse
 import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time, subprocess
 from http.cookies import SimpleCookie
 
+try:
+    from llama_cpp import Llama
+except Exception:
+    Llama = None
+
+try:
+    from huggingface_hub import HfApi, hf_hub_download
+except Exception:
+    HfApi = None
+    hf_hub_download = None
+
+_LOCAL_GGUF_MODELS = {}
+_LOCAL_GGUF_LOCK = threading.Lock()
+
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
 ICONS_DIR = FRONTEND / 'icons'
@@ -203,7 +217,34 @@ def provider_items():
     for p in saved:
         if isinstance(p,dict) and p.get('id') not in {x['id'] for x in items}: items.append(p)
     return items
+def get_local_gguf(model_path, n_ctx=4096, n_gpu_layers=-1):
+    """Load a GGUF model once per resolved path/context/GPU-layer configuration."""
+    if Llama is None:
+        raise RuntimeError("Библиотека llama-cpp-python не установлена. Выполните: pip install llama-cpp-python")
+    path = Path(str(model_path or '')).expanduser()
+    if not path.is_file() or path.suffix.lower() != '.gguf':
+        raise ValueError("Укажите существующий локальный файл модели с расширением .gguf")
+    try:
+        resolved = str(path.resolve())
+    except OSError:
+        resolved = str(path.absolute())
+    ctx = max(512, min(int(n_ctx or 4096), 131072))
+    gpu_layers = int(n_gpu_layers if n_gpu_layers is not None else -1)
+    cache_key = (resolved, ctx, gpu_layers)
+    with _LOCAL_GGUF_LOCK:
+        model = _LOCAL_GGUF_MODELS.get(cache_key)
+        if model is None:
+            model = Llama(model_path=resolved, n_ctx=ctx, n_gpu_layers=gpu_layers, verbose=False)
+            _LOCAL_GGUF_MODELS[cache_key] = model
+        return model
+
+
 def provider_models(p):
+    if str(p.get('kind') or '') == 'file' or str(p.get('format') or '') == 'gguf':
+        path = Path(str(p.get('base_url') or '')).expanduser()
+        if path.is_file() and path.suffix.lower() == '.gguf':
+            return [{'name': path.name, 'size': path.stat().st_size, 'parameter_size': 'GGUF'}]
+        return []
     base=str(p.get('base_url','')).rstrip('/'); fmt=p.get('format','openai'); headers={'User-Agent':'PQlocalAgentOSv3'}
     key=str(p.get('api_key','')).strip()
     if key: headers['Authorization']='Bearer '+key
@@ -899,6 +940,31 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
     base=str(provider.get('base_url') or (OLLAMA_URL if fmt=='ollama' else '')).strip().rstrip('/')
     key=str(provider.get('api_key','') or '').strip()
     requested_model=str(model or '').strip()[:200]
+    if str(provider.get('kind') or '') == 'file' or fmt == 'gguf':
+        model_path = str(provider.get('base_url') or '').strip()
+        if not model_path:
+            raise ValueError('У файлового провайдера не указан путь к GGUF-файлу')
+        model_obj = get_local_gguf(
+            model_path,
+            n_ctx=provider.get('n_ctx', 4096),
+            n_gpu_layers=provider.get('n_gpu_layers', -1),
+        )
+        try:
+            with _LOCAL_GGUF_LOCK:
+                output = model_obj.create_chat_completion(
+                    messages=messages,
+                    max_tokens=max(1, min(int(max_tokens or 2048), 8192)),
+                    temperature=float(provider.get('temperature', 0.7)),
+                    top_p=float(provider.get('top_p', 0.9)),
+                    repeat_penalty=float(provider.get('repeat_penalty', 1.1)),
+                )
+        except Exception as exc:
+            raise ValueError('Ошибка инференса GGUF: ' + str(exc)[:220]) from exc
+        choices = output.get('choices') or []
+        answer = ((choices[0].get('message') or {}).get('content') if choices else '') or ''
+        if not answer.strip():
+            raise ValueError('GGUF-модель вернула пустой ответ')
+        return {'model': Path(model_path).name, 'response': answer, 'done': True}
     if not requested_model:
         raise ValueError('Не указана модель провайдера')
     if not base:
