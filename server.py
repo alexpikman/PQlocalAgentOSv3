@@ -2551,6 +2551,14 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/chats':
             items = _all_chat_records()
             return self.send_json(200, {'items': items, 'total': len(items)})
+        if path.startswith('/api/chats/') and '/files/' not in path:
+            chat_id = _chat_safe_id(urllib.parse.unquote(path[len('/api/chats/'):]))
+            if not chat_id or '/' in path[len('/api/chats/'):]:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            chat = next((item for item in _all_chat_records() if str(item.get('id')) == chat_id), None)
+            if not chat:
+                return self.send_json(404, {'error': 'Чат не найден'})
+            return self.send_json(200, {'chat': chat})
         if path.startswith('/api/chats/') and '/files/' in path:
             parts = path.strip('/').split('/')
             chat_id = _chat_safe_id(urllib.parse.unquote(parts[2] if len(parts) > 2 else ''))
