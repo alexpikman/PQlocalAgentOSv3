@@ -297,3 +297,45 @@ td{border-color:var(--line)}
 /* Custom menu icon fallback */
 .nav-icon-fallback{display:inline-grid;place-items:center}
 .nav-icon .nav-icon-img{max-width:100%;max-height:100%;object-fit:contain}
+
+
+/* Shared profile/avatar modal layout: fixed shell, independently scrolling content, persistent save action. */
+#domain-modal .modal-card{
+  display:flex;
+  flex-direction:column;
+  max-height:min(88vh,860px);
+  min-height:min(70vh,600px);
+  overflow:hidden;
+}
+#domain-modal .domain-modal-content{
+  flex:1 1 auto;
+  overflow-y:auto;
+  min-height:0;
+  overscroll-behavior:contain;
+}
+#domain-modal .modal-card-head,
+#domain-modal .model-tabs,
+#domain-modal .domain-modal-actions,
+#domain-modal #domain-modal-status{
+  flex:0 0 auto;
+}
+#domain-modal .domain-modal-actions{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+  padding-top:14px;
+  margin-top:auto;
+  border-top:1px solid var(--line);
+}
+#domain-modal .domain-modal-actions .btn{min-width:140px}
+@media(max-width:720px){
+  #domain-modal{padding:10px}
+  #domain-modal .modal-card{
+    width:min(720px,calc(100vw - 20px));
+    min-height:min(70vh,600px);
+    max-height:90vh;
+    padding:16px;
+  }
+  #domain-modal .domain-modal-actions .btn{min-width:120px}
+}
