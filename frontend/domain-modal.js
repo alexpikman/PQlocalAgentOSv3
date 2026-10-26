@@ -196,8 +196,8 @@ function bindDomainModal(){
       const role=$('#domain-role')?.value;
       if(!role){if(typeof context.toast==='function')context.toast('Сначала выберите роль');return}
       reset.disabled=true;
-      try{const result=await api('/system-instructions/defaults');const value=result.defaults?.[role];if(!value)throw new Error('Встроенная инструкция для роли не найдена');const prompt=$('#domain-system_prompt'),activity=$('#domain-activity');if(prompt)prompt.value=value.system_prompt||'';if(activity)activity.value=value.activity||'';if(typeof context.toast==='function')context.toast('Встроенная инструкция загружена')}
-      catch(error){const status=$('#domain-modal-status');if(status)status.innerHTML='<div class="notice warning">'+esc(error.message)+'</div>'}
+      try{const result=await api('/system-instructions/defaults');const value=result.defaults?.[role];if(!value)throw new Error('Нет встроенной инструкции для роли '+role);const prompt=$('#domain-system_prompt'),activity=$('#domain-activity');if(prompt)prompt.value=value.system_prompt||'';if(activity)activity.value=value.activity||'';if(typeof context.toast==='function')context.toast('Встроенная инструкция загружена')}
+      catch(error){const status=$('#domain-modal-status');if(status)status.innerHTML='<div class="notice warning">'+esc(error.message)+'</div>';if(typeof context.toast==='function')context.toast(error.message||'Не удалось загрузить инструкцию по умолчанию')}
       finally{reset.disabled=false}
       return;
     }
