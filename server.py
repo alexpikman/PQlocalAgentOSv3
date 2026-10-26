@@ -2003,7 +2003,7 @@ class Handler(SimpleHTTPRequestHandler):
                  'description': a.get('description', ''), 'system': bool(a.get('system')),
                  'system_enabled': bool(a.get('system_enabled', True)), 'model': a.get('model', ''),
                  'status': a.get('status', 'idle'), 'authority': a.get('authority', 99)}
-                for a in agents_all if str(a.get('id')) in linked_ids or (a.get('system') and a.get('system_enabled', True))
+                for a in agents_all if str(a.get('id')) in linked_ids or a.get('system')
             ]
             mem['agents'].sort(key=lambda a: int(a.get('authority', 99)))
             return self.send_json(200, mem)
