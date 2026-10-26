@@ -1127,3 +1127,15 @@ td{border-color:var(--line)}
 .agent-instruction-links{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 /* === Task active roles === */
 .task-active-roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-top:8px}
+
+/* === Agent model recommendations === */
+.agent-model-recommendations{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
+.agent-model-recommendations summary{cursor:pointer;font-size:12px;color:var(--text)}
+.agent-model-recommendations summary small{color:var(--muted);font-weight:400;margin-left:4px}
+.agent-model-recommendations-table{overflow-x:auto;margin-top:10px}
+.agent-model-recommendations-table table{width:100%;border-collapse:collapse;font-size:11px}
+.agent-model-recommendations-table th,
+.agent-model-recommendations-table td{padding:6px 8px;border:1px solid var(--line);text-align:left;vertical-align:top}
+.agent-model-recommendations-table th{background:var(--panel);color:var(--muted);font-weight:650;font-size:10px;letter-spacing:.5px}
+.agent-model-recommendations-table code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--bg);padding:1px 5px;border-radius:4px}
+.agent-model-recommendations-note{margin:10px 0 0;font-size:10px;color:var(--muted);line-height:1.5}
