@@ -382,18 +382,35 @@
   }
 
   async function loadChatWorkspaceFromServer() {
-    const [chatsResult, groupsResult, projectsResult] = await Promise.all([
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) {}
+    let [chatsResult, groupsResult, projectsResult] = await Promise.all([
       chatApi('/chats', { cache: 'no-store' }),
       chatApi('/chat-groups', { cache: 'no-store' }),
       chatApi('/projects', { cache: 'no-store' })
     ]);
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) {}
+    state.systemProjects = Array.isArray(projectsResult.items) ? projectsResult.items : [];
+    const serverChats = Array.isArray(chatsResult.items) ? chatsResult.items : [];
+    const knownIds = new Set(serverChats.map(chat => String(chat.id)));
+    const legacyChats = Array.isArray(saved.conversations) ? saved.conversations : [];
+    for (const legacy of legacyChats) {
+      if (!legacy || !legacy.id || knownIds.has(String(legacy.id))) continue;
+      const chat = normalizeChat(legacy);
+      const payload = {
+        id: chat.id, title: chat.title, project_id: chat.projectId, group_id: chat.groupId,
+        agent_id: chat.agentId, working_dir: chat.workingDir, messages: chat.messages,
+        created_at: chat.createdAt, updated_at: chat.updatedAt
+      };
+      await chatApi('/chats', { method: 'POST', body: JSON.stringify(payload) });
+      knownIds.add(chat.id);
+    }
+    if (legacyChats.some(chat => chat && chat.id && !serverChats.some(item => String(item.id) === String(chat.id)))) {
+      chatsResult = await chatApi('/chats', { cache: 'no-store' });
+    }
     const expandedProjects = new Set(saved.projectExpansion || []);
     const expandedGroups = new Set(saved.groupExpansion || []);
     state.conversations = (Array.isArray(chatsResult.items) ? chatsResult.items : []).map(normalizeChat);
     state.chatGroups = (Array.isArray(groupsResult.items) ? groupsResult.items : []).map(group => ({ ...group, expanded: expandedGroups.size ? expandedGroups.has(group.id) : true }));
-    state.systemProjects = Array.isArray(projectsResult.items) ? projectsResult.items : [];
     state.projects = [];
     rebuildProjectTree();
     state.projects.forEach(project => { if (expandedProjects.size) project.expanded = expandedProjects.has(project.id); });
@@ -681,8 +698,8 @@
     try {
       const messages = state.messages.map((message) => ({
         role: message.role,
-        content: message.content
-      }));
+        content: message.content || (message.attachment ? '[Вложение: ' + message.attachment.name + ']' : '')
+      })).filter(message => message.content);
       await syncProjectChatMemory(activeConversation());
       const startTime = performance.now();
       const data = await chatApi('/chat', {
