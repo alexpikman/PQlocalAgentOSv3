@@ -145,7 +145,7 @@ async function saveDomainItem(event){
   if(editor.kind==='tasks')payload.team_mode=fd.get('team_mode')==='on';
   if(editor.kind==='system-instructions'){
     const role=$('#domain-role')?.value;
-    if(role==='MANAGER')payload.interaction_plan=readInteractionPlan().filter(row=>row.trigger||row.condition||row.action);
+    if(role==='MANAGER')payload.interaction_plan=readInteractionPlan().filter(row=>row.trigger||row.condition||row.action_instruction);
     else delete payload.interaction_plan;
   }
   const submit=$('#domain-modal-save');if(submit)submit.disabled=true;
