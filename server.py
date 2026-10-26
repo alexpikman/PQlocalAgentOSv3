@@ -2687,24 +2687,32 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc: return self.send_json(502, {'error':'Не удалось скачать GGUF с Hugging Face: '+str(exc)[:220]})
         if path == '/api/terminal':
             command=data.get('command')
-            cwd_raw=str(data.get('cwd','')).strip()
-            if not isinstance(command,str) or not command.strip() or len(command)>4000: return self.send_json(400, {'error':'Введите команду длиной от 1 до 4000 символов.'})
+            if not isinstance(command,str) or not command.strip() or len(command)>4000:
+                return self.send_json(400, {'error':'Введите команду длиной от 1 до 4000 символов.'})
+            permissions=permission_settings()
+            roots=permissions.get('roots') if isinstance(permissions.get('roots'),list) else []
+            if not permissions.get('local_files') or not roots:
+                return self.send_json(403, {'error':'Для терминала включите локальный доступ к файлам и добавьте разрешённую папку.'})
             try:
-                from agent_tools import resolve_authorized_path
-                permissions=permission_settings()
+                from agent_tools import is_blocked_shell_command, resolve_authorized_path
+                if is_blocked_shell_command(command):
+                    return self.send_json(400, {'error':'Команда заблокирована базовой защитой от опасных операций.'})
+                cwd_raw=str(data.get('cwd') or roots[0]).strip()
                 cwd=resolve_authorized_path(cwd_raw,permissions,must_exist=True)
-                if not cwd.is_dir(): return self.send_json(400, {'error':'Рабочий путь должен указывать на существующую папку.'})
+                if not cwd.is_dir():
+                    return self.send_json(400, {'error':'Рабочий путь должен указывать на существующую папку.'})
                 try:
                     completed=subprocess.run(command,shell=True,cwd=str(cwd),capture_output=True,text=True,timeout=30,encoding='utf-8',errors='replace')
                     result={'cwd':str(cwd),'stdout':completed.stdout[-60000:],'stderr':completed.stderr[-30000:],'exit_code':completed.returncode}
                 except subprocess.TimeoutExpired as exc:
                     stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
                     stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
-                    result={'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
+                    result={'cwd':str(cwd),'stdout':stdout[-60000:],'stderr':(stderr+'\\nКоманда остановлена по тайм-ауту 30 секунд.')[-30000:],'exit_code':124}
                 log_event('terminal.command',str(cwd)+' · '+command[:120])
                 return self.send_json(200,result)
-            except (PermissionError,ValueError,OSError) as exc:
-                return self.send_json(400, {'error':'Команда не выполнена: '+str(exc)[:220]})
+            except (PermissionError,ValueError,OSError,RuntimeError) as exc:
+                status=403 if isinstance(exc,PermissionError) else 400
+                return self.send_json(status, {'error':'Команда не выполнена: '+str(exc)[:220]})
         if path=='/api/github/connections':
             name=str(data.get('name','')).strip()[:100]
             repository=str(data.get('repository','')).strip()
