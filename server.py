@@ -2134,8 +2134,8 @@ class Handler(SimpleHTTPRequestHandler):
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or AGENT_ROLE_PROMPTS[role]).strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects':
                 logo=str(data.get('logo','') or '')
-                if logo and (len(logo)>1400000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
-                    return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит размера'})
+                if logo and (len(logo)>980000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
+                    return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит 700 КБ'})
                 item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
@@ -2195,7 +2195,7 @@ class Handler(SimpleHTTPRequestHandler):
                 elif kind=='agents' and key in {'system_prompt','memory'}: item[key]=str(data[key]).strip()[:(4000 if key=='system_prompt' else 8000)]
                 elif kind=='projects' and key=='logo':
                     logo=str(data[key] or '')
-                    if logo and (len(logo)>1400000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
+                    if logo and (len(logo)>980000 or not re.fullmatch(r'data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}',logo)):
                         return self.send_json(400, {'error':'Некорректный логотип проекта или превышен лимит размера'})
                     item[key]=logo
                 elif kind=='tasks' and key=='team_mode': item[key]=bool(data[key])
