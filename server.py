@@ -3036,6 +3036,8 @@ class Handler(SimpleHTTPRequestHandler):
         return self.send_json(404, {'error':'API endpoint not found'})
     def do_OPTIONS(self):
         if not self._check_host(): return
+        path=urlparse(self.path).path
+        if self._must_change_password_blocked(path): return
         self.send_response(204)
         self.end_headers()
     def do_GET_HEAD(self): pass
