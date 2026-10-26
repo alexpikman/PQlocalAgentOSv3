@@ -1122,3 +1122,6 @@ td{border-color:var(--line)}
 .si-pane [data-rule="trigger"].field-invalid{border-color:var(--danger,#e05252);box-shadow:0 0 0 2px color-mix(in srgb,var(--danger,#e05252) 20%,transparent)}
 #domain-plan-note{margin-top:10px}
 @media(max-width:560px){.si-header{grid-template-columns:1fr}.si-header .field:nth-child(3){grid-column:auto}.si-tabs{flex-wrap:wrap}.si-tab{flex:1 1 auto}}
+
+/* === Agent modal: instruction links === */
+.agent-instruction-links{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
