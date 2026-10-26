@@ -518,8 +518,15 @@
       createElement('time', 'chat-msg-time', message.time || formatTime(new Date()))
     );
 
-    const bubble = createElement('div', 'chat-msg-bubble', message.content);
+    const bubble = createElement('div', 'chat-msg-bubble', message.content || '');
     content.append(meta, bubble);
+    if (message.attachment && typeof message.attachment === 'object') {
+      const attachment = message.attachment;
+      const link = createElement('a', 'chat-message-attachment', attachment.name || 'Вложение');
+      link.href = attachment.url || '#'; link.target = '_blank'; link.rel = 'noopener';
+      link.title = (attachment.type || 'Файл') + ' · ' + String(attachment.size || 0) + ' байт';
+      bubble.append(link);
+    }
     if (!isUser && Array.isArray(message.tool_calls) && message.tool_calls.length) {
       const toolsDiv = createElement('div', 'chat-tool-calls');
       message.tool_calls.forEach((tc) => {
@@ -699,6 +706,25 @@
     }
   }
 
+  async function uploadChatFile(file) {
+    if (!state.activeConversationId) return;
+    if (file.size > 20 * 1024 * 1024) { showNotice('Максимальный размер файла — 20 МБ.', 'warning'); return; }
+    const form = new FormData(); form.append('file', file, file.name);
+    elements.attach.disabled = true;
+    try {
+      const result = await chatApi('/chats/' + encodeURIComponent(state.activeConversationId) + '/files', { method: 'POST', body: form });
+      if (result.chat) {
+        const saved = normalizeChat(result.chat);
+        const index = state.conversations.findIndex(chat => chat.id === saved.id);
+        if (index >= 0) state.conversations[index] = saved;
+        state.messages = saved.messages.slice();
+        renderHistory(); renderChatWorkspace(); saveWorkspace();
+      }
+      showNotice('Файл загружен: ' + file.name, 'info');
+    } catch (error) { showNotice('Не удалось прикрепить файл: ' + error.message, 'warning'); }
+    finally { elements.attach.disabled = false; }
+  }
+
   function resizeInput() {
     elements.input.style.height = 'auto';
     elements.input.style.height = Math.min(elements.input.scrollHeight, 200) + 'px';
@@ -735,6 +761,26 @@
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
     });
     elements.clear.addEventListener('click', clearChat);
+    elements.attach.addEventListener('click', () => { if (!state.activeConversationId) { showNotice('Сначала создайте чат.', 'warning'); return; } elements.fileInput.click(); });
+    elements.fileInput.addEventListener('change', async () => {
+      const file = elements.fileInput.files?.[0];
+      elements.fileInput.value = '';
+      if (file) await uploadChatFile(file);
+    });
+    elements.workingDir.addEventListener('click', async () => {
+      const conversation = activeConversation(); if (!conversation) return;
+      const value = window.prompt('Полный путь к рабочей папке', conversation.workingDir || '');
+      if (value === null) return;
+      const path = value.trim();
+      if (!path) { showNotice('Укажите полный путь к рабочей папке.', 'warning'); return; }
+      conversation.workingDir = path;
+      try {
+        await saveConversation(conversation);
+        elements.workingDir.textContent = 'Рабочая папка: ' + path;
+        elements.workingDir.title = path + ' — добавлено в разрешённые папки';
+        showNotice('Рабочая папка сохранена и добавлена в разрешённые пути.', 'info');
+      } catch (error) { showNotice(error.message, 'warning'); }
+    });
   }
 
 
@@ -781,24 +827,34 @@
     const content = document.getElementById('content');
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
-    try{const projects=await chatApi('/projects',{cache:'no-store'});state.systemProjects=Array.isArray(projects.items)?projects.items:[];state.projects=state.systemProjects.map(p=>({id:p.id,name:p.name||'Без названия',createdAt:p.created_at||'',expanded:state.projects.find(old=>old.id===p.id)?.expanded??true}));saveWorkspace()}catch(_){/* use cached project list */}
     buildUI();
     bindShellEvents();
     bindEvents();
-    renderChatWorkspace();
     void applySidebarWidthFromApi();
     const chatSidebarWidthMediaQuery = window.matchMedia('(max-width:720px)');
     chatSidebarWidthMediaQuery.addEventListener('change', () => { void applySidebarWidthFromApi(); });
-    const existing = state.conversations.find((item) => item.id === state.activeConversationId);
-    if (existing) {
-      state.messages = Array.isArray(existing.messages) ? existing.messages.slice() : [];
-      state.agent = existing.agentId || '';
-    } else {
-      createConversation('');
+    try {
+      await loadChatWorkspaceFromServer();
+    } catch (error) {
+      showNotice('Не удалось загрузить серверную историю чатов: ' + error.message, 'warning');
+      state.conversations = [];
     }
+    const existing = state.conversations.find(item => item.id === state.activeConversationId);
+    if (existing) {
+      state.messages = existing.messages.slice();
+      state.agent = existing.agentId || '';
+      state.activeProjectId = existing.projectId || '';
+      if (existing.workingDir) {
+        elements.workingDir.textContent = 'Рабочая папка: ' + existing.workingDir;
+        elements.workingDir.title = existing.workingDir;
+      }
+    }
+    renderChatWorkspace();
     renderHistory();
-    const migratedProjects=[...new Set(state.conversations.map(chat=>chat.projectId).filter(Boolean))];migratedProjects.forEach(projectId=>{const conversation=state.conversations.find(chat=>chat.projectId===projectId);if(conversation)void syncProjectChatMemory(conversation)});
-    loadAgents();
+    await loadAgents();
+    if (!existing && !state.conversations.length) await createConversation('', '');
+    else if (!existing && state.conversations.length) await openConversation(state.conversations[0].id);
+    state.conversations.filter(chat => chat.projectId).slice(0, 10).forEach(chat => { void syncProjectChatMemory(chat); });
   }
 
   if (window.PQDomainModal?.configure) {
