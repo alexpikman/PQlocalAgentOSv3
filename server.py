@@ -2536,7 +2536,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/octet-stream')
             self.send_header('Content-Length', str(target.stat().st_size))
-            self.send_header('Content-Disposition', 'attachment; filename="' + filename.replace('"', '') + '"')
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
             self.end_headers()
             self.wfile.write(target.read_bytes())
             return
