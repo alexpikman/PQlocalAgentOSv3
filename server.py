@@ -97,7 +97,7 @@ def update_project_memory_after_task(task: dict, team_result: list, agent: dict 
 
     if status == 'completed':
         last = team_result[-1] if team_result else {}
-        snippet = str(last.get('response', '') or task.get('result', ''))[:200].replace('\\n', ' ').strip()
+        snippet = str(last.get('response', '') or task.get('result', ''))[:200].replace('\n', ' ').strip()
         memory['summary'] = (title + ' — ' + snippet).strip(' —')[:400]
         stages = team_result[-3:] if team_result else []
         if not stages and str(task.get('result', '')).strip():
@@ -106,10 +106,10 @@ def update_project_memory_after_task(task: dict, team_result: list, agent: dict 
             role = str(stage.get('role', '')).strip()
             resp = str(stage.get('response', '')).strip()
             if role and resp:
-                fact_text = (role + ': ' + resp[:150]).replace('\\n', ' ').strip()
+                fact_text = (role + ': ' + resp[:150]).replace('\n', ' ').strip()
                 memory['facts'].append({'text': fact_text, 'source': task_id, 'at': now})
     elif status == 'failed':
-        err = str(task.get('error', ''))[:200].replace('\\n', ' ')
+        err = str(task.get('error', ''))[:200].replace('\n', ' ')
         memory['summary'] = (title + ' — ОШИБКА: ' + err).strip(' —')[:400]
         memory['facts'].append({'text': 'Задача "' + title + '" завершилась ошибкой: ' + err, 'source': task_id, 'at': now})
     write_project_memory(project_id, memory)
