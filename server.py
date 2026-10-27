@@ -1469,8 +1469,8 @@ def run_agent_task(model, task, agent=None, project=None):
                 if name=='run_command' and project and project.get('path'):
                     args['cwd']=str(project.get('path'))
                 if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
-                    args.setdefault('working_dir',str(project.get('path','') or '/'))
-                    if project.get('ssh_connection_id'): args.setdefault('connection_id',str(project.get('ssh_connection_id')))
+                    args['working_dir']=str(project.get('path','') or '/')
+                    if project.get('ssh_connection_id'): args['connection_id']=str(project.get('ssh_connection_id'))
                 result=execute_tool(name,args,agent,permissions)
             log_event('agent.tool_called',str((agent or {}).get('id',''))+' · '+name+' · '+('error' if 'error' in result else 'ok'))
             messages.append({'role':'tool','tool_name':name,'content':json.dumps(result,ensure_ascii=False)[:12000]})
@@ -3142,8 +3142,8 @@ class Handler(SimpleHTTPRequestHandler):
                                 else:
                                     if name=='run_command' and project and project.get('path'): args['cwd']=str(project.get('path'))
                                     if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
-                                        args.setdefault('working_dir',str(project.get('path','') or '/'))
-                                        if project.get('ssh_connection_id'): args.setdefault('connection_id',str(project.get('ssh_connection_id')))
+                                        args['working_dir']=str(project.get('path','') or '/')
+                                        if project.get('ssh_connection_id'): args['connection_id']=str(project.get('ssh_connection_id'))
                                     result=execute_tool(name,args,agent,permission_config)
                                 status='error' if isinstance(result,dict) and result.get('error') else 'ok'
                                 tool_summaries.append({'name':name,'status':status})
