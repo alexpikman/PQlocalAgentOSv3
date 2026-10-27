@@ -278,7 +278,6 @@ body:not(.chat-page) .topbar{display:none}
 
 /* Workspace navigation stays visible and expanded on both desktop and chat pages. */
 .nav-group-fixed .nav-group-label{display:block;cursor:default}
-body.chat-page #nav>.nav-group:not(:first-child){display:none!important}
 
 /* Do not expose the static sidebar while the dashboard is loading its real navigation. */
 body.nav-loading #nav{visibility:hidden}
@@ -802,7 +801,6 @@ td{border-color:var(--line)}
 
 /* Chat sidebar components: shell geometry and navigation typography are inherited from 03-shell.css. */
 .sidebar-chat-workspace{display:flex;flex-direction:column;gap:8px;margin:0px 0 12px;min-height:0}
-.sidebar-chat-nav-item{text-decoration:none}
 .sidebar-chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sidebar-chat-actions button{min-width:0;font-size:11px}
 .sidebar-chat-list{display:grid;gap:3px;overflow-y:auto;min-height:0}
@@ -1048,12 +1046,6 @@ td{border-color:var(--line)}
 
 /* === UI fixes: chat workspace navigation === */
 .sidebar-chat-workspace{gap:8px}
-.sidebar-chat-workspace .nav-group{margin:0}
-.sidebar-chat-workspace .nav-group-label{padding-left:10px}
-.sidebar-chat-workspace .nav-group-items{display:grid;gap:3px}
-.sidebar-chat-workspace .nav-item{width:100%;font:inherit;text-align:left;cursor:pointer}
-.sidebar-chat-workspace .nav-icon{flex:0 0 22px}
-.sidebar-chat-workspace .nav-label{min-width:0}
 .sidebar-chat-workspace .sidebar-chat-list{scrollbar-gutter:stable}
 
 /* === UI fixes: chat history toggle === */
