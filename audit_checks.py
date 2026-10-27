@@ -399,6 +399,10 @@ def _validate_manifest(manifest: Any, label: str) -> list[str]:
     for key in ("capabilities", "permissions", "dependencies"):
         if isinstance(manifest.get(key), list) and any(not isinstance(value, str) for value in manifest[key]):
             issues.append(f"{label}.{key}: элементы должны быть строками")
+    if isinstance(manifest.get("pages"), list):
+        for index, page in enumerate(manifest["pages"]):
+            if not isinstance(page, dict):
+                issues.append(f"{label}.pages[{index}]: элемент должен быть объектом")
     if "runtime" in manifest:
         runtime = manifest["runtime"]
         if not isinstance(runtime, dict):
@@ -466,9 +470,11 @@ def check_module_graph(root: Path) -> dict[str, Any]:
     if not isinstance(connections, list):
         return _result("modules.graph.integrity", "Схемы модулей", "fail",
                        "Список связей модулей должен быть массивом.", [], "error")
+    module_ids = [str(item.get("id")) for item in modules if item.get("id")]
+    duplicate_ids = sorted({module_id for module_id in module_ids if module_ids.count(module_id) > 1})
     by_id = {str(item.get("id")): item for item in modules if item.get("id")}
     adjacency = {module_id: [] for module_id in by_id}
-    issues = []
+    issues = ["Повторяющиеся id модулей: " + ", ".join(duplicate_ids)] if duplicate_ids else []
     for index, connection in enumerate(connections):
         label = f"connections[{index}]"
         if not isinstance(connection, dict):
@@ -631,9 +637,12 @@ def check_default_password(root: Path) -> dict[str, Any]:
         salt = bytes.fromhex(str(auth.get("salt", "")))
         iterations = int(auth.get("iterations", 0))
         stored_hash = str(auth.get("password_hash", ""))
+        if not salt or not 1 <= iterations <= 2_000_000 or not stored_hash:
+            return _result("config.auth.default_password", "Конфигурация", "fail",
+                           "Конфигурация авторизации содержит некорректные параметры.",
+                           {"reason": "Проверьте salt, password_hash и iterations."}, "error")
         candidate = hashlib.pbkdf2_hmac("sha256", b"IamRootUser", salt, iterations).hex()
-        is_default = bool(salt and iterations > 0 and stored_hash and
-                          hmac.compare_digest(candidate, stored_hash))
+        is_default = hmac.compare_digest(candidate, stored_hash)
     except (ValueError, TypeError):
         is_default = False
     if is_default:
