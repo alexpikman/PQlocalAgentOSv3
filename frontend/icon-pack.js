@@ -272,10 +272,10 @@ window.PQRenderIcon = function(id, settings, sizeOverride) {
   if (!/\bwidth\s*=/.test(svg.slice(0, svg.indexOf('>')))) svg = svg.replace(/<svg\b/i, '<svg width="' + size + '"');
   svg = svg.replace(/(<svg\b[^>]*?)\bheight\s*=\s*["'][^"']*["']/i, '$1height="' + size + '"');
   if (!/\bheight\s*=/.test(svg.slice(0, svg.indexOf('>')))) svg = svg.replace(/<svg\b/i, '<svg height="' + size + '"');
-  svg = svg.replace(/<([a-z][\w:-]*)([^>]*)>/gi, (tag, name, rawAttrs) => {
+  svg = svg.replace(/<([a-z][\\w:-]*)([^>]*)>/gi, (tag, name, rawAttrs) => {
     const classes = [];
-    let attrs = rawAttrs.replace(/\sclass="([^"]*)"/gi, (_, value) => {
-      classes.push(...value.split(/\s+/).filter(Boolean));
+    let attrs = rawAttrs.replace(/\\sclass\\s*=\\s*(["'])(.*?)\\1/gi, (_, quote, value) => {
+      classes.push(...value.split(/\\s+/).filter(Boolean));
       return '';
     });
     const hasPrimary = classes.includes('primary');
@@ -284,7 +284,7 @@ window.PQRenderIcon = function(id, settings, sizeOverride) {
     const hasSecondaryStroke = classes.includes('secondary-stroke');
     const setAttr = (key, value) => {
       const escaped = String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-      const pattern = new RegExp('\\s' + key + '\\s*=\\s*"[^"]*"', 'i');
+      const pattern = new RegExp('\\\\s' + key + '\\\\s*=\\\\s*(["\\\\'])[^"\\\\']*\\\\1', 'i');
       if (pattern.test(attrs)) attrs = attrs.replace(pattern, ' ' + key + '="' + escaped + '"');
       else attrs += ' ' + key + '="' + escaped + '"';
     };
@@ -293,7 +293,7 @@ window.PQRenderIcon = function(id, settings, sizeOverride) {
     if (hasPrimaryStroke) setAttr('stroke', primary);
     else if (hasSecondaryStroke) setAttr('stroke', secondary);
     if ((hasPrimaryStroke || hasSecondaryStroke) && !hasPrimary && !hasSecondary) setAttr('fill', 'none');
-    if (hasSecondary && !/\sfill-opacity\s*=/i.test(attrs)) setAttr('fill-opacity', '0.7');
+    if (hasSecondary && !/\\sfill-opacity\\s*=/.test(attrs)) setAttr('fill-opacity', '0.7');
     return '<' + name + attrs + '>';
   });
   return svg.replace('<svg ', '<svg aria-hidden="true" focusable="false" ');
