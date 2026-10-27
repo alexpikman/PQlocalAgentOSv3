@@ -9,3 +9,5 @@ data/
 # Runtime-installed module folders; keep the catalog instructions tracked
 /modules/*/
 !/modules/README.md
+*.bak
+*.bak
