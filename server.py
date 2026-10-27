@@ -388,6 +388,22 @@ def grant_project_folder_to_agents(raw_path):
     current['roots'] = roots
     current['local_files'] = True
     write_json(DATA/'permissions.json', current)
+    # Project folder access is automatic: enable read/write file tools for agents.
+    agents_path = DOMAIN_FILES['agents']
+    agents = read_json(agents_path, [])
+    if isinstance(agents, list):
+        changed = False
+        for agent in agents:
+            if not isinstance(agent, dict):
+                continue
+            permissions = agent.get('permissions') if isinstance(agent.get('permissions'), dict) else DEFAULT_AGENT_PERMISSIONS.copy()
+            for permission in ('file_loading', 'file_saving'):
+                if not permissions.get(permission):
+                    permissions[permission] = True
+                    changed = True
+            agent['permissions'] = permissions
+        if changed:
+            write_json(agents_path, agents)
     log_event('permissions.project_folder.granted', normalized)
     return normalized
 
