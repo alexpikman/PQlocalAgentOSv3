@@ -11,6 +11,8 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import subprocess
+import socket
+import ipaddress
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +34,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'github_read_file','description':'Read a UTF-8 text file from the configured GitHub repository using a repository-relative path. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_search_code','description':'Search code in the configured GitHub repository for a symbol or distinctive text. Requires github_access.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
     {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'}},'required':['command']}}},
+    {'type':'function','function':{'name':'fetch_url','description':'Fetch text content from a public HTTP/HTTPS URL.','parameters':{'type':'object','properties':{'url':{'type':'string'}},'required':['url']}}},
+    {'type':'function','function':{'name':'ssh_execute','description':'Execute a command on a remote server via SSH.','parameters':{'type':'object','properties':{'connection_id':{'type':'string'},'command':{'type':'string'}},'required':['connection_id','command']}}},
 ]
 
 PERMISSION_FOR_TOOL = {
@@ -41,6 +45,7 @@ PERMISSION_FOR_TOOL = {
     'create_directory':('directory_creation',), 'delete_directory':('directory_deletion',),
     'github_list_files':('github_access',), 'github_read_file':('github_access',),
     'github_search_code':('github_access',), 'run_command':('terminal_access',),
+    'fetch_url':('web_access',), 'ssh_execute':('ssh_access',),
 }
 
 def is_blocked_shell_command(command: str) -> bool:
@@ -62,6 +67,9 @@ def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) ->
         name=item['function']['name']
         if name.startswith('github_'):
             if permissions.get('github_access') and os.environ.get('GITHUB_TOKEN'):
+                allowed.append(item)
+        elif name in ('fetch_url', 'ssh_execute'):
+            if permissions.get(PERMISSION_FOR_TOOL[name][0]):
                 allowed.append(item)
         elif global_files and (permissions.get(PERMISSION_FOR_TOOL[name][0]) or (name=='move_file' and permissions.get('directory_moving'))):
             allowed.append(item)
@@ -114,6 +122,94 @@ def _github_request(path: str) -> dict[str, Any]:
     except urllib.error.HTTPError as exc:
         raise RuntimeError('GitHub API вернул HTTP '+str(exc.code)) from exc
 
+def _validate_public_url(raw_url: str) -> str:
+    parsed = urllib.parse.urlsplit(str(raw_url or '').strip())
+    if parsed.scheme.lower() not in ('http', 'https') or not parsed.hostname:
+        raise ValueError('Разрешены только публичные URL с http:// или https://.')
+    if parsed.username or parsed.password:
+        raise ValueError('URL с логином или паролем запрещён.')
+    host = parsed.hostname.rstrip('.').lower()
+    if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
+        raise PermissionError('SSRF запрещён: локальные адреса недоступны.')
+    try:
+        addresses = {ipaddress.ip_address(host)}
+    except ValueError:
+        try:
+            addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == 'https' else 80), type=socket.SOCK_STREAM)}
+        except (OSError, ValueError) as exc:
+            raise ValueError('Не удалось разрешить DNS-имя URL.') from exc
+    blocked_networks = tuple(ipaddress.ip_network(net) for net in ('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','0.0.0.0/8','100.64.0.0/10','192.0.0.0/24','198.18.0.0/15','224.0.0.0/4','240.0.0.0/4','::1/128','fc00::/7','fe80::/10','::/128'))
+    for address in addresses:
+        if address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_reserved or any(address.version == net.version and address in net for net in blocked_networks):
+            raise PermissionError('SSRF запрещён: адрес ведёт в локальную или зарезервированную сеть.')
+    return urllib.parse.urlunsplit((parsed.scheme.lower(), parsed.netloc, parsed.path or '/', parsed.query, ''))
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise PermissionError('SSRF запрещён: перенаправления URL отключены.')
+
+
+def _fetch_public_url(raw_url: str) -> dict[str, Any]:
+    url = _validate_public_url(raw_url)
+    request = urllib.request.Request(url, headers={'User-Agent':'PQlocalAgentOSv3/1.0','Accept':'text/*,application/json;q=0.9,*/*;q=0.1'})
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(request, timeout=10) as response:
+        raw = response.read(MAX_TEXT_BYTES + 1)
+        if len(raw) > MAX_TEXT_BYTES:
+            raise ValueError('Ответ URL превышает лимит 1 МБ.')
+        content_type = response.headers.get_content_type()
+        charset = response.headers.get_content_charset() or 'utf-8'
+        if not (content_type.startswith('text/') or content_type in ('application/json','application/xml','application/xhtml+xml')):
+            raise ValueError('URL вернул не текстовый тип содержимого: '+content_type)
+        return {'url':url,'status':response.status,'content':raw.decode(charset, errors='replace')}
+
+
+def _execute_ssh(connection_id: str, command: str) -> dict[str, Any]:
+    if not connection_id or len(connection_id) > 200:
+        raise ValueError('Не указан корректный connection_id.')
+    if not command.strip() or len(command) > 4000:
+        raise ValueError('Команда должна содержать от 1 до 4000 символов.')
+    connection_file = Path(__file__).resolve().parent / 'data' / 'ssh_connections.json'
+    stored = json.loads(connection_file.read_text(encoding='utf-8')) if connection_file.is_file() else []
+    entries = stored.get('connections', []) if isinstance(stored, dict) else stored
+    if not isinstance(entries, list):
+        raise ValueError('Файл SSH-подключений имеет неверный формат.')
+    connection = next((item for item in entries if isinstance(item, dict) and str(item.get('id','')) == connection_id), None)
+    if not connection:
+        raise ValueError('SSH-подключение не найдено. Сначала нажмите «Сохранить на сервер» на странице SSH.')
+    host = str(connection.get('host','')).strip()
+    username = str(connection.get('username','')).strip()
+    port = int(connection.get('port',22))
+    key_path = str(connection.get('key_path','')).strip()
+    if not host or not username or not (1 <= port <= 65535):
+        raise ValueError('У SSH-подключения не заполнены host, username или корректный port.')
+    if key_path and not Path(key_path).expanduser().is_file():
+        raise ValueError('Приватный ключ не найден на сервере: '+key_path[:180])
+    try:
+        import paramiko
+    except ImportError as exc:
+        raise RuntimeError('SSH-инструмент требует библиотеку paramiko. Установите зависимости из requirements.txt.') from exc
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    try:
+        client.connect(hostname=host, port=port, username=username, key_filename=str(Path(key_path).expanduser()) if key_path else None, allow_agent=True, look_for_keys=True, timeout=10, banner_timeout=10, auth_timeout=10)
+        stdin, stdout, stderr = client.exec_command(command, timeout=30)
+        try: stdin.close()
+        except Exception: pass
+        out = stdout.read(60001).decode('utf-8','replace')
+        err = stderr.read(30001).decode('utf-8','replace')
+        exit_code = stdout.channel.recv_exit_status()
+        return {'connection_id':connection_id,'stdout':out[:60000],'stderr':err[:30000],'exit_code':exit_code}
+    except Exception as exc:
+        if isinstance(exc, (TimeoutError, socket.timeout)):
+            return {'connection_id':connection_id,'stdout':'','stderr':'SSH: тайм-аут 30 секунд.','exit_code':124}
+        raise RuntimeError('Ошибка SSH: '+str(exc)[:240]) from exc
+    finally:
+        client.close()
+
+
 def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permission_config: dict[str, Any]) -> dict[str, Any]:
     permissions=agent.get('permissions') if isinstance(agent.get('permissions'),dict) else {}
     required=PERMISSION_FOR_TOOL.get(name)
@@ -123,6 +219,15 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
     if not required: return {'error':'Инструмент не поддерживается.'}
     if not all(permissions.get(key,False) for key in required): return {'error':'У агента нет необходимого разрешения: '+', '.join(required)}
     try:
+        if name == 'fetch_url':
+            raw_url=args.get('url')
+            if not isinstance(raw_url,str) or len(raw_url)>4096: return {'error':'Укажите URL длиной до 4096 символов.'}
+            return _fetch_public_url(raw_url)
+        if name == 'ssh_execute':
+            connection_id=str(args.get('connection_id','')).strip()
+            command=args.get('command')
+            if not isinstance(command,str): return {'error':'Команда должна быть текстом.'}
+            return _execute_ssh(connection_id,command)
         if name.startswith('github_'):
             if not os.environ.get('GITHUB_TOKEN'): return {'error':'GITHUB_TOKEN не задан.'}
             if name=='github_list_files':
