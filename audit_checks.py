@@ -6,6 +6,7 @@ and never repair, delete, or rewrite project data.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -625,7 +626,7 @@ def check_default_password(root: Path) -> dict[str, Any]:
         stored_hash = str(auth.get("password_hash", ""))
         candidate = hashlib.pbkdf2_hmac("sha256", b"IamRootUser", salt, iterations).hex()
         is_default = bool(salt and iterations > 0 and stored_hash and
-                          hashlib.compare_digest(candidate, stored_hash))
+                          hmac.compare_digest(candidate, stored_hash))
     except (ValueError, TypeError):
         is_default = False
     if is_default:
