@@ -1503,7 +1503,7 @@ td{border-color:var(--line)}
 @media(max-width:680px){.system-map-svg{min-width:850px}.system-map-modal{padding:8px}.system-map-modal-card{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:20px 14px}.system-map-detail-links{grid-template-columns:minmax(0,1fr)}}
 
 /* Failure & Success Memory — task risk history */
-.task-risk-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid color-mix(in srgb,#e0a126 45%,var(--border));border-radius:999px;background:color-mix(in srgb,#e0a126 12%,var(--panel));color:var(--text);padding:4px 9px;font:600 11px/1.2 inherit;cursor:pointer;white-space:nowrap}
+.task-risk-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid color-mix(in srgb,#e0a126 45%,var(--border));border-radius:999px;background:color-mix(in srgb,#e0a126 12%,var(--panel));color:var(--text);padding:4px 9px;font-family:inherit;font-size:11px;font-weight:600;line-height:1.2;cursor:pointer;white-space:nowrap}
 .task-risk-badge:hover,.task-risk-badge:focus-visible{background:color-mix(in srgb,#e0a126 22%,var(--panel));outline:2px solid color-mix(in srgb,#e0a126 50%,transparent);outline-offset:2px}
 .task-risk-modal .modal-card{width:min(720px,calc(100vw - 32px));max-height:min(82vh,760px);overflow:auto}
 .task-risk-content{display:grid;gap:12px}
