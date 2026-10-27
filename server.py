@@ -3293,7 +3293,19 @@ class Handler(SimpleHTTPRequestHandler):
                             if not re.fullmatch(r'^#[0-9a-fA-F]{6}$',primary): return self.send_json(400, {'error':f'Некорректный primary-цвет иконки {key}'})
                             if not re.fullmatch(r'^#[0-9a-fA-F]{6}$',secondary): return self.send_json(400, {'error':f'Некорректный secondary-цвет иконки {key}'})
                             if size<12 or size>64: return self.send_json(400, {'error':f'Размер иконки {key} должен быть от 12 до 64'})
-                            cleaned[key]={'variant':variant,'primary':primary,'secondary':secondary,'size':size}
+                            icon_config={'variant':variant,'primary':primary,'secondary':secondary,'size':size}
+                            custom_svg=val.get('svg')
+                            if custom_svg not in (None,''):
+                                if not isinstance(custom_svg,str):
+                                    return self.send_json(400, {'error':f'SVG иконки {key} должен быть текстом'})
+                                if len(custom_svg.encode('utf-8'))>256*1024:
+                                    return self.send_json(413, {'error':f'SVG иконки {key} слишком большой (макс. 256 КБ)'})
+                                if not re.fullmatch(r'\s*<svg\b[\s\S]*</svg>\s*',custom_svg,re.IGNORECASE):
+                                    return self.send_json(400, {'error':f'Некорректный SVG иконки {key}: нужен полный элемент <svg>'})
+                                if re.search(r'<\s*(script|foreignObject|iframe|object|embed)\b|\son[a-z][\w:-]*\s*=|\b(?:href|xlink:href)\s*=\s*["\']\s*(?:https?:|//|javascript:|data:)|\burl\s*\(',custom_svg,re.IGNORECASE):
+                                    return self.send_json(400, {'error':f'SVG иконки {key} содержит небезопасные элементы или ссылки'})
+                                icon_config['svg']=custom_svg.strip()
+                            cleaned[key]=icon_config
                         current['icons']=cleaned
                         continue
                     if k=='navigation' and isinstance(v.get('menu'),list):
