@@ -4,6 +4,17 @@ from pathlib import Path
 import server
 
 class StorageTests(unittest.TestCase):
+    def test_agent_permissions_ignore_unsupported_legacy_keys(self):
+        permissions = server._normalize_agent_permissions({'file_loading': True, 'legacy_read': True})
+        self.assertTrue(permissions['file_loading'])
+        self.assertFalse(permissions['file_saving'])
+        self.assertEqual(set(permissions), server.AGENT_PERMISSION_KEYS)
+        self.assertNotIn('legacy_read', permissions)
+
+    def test_agent_permissions_reject_non_object_values(self):
+        with self.assertRaisesRegex(ValueError, 'permissions'):
+            server._normalize_agent_permissions(['file_loading'])
+
     def test_default_settings_have_header_and_appearance(self):
         self.assertIn('appearance', server.DEFAULT_SETTINGS)
         self.assertIn('header', server.DEFAULT_SETTINGS)
