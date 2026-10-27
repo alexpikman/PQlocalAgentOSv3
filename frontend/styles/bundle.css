@@ -804,11 +804,6 @@ td{border-color:var(--line)}
 .sidebar-chat-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .sidebar-chat-actions button{min-width:0;font-size:11px}
 .sidebar-chat-list{display:grid;gap:3px;overflow-y:auto;min-height:0}
-.sidebar-chat-item{display:flex;align-items:center;gap:6px;min-width:0;padding:8px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--text);text-align:left;font-size:11px;cursor:pointer}
-.sidebar-chat-item:hover,.sidebar-chat-item.active{background:var(--accent-soft);border-color:var(--line)}
-.sidebar-chat-item-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-.sidebar-chat-item-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:1px 4px;font-size:14px}
-.sidebar-chat-item-delete:hover{color:#d44}
 .sidebar-chat-empty{padding:6px 8px;color:var(--muted);font-size:10px;line-height:1.5}
 .sidebar-chat-project{margin-top:4px}
 .sidebar-chat-project .sidebar-chat-item-label{font-weight:600}
@@ -1396,24 +1391,6 @@ td{border-color:var(--line)}
 }
 
 
-/* Chat sidebar project rows: neutral tree rows, no legacy button chrome. */
-.sidebar-chat-project-row{
-  display:flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:transparent;min-width:0;box-sizing:border-box;
-}
-.sidebar-chat-project-row:hover,.sidebar-chat-project-row.active{background:var(--panel2);border-color:transparent}
-.sidebar-chat-project-label{
-  display:flex;align-items:center;gap:8px;flex:1 1 0%;min-width:0;overflow:hidden;padding:4px 0;border:0;background:transparent;color:var(--text);font-size:13px;font-weight:500;text-align:left;cursor:pointer;
-}
-.sidebar-chat-project-label .chat-tree-chevron,.sidebar-chat-project-label .chat-tree-folder{width:16px;height:16px;flex:0 0 16px}
-.sidebar-chat-project-label .chat-tree-chevron{width:12px;height:12px;flex-basis:12px}
-.sidebar-chat-project-label .sidebar-chat-item-title{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sidebar-chat-project-label:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-.sidebar-project-add{width:26px;height:26px;min-width:26px;flex:0 0 26px;padding:0;border:0;background:transparent;border-radius:6px}
-.sidebar-project-add img{display:block;width:16px;height:16px;object-fit:contain}
-.sidebar-project-add:hover{background:var(--accent-soft);border-color:transparent}
-@media(max-width:520px){.sidebar-chat-project-row{padding:4px 5px}.sidebar-chat-project-label{font-size:12px;gap:6px}}
-
- 
 /* Terminal UI and chat tool-call status. */
 .chat-tool-calls{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
 .chat-tool-badge{display:inline-flex;align-items:center;max-width:100%;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
@@ -1508,3 +1485,35 @@ td{border-color:var(--line)}
 .task-risk-keywords{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
 .task-risk-keywords span{border:1px solid var(--border);border-radius:999px;padding:3px 7px;font-size:10px;color:var(--muted)}
 .task-risk-human{color:#b42318;font-weight:600;font-size:12px}
+
+/* Chat sidebar tree: flat rows, no input-like borders or backgrounds. */
+.chat-tree-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 10px 5px}
+.chat-add-project-btn{width:20px;height:20px;padding:0;border:0;background:transparent;border-radius:5px}
+.chat-add-project-btn img{width:16px;height:16px}
+.chat-add-project-btn:hover{background:var(--panel2);border-color:transparent}
+.chat-tree-item{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--text);font-size:13px;transition:background .15s;border:0;background:transparent}
+.chat-tree-item:hover{background:var(--panel2)}
+.chat-tree-item.active{background:var(--accent-soft)}
+.chat-tree-item .chat-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-tree-project{padding:4px 6px;gap:3px}
+.chat-tree-project-label{display:flex;align-items:center;gap:7px;flex:1;min-width:0;padding:4px 2px;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.chat-tree-project-label:hover{background:transparent}
+.chat-tree-chevron{width:12px;height:12px;flex:0 0 12px;color:var(--muted)}
+.chat-tree-folder{width:16px;height:16px;flex:0 0 16px;object-fit:contain}
+.chat-tree-project .chat-title{font-weight:500}
+.chat-tree-project-chats{display:grid;gap:2px;padding-left:20px}
+.chat-tree-conversation{padding:7px 10px}
+.chat-tree-conversation-title{display:block;min-width:0;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.chat-tree-conversation-title:hover{background:transparent}
+.chat-tree-actions{display:flex;align-items:center;gap:2px;opacity:0;flex:0 0 auto}
+.chat-tree-item:hover .chat-tree-actions,.chat-tree-item:focus-within .chat-tree-actions{opacity:1}
+.chat-tree-action{width:24px;height:24px;padding:3px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.chat-tree-action img{display:block;width:16px;height:16px;object-fit:contain}
+.chat-tree-action:hover{background:var(--panel2);border-color:transparent}
+.chat-tree-action.danger:hover{color:#d44;background:var(--panel2)}
+.sidebar-chat-empty{padding:6px 10px;color:var(--muted);font-size:11px;line-height:1.5}
+.sidebar-chat-list{display:grid;gap:2px;overflow-y:auto;min-height:0}
+.sidebar-chat-list[hidden]{display:none!important}
+.sidebar-chat-actions .btn{display:flex;align-items:center;justify-content:center;gap:7px}
+.sidebar-chat-actions .chat-action-icon{width:16px;height:16px;object-fit:contain}
+@media(max-width:720px){.chat-tree-actions{opacity:1}}
