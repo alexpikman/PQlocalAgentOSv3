@@ -157,16 +157,22 @@
     const chatLink = createElement('a','nav-item active',''); chatLink.href='/chat.html'; chatLink.setAttribute('aria-current','page');
     chatLink.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true">▤</span>');chatLink.append(createElement('span','nav-label','Чат'));
     items.append(dashboard,chatLink); group.append(title,items);
-    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn secondary','Новый чат'),newProject=createElement('button','btn secondary','Проект');
-    newChat.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>');newProject.insertAdjacentHTML('afterbegin','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6m-3-3h6"/></svg>');
-    newChat.type='button';newChat.onclick=()=>createConversation(state.activeProjectId);newProject.type='button';newProject.onclick=openProjectModal;actions.append(newChat,newProject);
-    const projectsTitle=createElement('div','nav-group-label','ПРОЕКТЫ'),projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
+    const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','Новый чат');
+    newChat.insertAdjacentHTML('afterbegin','<img class="chat-action-icon" src="/icons/start.svg" alt="">');
+    newChat.type='button';newChat.onclick=()=>createConversation('');actions.append(newChat);
+    const projectsHeader=createElement('div','nav-group-label chat-tree-heading','');
+    projectsHeader.append(document.createTextNode('ПРОЕКТЫ'));
+    const addProject=createElement('button','icon-btn chat-add-project-btn','');
+    addProject.type='button';addProject.id='chat-add-project-btn';addProject.title='Добавить проект';addProject.setAttribute('aria-label','Добавить проект');
+    addProject.innerHTML='<img src="/icons/start.svg" alt="+">';
+    addProject.onclick=openProjectModal;projectsHeader.append(addProject);
+    const projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
     const historyToggle=createElement('button','btn secondary chat-history-toggle','');historyToggle.type='button';historyToggle.id='chat-history-toggle';
     historyToggle.innerHTML='<span>История чатов</span><svg class="nav-group-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"></path></svg>';
     const historyList=createElement('div','sidebar-chat-list');historyList.id='chat-history-list';
     const collapsed=localStorage.getItem('pqlocalagentosv3.chat-history-collapsed')==='true';historyList.hidden=collapsed;historyToggle.setAttribute('aria-expanded',String(!collapsed));historyToggle.classList.toggle('is-collapsed',collapsed);
     historyToggle.onclick=()=>{const close=historyToggle.getAttribute('aria-expanded')==='true';historyToggle.setAttribute('aria-expanded',String(!close));historyToggle.classList.toggle('is-collapsed',close);historyList.hidden=close;localStorage.setItem('pqlocalagentosv3.chat-history-collapsed',String(close))};
-    workspace.append(group,actions,projectsTitle,projectsList,historyToggle,historyList);
+    workspace.append(group,actions,projectsHeader,projectsList,historyToggle,historyList);
     workspace.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="chat-project-modal" hidden><div class="modal-backdrop" data-chat-project-close></div><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chat-project-title"><div class="section-title modal-card-head"><div><h2 id="chat-project-title">Проект для чата</h2><p>Выберите существующий или создайте новый.</p></div><button type="button" class="btn secondary" data-chat-project-close>Закрыть</button></div><div class="modal-card-body"><div class="field"><label for="chat-project-select">Существующий проект</label><select id="chat-project-select"><option value="">— Не выбран —</option></select></div><div class="divider"></div><div class="field"><label for="chat-project-name">Новый проект</label><input id="chat-project-name" maxlength="120" placeholder="Название нового проекта"></div><div class="field"><label for="chat-project-path">Путь (необязательно)</label><input id="chat-project-path" maxlength="1000" placeholder="C:\\Projects\\MyProject"></div><div class="field"><label for="chat-project-description">Описание (необязательно)</label><textarea id="chat-project-description" rows="2" maxlength="1000"></textarea></div><div class="notice" id="chat-project-status" hidden></div></div><div class="modal-card-actions"><button type="button" class="btn secondary" data-chat-project-close>Отмена</button><button type="button" class="btn primary" id="chat-project-submit">Добавить в чат</button></div></section></div>');
     document.body.append(document.getElementById('chat-project-modal'));
     nav.replaceChildren(workspace);elements.workspace=workspace;elements.projectsList=projectsList;elements.historyList=historyList;bindProjectModal();
@@ -264,58 +270,70 @@
     if (!elements.projectsList || !elements.historyList) return;
     elements.projectsList.replaceChildren();
     if (!state.projects.length) {
-      elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Создайте проект, чтобы группировать диалоги.'));
+      elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Нет проектов'));
     }
     state.projects.forEach((project) => {
-      const row = createElement('div', 'sidebar-chat-project-row' + (state.activeProjectId === project.id ? ' active' : ''));
-      const label = createElement('button', 'sidebar-chat-project-label', '');
+      const row = createElement('div', 'chat-tree-item chat-tree-project' + (state.activeProjectId === project.id ? ' active' : ''));
+      const label = createElement('button', 'chat-tree-project-label', '');
       label.type = 'button';
       label.title = project.name || 'Без названия';
       label.dataset.projectToggle = project.id;
-      label.insertAdjacentHTML('beforeend','<svg class="chat-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg><svg class="chat-tree-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
-      label.append(createElement('span', 'sidebar-chat-item-title', project.name || 'Без названия'));
-      label.classList.toggle('is-expanded', !!project.expanded);
+      label.setAttribute('aria-expanded', String(!!project.expanded));
+      label.innerHTML = '<span class="chat-tree-chevron" aria-hidden="true">' + (project.expanded ? '▾' : '▸') + '</span><img class="chat-tree-folder" src="/icons/folder.svg" alt="">';
+      label.append(createElement('span', 'chat-title', project.name || 'Без названия'));
       label.addEventListener('click', () => {
         project.expanded = !project.expanded;
         state.activeProjectId = project.id;
         saveWorkspace();
         renderChatWorkspace();
       });
-      const add = createElement('button', 'icon-btn sidebar-project-add', '');
-      add.type = 'button';
-      add.dataset.projectAddChat = project.id;
-      add.title = 'Новый чат в проекте';
-      add.setAttribute('aria-label', 'Новый чат в проекте ' + project.name);
-      add.innerHTML = '<img src="/icons/start.svg" alt="">';
-      add.addEventListener('click', () => createConversation(project.id));
-      row.append(label, add);
+      const add = createElement('button', 'icon-btn chat-tree-action', '');
+      add.type = 'button'; add.title = 'Создать чат в проекте'; add.setAttribute('aria-label', 'Создать чат в проекте ' + (project.name || ''));
+      add.innerHTML = '<img src="/icons/start.svg" alt="+">';
+      add.onclick = (event) => { event.stopPropagation(); createConversation(project.id); };
+      const remove = createElement('button', 'icon-btn chat-tree-action danger', '');
+      remove.type = 'button'; remove.title = 'Удалить проект'; remove.setAttribute('aria-label', 'Удалить проект ' + (project.name || ''));
+      remove.innerHTML = '<img src="/icons/delete.svg" alt="×">';
+      remove.onclick = async (event) => {
+        event.stopPropagation();
+        if (!window.confirm('Удалить проект «' + (project.name || 'Без названия') + '»? Чаты проекта останутся в истории, но будут отвязаны от проекта.')) return;
+        try {
+          await chatApi('/projects/' + encodeURIComponent(project.id), { method: 'DELETE' });
+          state.projects = state.projects.filter(item => item.id !== project.id);
+          state.conversations.forEach(item => { if (item.projectId === project.id) item.projectId = ''; });
+          if (state.activeProjectId === project.id) state.activeProjectId = '';
+          saveWorkspace(); renderChatWorkspace();
+        } catch (error) { showNotice('Не удалось удалить проект: ' + error.message, 'warning'); }
+      };
+      row.append(label, add, remove);
       elements.projectsList.append(row);
       if (project.expanded) {
         const nested = createElement('div', 'sidebar-chat-project-chats');
-        state.conversations.filter((chat) => chat.projectId === project.id).forEach((chat) => {
-          nested.append(makeConversationRow(chat));
-        });
+        state.conversations.filter(chat => chat.projectId === project.id).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).forEach(chat => nested.append(makeConversationRow(chat)));
         if (!nested.childElementCount) nested.append(createElement('div', 'sidebar-chat-empty', 'Пока нет чатов'));
         elements.projectsList.append(nested);
       }
     });
 
     elements.historyList.replaceChildren();
-    const ungrouped = state.conversations.filter((chat) => !chat.projectId).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const ungrouped = state.conversations.filter(chat => !chat.projectId).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
     if (!ungrouped.length) elements.historyList.append(createElement('div', 'sidebar-chat-empty', 'Новые диалоги появятся здесь.'));
-    ungrouped.forEach((chat) => elements.historyList.append(makeConversationRow(chat)));
+    ungrouped.forEach(chat => elements.historyList.append(makeConversationRow(chat)));
   }
 
   function makeConversationRow(chat) {
-    const row = createElement('div', 'sidebar-chat-item' + (chat.id === state.activeConversationId ? ' active' : ''));
-    const label = createElement('button', 'sidebar-chat-item-label', chat.title || 'Новый чат');
-    label.type = 'button';
-    label.title = chat.title || 'Новый чат';
+    const row = createElement('div', 'chat-tree-item chat-tree-conversation' + (chat.id === state.activeConversationId ? ' active' : ''));
+    const label = createElement('button', 'chat-title chat-tree-conversation-title', chat.title || 'Новый чат');
+    label.type = 'button'; label.title = chat.title || 'Новый чат';
     label.addEventListener('click', () => openConversation(chat.id));
-    const actions=createElement('div','sidebar-chat-item-actions');
-    const rename=createElement('button','sidebar-chat-item-action','');rename.type='button';rename.title='Переименовать чат';rename.setAttribute('aria-label','Переименовать чат '+(chat.title||'Новый чат'));rename.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.5-.8 4.3 4.3-.8L19.7 7.8a2.2 2.2 0 0 0-3.1-3.1z"/><path d="m14.9 6.4 3.1 3.1"/></svg>';rename.onclick=()=>renameConversation(chat.id);
-    const remove=createElement('button','sidebar-chat-item-action is-danger','');remove.type='button';remove.title='Удалить чат';remove.setAttribute('aria-label','Удалить чат '+(chat.title||'Новый чат'));remove.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>';remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
-    actions.append(rename,remove);row.append(label,actions);
+    const actions = createElement('div', 'chat-tree-actions');
+    const rename = createElement('button', 'icon-btn chat-tree-action', '');
+    rename.type='button'; rename.title='Переименовать чат'; rename.setAttribute('aria-label','Переименовать чат');
+    rename.innerHTML='<img src="/icons/edit.svg" alt="Переименовать">'; rename.onclick=()=>renameConversation(chat.id);
+    const remove = createElement('button', 'icon-btn chat-tree-action danger', '');
+    remove.type='button'; remove.title='Удалить чат'; remove.setAttribute('aria-label','Удалить чат');
+    remove.innerHTML='<img src="/icons/delete.svg" alt="Удалить">'; remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
+    actions.append(rename, remove); row.append(label, actions);
     return row;
   }
 
