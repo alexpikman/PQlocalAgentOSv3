@@ -92,7 +92,7 @@ function openDomainModal(kind,id){
   const modal=ensureDomainModal(),form=$('#domain-modal-form');
   // Submit handling is explicit so hidden required profile fields can be reported on either tab.
   form.noValidate=true;
-  $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу','system-instructions':'системную инструкцию'}[kind]);
+  $('#domain-modal-title').textContent=kind==='projects'?(item?'Изменить проект':'Создать проект'):(item?'Изменить: ':'Создать: ')+({agents:'агента',tasks:'задачу','system-instructions':'системную инструкцию'}[kind]);
   const modalDescription=$('#domain-modal-description');if(modalDescription)modalDescription.hidden=kind==='projects';
   const projectEnvIcon=$('#domain-project-env-icon');if(projectEnvIcon){projectEnvIcon.hidden=kind!=='projects';projectEnvIcon.src='/icons/connect_'+(item?.env_type||'local')+'.svg';}
   $('#domain-modal-save').textContent=kind==='agents'?'Сохранить':(item?'Сохранить изменения':'Создать');
@@ -131,10 +131,10 @@ function openDomainModal(kind,id){
       +'<div class="field" id="domain-connection-field"><label for="domain-connection_id">Подключение</label><select id="domain-connection_id" name="connection_id"><option value="">'+(envType==='local'?'Не требуется': 'Выберите подключение')+'</option>'
       +githubConnections.map(x=>'<option data-env="github" value="'+esc(x.id)+'" '+(envType==='github'&&x.id===(item?.github_connection_id||item?.connection_id||'')?'selected':'')+'>'+esc((x.name||x.repository||x.id)+' · '+(x.repository||''))+'</option>').join('')
       +sshConnections.map(x=>'<option data-env="ssh" value="'+esc(x.id)+'" '+(envType==='ssh'&&x.id===(item?.ssh_connection_id||item?.connection_id||'')?'selected':'')+'>'+esc((x.name||x.host||x.id)+' · '+(x.username||'')+'@'+(x.host||''))+'</option>').join('')
-      +'</select><small id="domain-connection-note" '+(envType==='local'?'hidden':'')+'>'+(envType==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.')+'</small></div></div>'
-      +'<div class="field" id="domain-repo-name-field" '+(envType==='github'?'':'hidden')+'><label for="domain-repo_name">Имя репозитория</label><input id="domain-repo_name" name="repo_name" type="text" value="'+esc(item?.repo_name||githubConnections.find(x=>x.id===(item?.github_connection_id||item?.connection_id||''))?.repository||'')+'" maxlength="300" placeholder="owner/repository" readonly></div>'
+      +'</select></div></div>'
+      +'<div class="field" id="domain-repo-name-field" '+(envType==='github'?'':'hidden')+'><label for="domain-repo_name">Имя репозитория</label><input id="domain-repo_name" name="repo_name" type="text" value="'+esc(item?.repo_name||githubConnections.find(x=>x.id===(item?.github_connection_id||item?.connection_id||''))?.repository||'')+'" maxlength="300" placeholder="owner/repository" readonly hidden></div>'
       +'<div class="field project-path-field"><label for="domain-path">Путь к рабочей папке</label><div class="project-path-control"><input id="domain-path" name="path" type="text" value="'+esc(item?.path||'')+'" maxlength="1000" placeholder="Например, C:\\PROJECT\\MyProject"><button type="button" class="btn secondary" id="domain-project-path-choose">Выбрать</button><input type="file" id="domain-project-path-picker" webkitdirectory directory multiple hidden></div></div>'
-      +field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WebP или GIF. Максимум 700 КБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
+      +field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" class="project-logo-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><button type="button" class="btn secondary" id="domain-project-logo-choose">Выбрать файл</button><small>PNG, JPG, WebP или GIF. Максимум 700 КБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
   }else{
     const taskRoles=['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS'];
     const activeRoles=Array.isArray(item?.active_roles)?item.active_roles:taskRoles;
@@ -191,7 +191,7 @@ function syncProjectEnvironmentIcon(){
   if(icon)icon.src='/icons/connect_'+type+'.svg';
 }
 function syncProjectConnectionFields(){
-  const type=$('#domain-env_type')?.value||'local',select=$('#domain-connection_id'),field=$('#domain-connection-field'),note=$('#domain-connection-note'),repoField=$('#domain-repo-name-field'),repoInput=$('#domain-repo_name'),sshHidden=$('#domain-ssh_connection_id');
+  const type=$('#domain-env_type')?.value||'local',select=$('#domain-connection_id'),field=$('#domain-connection-field'),repoField=$('#domain-repo-name-field'),repoInput=$('#domain-repo_name'),sshHidden=$('#domain-ssh_connection_id');
   if(field)field.hidden=false;
   if(select){
     select.disabled=type==='local';
@@ -199,7 +199,6 @@ function syncProjectConnectionFields(){
     const selected=select.selectedOptions?.[0];
     if(selected?.dataset.env!==type)select.value='';
   }
-  if(note){note.hidden=type==='local';note.textContent=type==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.'}
   if(repoField)repoField.hidden=type!=='github';
   if(repoInput){
     const chosen=projectGithubConnections.find(x=>x.id===select?.value);
@@ -315,6 +314,7 @@ function bindDomainModal(){
   });
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
+    const chooseLogo=target.closest('#domain-project-logo-choose');if(chooseLogo){const picker=$('#domain-project-logo-file');if(picker)picker.click();return}
     const choosePath=target.closest('#domain-project-path-choose');if(choosePath){const picker=$('#domain-project-path-picker');if(picker)picker.click();return}
     const testButton=target.closest('#domain-model-test');if(testButton){const select=$('#domain-model'),opt=select?.selectedOptions?.[0],model=String(select?.value||'').trim(),providerId=opt?.dataset.providerId||'',kind=opt?.dataset.modelKind||'local',result=$('#domain-model-test-result');if(!model){if(result)result.textContent='Сначала выберите модель.';return}testButton.disabled=true;if(result)result.innerHTML='<span class="model-test-loading"><span class="page-loading-mark"><span class="page-loading-orbit page-loading-orbit-a"></span><span class="page-loading-orbit page-loading-orbit-b"></span><span class="page-loading-core">PQ</span><span class="page-loading-spark"></span></span><span>Отправляем «Привет» модели…</span></span>';try{const response=await api('/models/test',{method:'POST',body:JSON.stringify({model,provider_id:providerId,kind,prompt:'Ответь одним коротким предложением на приветствие: «Привет!»'})});if(result)result.innerHTML='<span class="model-test-success">Модель доступна и отвечает</span>'+(response.response?'<small class="model-test-preview">'+esc(response.response.slice(0,180))+'</small>':'')}catch(error){if(result)result.innerHTML='<span class="model-test-error">Модель не ответила</span><small class="model-test-preview">'+esc(error.message||'Ошибка проверки')+'</small>'}finally{testButton.disabled=false}return}const clearLogo=target.closest('#domain-project-logo-clear');if(clearLogo){const hidden=$('#domain-project-logo'),preview=$('#domain-project-logo-preview'),empty=$('#domain-project-logo-empty'),file=$('#domain-project-logo-file');if(hidden)hidden.value='';if(preview){preview.removeAttribute('src');preview.hidden=true}if(empty)empty.hidden=false;if(file)file.value='';clearLogo.hidden=true;return}
     const close=target.closest('[data-domain-modal-close]');if(close){const modal=$('#domain-modal');if(modal)modal.hidden=true;return}
