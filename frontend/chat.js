@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
-  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false };
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false, iconSettings: {} };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -16,6 +16,8 @@
     if (!response.ok) throw new Error(data.error || data.message || 'Ошибка запроса к серверу.');
     return data;
   }
+
+  function chatMenuIcon(id, fallback) { return window.PQRenderIcon?.(id, state.iconSettings?.[id], 24) || fallback; }
 
   function createElement(tag, className, text) {
     const element = document.createElement(tag);
@@ -153,9 +155,9 @@
     const title = createElement('div', 'nav-group-label', 'РАБОЧЕЕ ПРОСТРАНСТВО');
     const items = createElement('div', 'nav-group-items');
     const dashboard = createElement('a', 'nav-item', ''); dashboard.href='/';
-    dashboard.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true">▦</span>');dashboard.append(createElement('span','nav-label','Рабочий стол'));
+    dashboard.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true">'+chatMenuIcon('dashboard','▦')+'</span>');dashboard.append(createElement('span','nav-label','Рабочий стол'));
     const chatLink = createElement('a','nav-item active',''); chatLink.href='/chat.html'; chatLink.setAttribute('aria-current','page');
-    chatLink.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true">▤</span>');chatLink.append(createElement('span','nav-label','Чат'));
+    chatLink.insertAdjacentHTML('beforeend','<span class="nav-icon" aria-hidden="true">'+chatMenuIcon('chat','▤')+'</span>');chatLink.append(createElement('span','nav-label','Чат'));
     items.append(dashboard,chatLink); group.append(title,items);
     const actions=createElement('div','sidebar-chat-actions'),newChat=createElement('button','btn primary','Новый чат');
     newChat.insertAdjacentHTML('afterbegin','<img class="chat-action-icon" src="/icons/start.svg" alt="">');
@@ -635,6 +637,7 @@
     if (!content || document.getElementById('chat-root')) return;
     readWorkspace();
     try{const projects=await chatApi('/projects',{cache:'no-store'});state.systemProjects=Array.isArray(projects.items)?projects.items:[];state.projects=state.systemProjects.map(p=>({id:p.id,name:p.name||'Без названия',createdAt:p.created_at||'',expanded:state.projects.find(old=>old.id===p.id)?.expanded??true}));saveWorkspace()}catch(_){/* use cached project list */}
+    try{const settings=await chatApi('/settings',{cache:'no-store'});state.iconSettings=settings.icons||{}}catch(_){state.iconSettings={}}
     buildUI();
     bindShellEvents();
     bindEvents();
