@@ -4,6 +4,7 @@ from urllib.parse import urlparse, parse_qs
 import urllib.parse
 import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time, subprocess
 from http.cookies import SimpleCookie
+import audit_checks
 
 try:
     from llama_cpp import Llama
@@ -22,6 +23,7 @@ _LOCAL_GGUF_LOCK = threading.Lock()
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / 'frontend'
 ICONS_DIR = FRONTEND / 'icons'
+AVATARS_DIR = FRONTEND / 'avatars'
 DATA = ROOT / 'data'
 MODULES = ROOT / 'modules'
 TEMPLATES_DIR = ROOT / 'agents' / 'templates'
@@ -29,7 +31,7 @@ PAGES = DATA / 'pages'
 PORT = int(os.environ.get('PQ_PORT', '8765'))
 HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
-for p in (FRONTEND, DATA, PAGES, MODULES, ICONS_DIR): p.mkdir(parents=True, exist_ok=True)
+for p in (FRONTEND, DATA, PAGES, MODULES, ICONS_DIR, AVATARS_DIR): p.mkdir(parents=True, exist_ok=True)
 DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}, 'icons': {}}
 DEFAULT_PAGES = [{'id':'system-map','title':'Карта системы','description':'Интерактивная схема ролей, памяти проекта и потоков данных.','icon':'git-branch','content':'Архитектура взаимодействия агентов и инструментов.','system':True},{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'chat','title':'Чат','description':'Общение с локальными моделями Ollama.','icon':'file-text','content':'Диалог с выбранной локальной моделью.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True},{'id':'system-instructions','title':'Системные инструкции','description':'Базовые инструкции для ролей агентов и план взаимодействия.','icon':'file-text','content':'Управление системными инструкциями.','system':True}]
 def read_json(path, fallback):
@@ -2552,6 +2554,39 @@ class Handler(SimpleHTTPRequestHandler):
             config = read_json(AUTH_FILE, {})
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
+        if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/audit/run':
+            report = audit_checks.run_audit(ROOT)
+            try:
+                audit_checks.REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+                audit_checks.REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+            except OSError as exc:
+                return self.send_json(500, {'error': 'Не удалось сохранить отчёт аудита', 'detail': str(exc)[:300]})
+            return self.send_json(200, report)
+        if path == '/api/audit/report':
+            report_path = (DATA / 'audit_last_report.json').resolve()
+            if not report_path.is_relative_to(DATA.resolve()) or not report_path.is_file():
+                return self.send_json(404, {'error': 'Отчёт аудита ещё не создан'})
+            try:
+                report = json.loads(report_path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                return self.send_json(500, {'error': 'Не удалось прочитать отчёт аудита'})
+            return self.send_json(200, report)
+        if path == '/api/avatars/presets':
+            presets = []
+            for category in ('face', 'glasses', 'hair'):
+                category_dir = (AVATARS_DIR / category).resolve()
+                if not category_dir.is_relative_to(AVATARS_DIR.resolve()) or not category_dir.is_dir():
+                    continue
+                for target in sorted(category_dir.iterdir()):
+                    try:
+                        resolved = target.resolve()
+                        if not resolved.is_relative_to(AVATARS_DIR.resolve()) or not target.is_file() or target.suffix.lower() != '.svg':
+                            continue
+                        presets.append({'category': category, 'name': target.stem, 'url': '/avatars/' + category + '/' + target.name})
+                    except OSError:
+                        continue
+            return self.send_json(200, {'presets': presets})
         if path.startswith('/api/') and not self.require_auth(): return
         if path == '/api/dialog/select-folder':
             try:
