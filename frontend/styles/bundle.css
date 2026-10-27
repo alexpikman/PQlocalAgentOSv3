@@ -904,7 +904,7 @@ td{border-color:var(--line)}
 .settings-top-grid .field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .header-visibility-options{grid-template-columns:1fr;gap:10px}
 .settings-info-note{margin-top:18px;padding:14px 16px;background:#fef9c3;opacity:.5;border:0;border-radius:9px;color:#594d18;font-size:11px;line-height:1.65}
-.page-title-en,.page-title-ru{display:block}
+.page-title-en,.page-title-ru{display:block}.page-title-en[hidden],.page-title-ru[hidden]{display:none!important}
 .page-title-en{font-size:.66em;line-height:1.2;letter-spacing:.02em;opacity:.72;margin-bottom:3px}
 .page-title-ru{line-height:1.2}
 .icon-settings-list{display:grid;gap:12px;margin-top:14px}
