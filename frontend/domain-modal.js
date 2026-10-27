@@ -134,7 +134,6 @@ function openDomainModal(kind,id){
       +'</select><small id="domain-connection-note" '+(envType==='local'?'hidden':'')+'>'+(envType==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.')+'</small></div></div>'
       +'<div class="field" id="domain-repo-name-field" '+(envType==='github'?'':'hidden')+'><label for="domain-repo_name">Имя репозитория</label><input id="domain-repo_name" name="repo_name" type="text" value="'+esc(item?.repo_name||githubConnections.find(x=>x.id===(item?.github_connection_id||item?.connection_id||''))?.repository||'')+'" maxlength="300" placeholder="owner/repository" readonly></div>'
       +'<div class="field project-path-field"><label for="domain-path">Путь к рабочей папке</label><div class="project-path-control"><input id="domain-path" name="path" type="text" value="'+esc(item?.path||'')+'" maxlength="1000" placeholder="Например, C:\\PROJECT\\MyProject"><button type="button" class="btn secondary" id="domain-project-path-choose">Выбрать</button><input type="file" id="domain-project-path-picker" webkitdirectory directory multiple hidden></div></div>'
-      +'<div class="field" id="domain-ssh-connection-field" '+(envType==='ssh'?'':'hidden')+'><label for="domain-ssh_connection_id">SSH-подключение</label><input type="hidden" id="domain-ssh_connection_id" name="ssh_connection_id" value="'+esc(item?.ssh_connection_id||'')+'"><small>Рабочая папка на удалённом сервере указывается в поле «Путь к рабочей папке».</small></div>'
       +field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WebP или GIF. Максимум 700 КБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
   }else{
     const taskRoles=['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS'];
@@ -193,8 +192,9 @@ function syncProjectEnvironmentIcon(){
 }
 function syncProjectConnectionFields(){
   const type=$('#domain-env_type')?.value||'local',select=$('#domain-connection_id'),field=$('#domain-connection-field'),note=$('#domain-connection-note'),repoField=$('#domain-repo-name-field'),repoInput=$('#domain-repo_name'),sshHidden=$('#domain-ssh_connection_id');
-  if(field)field.hidden=type==='local';
+  if(field)field.hidden=false;
   if(select){
+    select.disabled=type==='local';
     Array.from(select.options).forEach(option=>{if(!option.value){option.hidden=false;return}option.hidden=option.dataset.env!==type});
     const selected=select.selectedOptions?.[0];
     if(selected?.dataset.env!==type)select.value='';
