@@ -254,7 +254,7 @@ window.ICON_DATABASE = [
       }
     ];
 
-window.PQRenderIcon = function (id, settings, sizeOverride) {
+window.PQRenderIcon = function(id, settings, sizeOverride) {
   const entry = (window.ICON_DATABASE || []).find(item => item.id === id);
   if (!entry) return '';
   const config = settings && typeof settings === 'object' ? settings : {};
@@ -262,19 +262,38 @@ window.PQRenderIcon = function (id, settings, sizeOverride) {
   const primary = /^#[0-9a-fA-F]{6}$/.test(config.primary || '') ? config.primary : '#3b82f6';
   const secondary = /^#[0-9a-fA-F]{6}$/.test(config.secondary || '') ? config.secondary : '#64748b';
   const size = Math.max(12, Math.min(64, Number(sizeOverride) || Number(config.size) || 24));
-  let svg = entry.variants[variant] || entry.variants[0];
-  svg = svg.replace(/(<svg\b[^>]*?)\bwidth="[^"]*"/i, '$1width="' + size + '"')
-    .replace(/(<svg\b[^>]*?)\bheight="[^"]*"/i, '$1height="' + size + '"');
+  let svg = typeof config.svg === 'string' && config.svg.trim() ? config.svg.trim() : (entry.variants[variant] || entry.variants[0]);
+  if (!/^<svg\b[\s\S]*<\/svg>\s*$/i.test(svg)) return '';
+  if (/<\s*(script|foreignObject|iframe|object|embed)\b/i.test(svg) ||
+      /\son[a-z][\w:-]*\s*=/i.test(svg) ||
+      /\b(?:href|xlink:href)\s*=\s*["']\s*(?:https?:|\/\/|javascript:|data:)/i.test(svg) ||
+      /\burl\s*\(/i.test(svg)) return '';
+  svg = svg.replace(/(<svg\b[^>]*?)\bwidth\s*=\s*["'][^"']*["']/i, '$1width="' + size + '"');
+  if (!/\bwidth\s*=/.test(svg.slice(0, svg.indexOf('>')))) svg = svg.replace(/<svg\b/i, '<svg width="' + size + '"');
+  svg = svg.replace(/(<svg\b[^>]*?)\bheight\s*=\s*["'][^"']*["']/i, '$1height="' + size + '"');
+  if (!/\bheight\s*=/.test(svg.slice(0, svg.indexOf('>')))) svg = svg.replace(/<svg\b/i, '<svg height="' + size + '"');
   svg = svg.replace(/<([a-z][\w:-]*)([^>]*)>/gi, (tag, name, rawAttrs) => {
     const classes = [];
-    let attrs = rawAttrs.replace(/\sclass="([^"]*)"/gi, (_, value) => { classes.push(...value.split(/\s+/)); return ''; });
-    const styles = [];
-    if (classes.includes('primary')) styles.push('fill="' + primary + '"');
-    if (classes.includes('secondary')) { styles.push('fill="' + secondary + '"'); if (!/\sopacity=/i.test(attrs)) styles.push('opacity="0.7"'); }
-    if (classes.includes('primary-stroke')) styles.push('stroke="' + primary + '"');
-    if (classes.includes('secondary-stroke')) styles.push('stroke="' + secondary + '"');
-    if (!classes.includes('primary') && !classes.includes('secondary') && (classes.includes('primary-stroke') || classes.includes('secondary-stroke')) && !/\sfill=/i.test(attrs)) styles.push('fill="none"');
-    attrs += styles.length ? ' ' + styles.join(' ') : '';
+    let attrs = rawAttrs.replace(/\sclass="([^"]*)"/gi, (_, value) => {
+      classes.push(...value.split(/\s+/).filter(Boolean));
+      return '';
+    });
+    const hasPrimary = classes.includes('primary');
+    const hasSecondary = classes.includes('secondary');
+    const hasPrimaryStroke = classes.includes('primary-stroke');
+    const hasSecondaryStroke = classes.includes('secondary-stroke');
+    const setAttr = (key, value) => {
+      const escaped = String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const pattern = new RegExp('\\s' + key + '\\s*=\\s*"[^"]*"', 'i');
+      if (pattern.test(attrs)) attrs = attrs.replace(pattern, ' ' + key + '="' + escaped + '"');
+      else attrs += ' ' + key + '="' + escaped + '"';
+    };
+    if (hasPrimary) setAttr('fill', primary);
+    else if (hasSecondary) setAttr('fill', secondary);
+    if (hasPrimaryStroke) setAttr('stroke', primary);
+    else if (hasSecondaryStroke) setAttr('stroke', secondary);
+    if ((hasPrimaryStroke || hasSecondaryStroke) && !hasPrimary && !hasSecondary) setAttr('fill', 'none');
+    if (hasSecondary && !/\sfill-opacity\s*=/i.test(attrs)) setAttr('fill-opacity', '0.7');
     return '<' + name + attrs + '>';
   });
   return svg.replace('<svg ', '<svg aria-hidden="true" focusable="false" ');
