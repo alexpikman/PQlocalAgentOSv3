@@ -312,7 +312,14 @@ def check_project_deletion_conflicts(root: Path) -> dict[str, Any]:
             )
     issues = []
     deletion_fields = ("delete_pending", "deletion_requested", "marked_for_deletion")
-    for project in _as_records(projects):
+    project_records = _as_records(projects)
+    if not any(field in project for project in project_records for field in deletion_fields):
+        return _result(
+            "projects.deletion.conflicts", "Проекты и окружения", "skip",
+            "Проверка пропущена: в текущей схеме проектов нет явного флага удаления. API блокирует удаление проекта с задачами через HTTP 409.",
+            {"reason": "Не добавляем несуществующее поле удаления и не меняем данные проекта."},
+        )
+    for project in project_records:
         project_id = str(project.get("id", "")).strip()
         marked = any(project.get(field) is True for field in deletion_fields)
         linked_tasks = tasks_by_project.get(project_id, [])
