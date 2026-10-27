@@ -358,6 +358,23 @@ def provider_models(p):
     return [{'name':x.get('id','')} for x in raw.get('data',[]) if x.get('id')]
 def public_provider(p):
     return {k:v for k,v in p.items() if k!='api_key'} | {'api_key_set':bool(p.get('api_key'))}
+def agent_ssh_context(agent):
+    permissions = agent.get('permissions') if isinstance(agent, dict) and isinstance(agent.get('permissions'), dict) else {}
+    if not permissions.get('ssh_access'):
+        return ''
+    stored = read_json(DATA/'ssh_connections.json', [])
+    entries = stored.get('connections', []) if isinstance(stored, dict) else stored
+    if not isinstance(entries, list):
+        return '\\n\\nSSH-подключения недоступны: реестр имеет неверный формат.'
+    visible = [
+        {'connection_id': str(item.get('id','')), 'host': str(item.get('host','')), 'port': int(item.get('port',22) or 22), 'username': str(item.get('username',''))}
+        for item in entries if isinstance(item, dict) and item.get('id') and item.get('host')
+    ][:100]
+    if not visible:
+        return '\\n\\nSSH-разрешение включено, но подключений нет. Пользователь должен сохранить подключения кнопкой «Сохранить на сервер» на странице SSH.'
+    return '\\n\\nДОСТУПНЫЕ SSH-ПОДКЛЮЧЕНИЯ (используй connection_id точно как указан):\\n' + json.dumps(visible, ensure_ascii=False)
+
+
 def permission_settings():
     current=read_json(DATA/'permissions.json', {'local_files':False,'roots':[]})
     if not isinstance(current,dict): current={'local_files':False,'roots':[]}
@@ -1390,7 +1407,7 @@ def run_agent_task(model, task, agent=None, project=None):
         system_prompt += '\n\n=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nРабочая папка проекта: '+project_dir+'\nОписание: '+str(project.get('description',''))+'\n'+github_info+'\nВАЖНО: если работаешь с файлами проекта, используй только указанную рабочую папку и разрешённые файловые инструменты. Не обращайся к другим папкам и не утверждай, что файл прочитан или изменён без результата инструмента.'
     if available:
         tool_names=[t['function']['name'] for t in available]
-        system_prompt += '\n\n=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===\nТвои доступные инструменты: '+', '.join(tool_names)+'. Не пытайся вызывать другие инструменты.'
+        system_prompt += '\n\n=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===\nТвои доступные инструменты: '+', '.join(tool_names)+'. Не пытайся вызывать другие инструменты.' + agent_ssh_context(agent)
     if not available:
         result=ollama_request('/api/generate',{'model':model,'system':system_prompt,'prompt':prompt,'stream':False,'options':{'num_predict':2048}},timeout=300)
         return {'response':result.get('response',''),'tool_calls':0,'model':result.get('model',model)}
@@ -3070,7 +3087,7 @@ class Handler(SimpleHTTPRequestHandler):
                         if project:
                             project_dir=str(project.get('path','')).strip() or 'не указана (уточните у пользователя)'
                             project_context='\n\nКонтекст текущего проекта: '+str(project.get('name',''))+'; описание: '+str(project.get('description',''))+'; локальная папка: '+project_dir+'. Используй только доступные инструменты и не утверждай, что файл прочитан или изменён без результата инструмента.'
-                        tool_context='\n\nДоступные инструменты: '+', '.join(tool_names)+'. Если инструмента нет в списке, использовать его нельзя.'+project_context
+                        tool_context='\n\nДоступные инструменты: '+', '.join(tool_names)+'. Если инструмента нет в списке, использовать его нельзя.'+project_context+agent_ssh_context(agent)
                         validated_messages.insert(0,{'role':'system','content':tool_context})
                         ollama_model=resolve_ollama_model(model)
                         total_calls=0
