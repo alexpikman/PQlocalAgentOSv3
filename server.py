@@ -425,6 +425,13 @@ AGENT_ROLES_FILE = DATA / 'agent_roles.json'
 AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер','DISPATCHER':'Диспетчер','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Разработчик','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
 AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access','terminal_access','web_access','ssh_access'}
 DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
+
+
+def _normalize_agent_permissions(value):
+    """Validate the permissions container and retain only supported permission keys."""
+    if not isinstance(value, dict):
+        raise ValueError('Некорректные разрешения агента: поле "permissions" должно быть объектом.')
+    return {**DEFAULT_AGENT_PERMISSIONS, **{key: bool(enabled) for key, enabled in value.items() if key in AGENT_PERMISSION_KEYS}}
 AGENT_ROLE_PROMPTS = {
     'MANAGER':'Ты менеджер проекта и руководитель Агент №1. Анализируй цель и результаты диспетчера и профильных агентов, определяй приоритеты, утверждай план и принимай итоговое решение. Не теряй пункты памяти проекта.',
     'DISPATCHER':'Ты диспетчер системы. Единственная точка маршрутизации запросов, задач, артефактов и памяти проекта. Собери полный контекст памяти (сводка, ограничения, вопросы, следующие шаги, факты), определи нужные роли, передай менеджеру структурированный отчёт. Не подменяй решения менеджера и не выдумывай результаты.',
@@ -3360,10 +3367,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if key not in data: continue
                 if kind=='projects' and key=='env_type': item[key]=str(data[key]).strip().lower()
                 elif kind=='agents' and key=='permissions':
-                    if not isinstance(data[key], dict):
-                        return self.send_json(400, {'error':'Некорректные разрешения агента: поле "permissions" должно быть объектом.'})
-                    # Match agent creation: ignore unsupported legacy keys and persist only known permissions.
-                    item[key] = {**DEFAULT_AGENT_PERMISSIONS, **{k: bool(v) for k, v in data[key].items() if k in AGENT_PERMISSION_KEYS}}
+                    try:
+                        item[key] = _normalize_agent_permissions(data[key])
+                    except ValueError as exc:
+                        return self.send_json(400, {'error': str(exc)})
                 elif kind=='agents' and key=='system_enabled':
                     if not item.get('system'): return self.send_json(400, {'error':'Переключать можно только системных агентов'})
                     item[key]=bool(data[key])
