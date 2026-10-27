@@ -373,7 +373,7 @@ DOMAIN_FILES = {'agents': DATA/'agents.json', 'projects': DATA/'projects.json', 
 AGENT_ROLES = ['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS']
 AGENT_ROLES_FILE = DATA / 'agent_roles.json'
 AGENT_ROLE_DISPLAY_NAMES = {'MANAGER':'Менеджер','DISPATCHER':'Диспетчер','ARCHITECT':'Архитектор','ANALYST':'Аналитик','DESIGNER':'Дизайнер','COPYWRITER':'Копирайтер','CODER':'Разработчик','TESTER':'Тестировщик','DEVOPS':'DevOps-инженер'}
-AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access','terminal_access'}
+AGENT_PERMISSION_KEYS = {'file_loading','file_saving','file_moving','file_deletion','directory_creation','directory_deletion','directory_moving','github_access','terminal_access','web_access','ssh_access'}
 DEFAULT_AGENT_PERMISSIONS = {key:False for key in AGENT_PERMISSION_KEYS}
 AGENT_ROLE_PROMPTS = {
     'MANAGER':'Ты менеджер проекта и руководитель Агент №1. Анализируй цель и результаты диспетчера и профильных агентов, определяй приоритеты, утверждай план и принимай итоговое решение. Не теряй пункты памяти проекта.',
@@ -2754,6 +2754,28 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/ssh/save':
+            connections = data.get('connections', [])
+            if not isinstance(connections, list) or len(connections) > 200:
+                return self.send_json(400, {'error':'Ожидался список не более чем из 200 SSH-подключений.'})
+            saved = []
+            seen_ids = set()
+            for item in connections:
+                if not isinstance(item, dict): continue
+                connection_id = str(item.get('id', '')).strip()[:200]
+                host = str(item.get('host', '')).strip()[:255]
+                username = str(item.get('username', '')).strip()[:100]
+                key_path = str(item.get('key_path', item.get('keyPath', ''))).strip()[:1000]
+                try: port = int(item.get('port', 22))
+                except (TypeError, ValueError): return self.send_json(400, {'error':'Некорректный порт SSH.'})
+                if not connection_id or not host or not username or not 1 <= port <= 65535:
+                    return self.send_json(400, {'error':'У каждого SSH-подключения должны быть id, host, username и порт 1–65535.'})
+                if connection_id in seen_ids: return self.send_json(400, {'error':'ID SSH-подключений должны быть уникальными.'})
+                seen_ids.add(connection_id)
+                saved.append({'id':connection_id,'host':host,'port':port,'username':username,'key_path':key_path})
+            write_json(DATA/'ssh_connections.json', saved)
+            log_event('ssh.connections_saved', str(len(saved))+' подключений сохранено на сервере')
+            return self.send_json(200, {'ok':True,'saved':len(saved),'message':'SSH-подключения сохранены на сервере без паролей.'})
         if path == '/api/models/folders':
             action = str(data.get('action') or 'add').strip().lower()
             raw_path = str(data.get('path') or '').strip()
