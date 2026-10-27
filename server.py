@@ -743,6 +743,8 @@ def domain_items(kind):
                         project_item['env_type'] = 'local'; changed = True
                     if 'ssh_connection_id' not in project_item:
                         project_item['ssh_connection_id'] = ''; changed = True
+                    if 'github_connection_id' not in project_item:
+                        project_item['github_connection_id'] = ''; changed = True
                     if 'repo_name' not in project_item:
                         project_item['repo_name'] = ''; changed = True
             if changed: write_json(DOMAIN_FILES[kind], raw_projects)
@@ -3234,7 +3236,7 @@ class Handler(SimpleHTTPRequestHandler):
                     logo = save_project_logo(item['id'], data.get('logo', ''))
                 except ValueError as exc:
                     return self.send_json(400, {'error': str(exc)})
-                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'env_type':env_type,'ssh_connection_id':str(data.get('ssh_connection_id','')).strip()[:200],'repo_name':str(data.get('repo_name','')).strip()[:300],'status':'active'})
+                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'env_type':env_type,'ssh_connection_id':str(data.get('ssh_connection_id','')).strip()[:200],'github_connection_id':str(data.get('github_connection_id','')).strip()[:200],'repo_name':str(data.get('repo_name','')).strip()[:300],'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
                 if isinstance(raw_roles, list):
@@ -3291,7 +3293,7 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo','env_type','ssh_connection_id','repo_name'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo','env_type','ssh_connection_id','github_connection_id','repo_name'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
             if kind == 'projects' and 'env_type' in data and str(data.get('env_type','')).strip().lower() not in ('local','github','ssh'):
                 return self.send_json(400, {'error':'env_type должен быть local, github или ssh'})
             for key in allowed:
