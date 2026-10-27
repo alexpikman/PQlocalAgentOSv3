@@ -3291,13 +3291,17 @@ class Handler(SimpleHTTPRequestHandler):
                                     if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
                                         args['working_dir']=str(project.get('path','') or '/')
                                         if project.get('ssh_connection_id'): args['connection_id']=str(project.get('ssh_connection_id'))
-                                    _record_agent_activity(chat_id, agent_id, 'calling_tool', 'Вызывает инструмент.', tool=name)
+                                    _record_agent_activity(chat_id, agent_id, 'calling_tool', 'Вызывает инструмент «'+str(name)+'».', tool=name)
                                     tool_started = time.monotonic()
                                     _record_agent_activity(chat_id, agent_id, 'waiting_tool', 'Ожидает результат инструмента.', tool=name)
                                     result=execute_tool(name,args,agent,permission_config)
                                 status='error' if isinstance(result,dict) and result.get('error') else 'ok'
                                 tool_duration = (time.monotonic() - tool_started) * 1000 if tool_started is not None else None
-                                _record_agent_activity(chat_id, agent_id, 'checking', 'Проверяет результат инструмента.', tool=name, duration_ms=tool_duration)
+                                if status == 'error':
+                                    error_message = str(result.get('error', 'Инструмент завершился ошибкой'))[:300] if isinstance(result, dict) else 'Инструмент завершился ошибкой'
+                                    _record_agent_activity(chat_id, agent_id, 'error', error_message, tool=name, duration_ms=tool_duration)
+                                else:
+                                    _record_agent_activity(chat_id, agent_id, 'checking', 'Проверяет результат инструмента.', tool=name, duration_ms=tool_duration)
                                 tool_summaries.append({'name':name,'status':status})
                                 log_event('agent.tool_called',str(agent.get('id',''))+' · '+str(name)+' · '+status)
                                 validated_messages.append({'role':'tool','tool_name':str(name),'content':json.dumps(result,ensure_ascii=False)[:12000]})
