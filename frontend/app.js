@@ -275,8 +275,16 @@ function bindIconSettings(){
     input.onchange=()=>{clearTimeout(list.querySelector('.icon-setting-row[data-icon-id="'+input.dataset.iconId+'"]')?._iconSaveTimer);void persist()};
   });
   list.querySelectorAll('.icon-setting-size-input').forEach(input=>{
-    const change=()=>{const size=Math.max(12,Math.min(64,Number(input.value)||24));input.value=String(size);setLocal(input.dataset.iconId,{size});schedulePersist(input.dataset.iconId)};
-    input.oninput=change;input.onchange=()=>{clearTimeout(list.querySelector('.icon-setting-row[data-icon-id="'+input.dataset.iconId+'"]')?._iconSaveTimer);void persist()};
+    input.oninput=()=>{
+      if(input.value==='')return;
+      const size=Number(input.value);
+      if(size>=12&&size<=64&&Number.isInteger(size)){setLocal(input.dataset.iconId,{size});schedulePersist(input.dataset.iconId)}
+    };
+    input.onchange=()=>{
+      const size=Math.max(12,Math.min(64,Number(input.value)||24));
+      input.value=String(size);setLocal(input.dataset.iconId,{size});
+      clearTimeout(list.querySelector('.icon-setting-row[data-icon-id="'+input.dataset.iconId+'"]')?._iconSaveTimer);void persist();
+    };
   });
   list.querySelectorAll('.icon-size-step').forEach(button=>button.onclick=()=>{
     const id=button.dataset.iconId,config=getConfig(id),size=Math.max(12,Math.min(64,Number(config.size)+Number(button.dataset.iconSizeStep)));
