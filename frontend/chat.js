@@ -295,18 +295,16 @@
       add.innerHTML = '<img src="/icons/start.svg" alt="+">';
       add.onclick = (event) => { event.stopPropagation(); createConversation(project.id); };
       const remove = createElement('button', 'icon-btn chat-tree-action danger', '');
-      remove.type = 'button'; remove.title = 'Удалить проект'; remove.setAttribute('aria-label', 'Удалить проект ' + (project.name || ''));
+      remove.type = 'button'; remove.title = 'Убрать из чата'; remove.setAttribute('aria-label', 'Убрать из чата ' + (project.name || ''));
       remove.innerHTML = '<img src="/icons/remove.svg" alt="×">';
-      remove.onclick = async (event) => {
+      remove.onclick = (event) => {
         event.stopPropagation();
-        if (!window.confirm('Удалить проект «' + (project.name || 'Без названия') + '»? Чаты проекта останутся в истории, но будут отвязаны от проекта.')) return;
-        try {
-          await chatApi('/projects/' + encodeURIComponent(project.id), { method: 'DELETE' });
-          state.projects = state.projects.filter(item => item.id !== project.id);
-          state.conversations.forEach(item => { if (item.projectId === project.id) item.projectId = ''; });
-          if (state.activeProjectId === project.id) state.activeProjectId = '';
-          saveWorkspace(); renderChatWorkspace();
-        } catch (error) { showNotice('Не удалось удалить проект: ' + error.message, 'warning'); }
+        if (!window.confirm('Убрать проект «' + (project.name || 'Без названия') + '» из чата? Чаты останутся в истории без привязки к проекту.')) return;
+        state.projects = state.projects.filter(item => item.id !== project.id);
+        state.conversations.forEach(item => { if (item.projectId === project.id) item.projectId = ''; });
+        if (state.activeProjectId === project.id) state.activeProjectId = '';
+        saveWorkspace();
+        renderChatWorkspace();
       };
       row.append(label, add, remove);
       elements.projectsList.append(row);
