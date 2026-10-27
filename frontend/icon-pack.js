@@ -284,7 +284,7 @@ window.PQRenderIcon = function(id, settings, sizeOverride) {
     const hasSecondaryStroke = classes.includes('secondary-stroke');
     const setAttr = (key, value) => {
       const escaped = String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-      const pattern = new RegExp('\\\\s' + key + '\\\\s*=\\\\s*(["\\\\'])[^"\\\\']*\\\\1', 'i');
+      const pattern = new RegExp("\\s" + key + "\\s*=\\s*([\"'])[^\"']*\\1", 'i');
       if (pattern.test(attrs)) attrs = attrs.replace(pattern, ' ' + key + '="' + escaped + '"');
       else attrs += ' ' + key + '="' + escaped + '"';
     };
