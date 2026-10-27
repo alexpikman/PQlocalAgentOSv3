@@ -15,6 +15,7 @@ let context = {
 };
 let editor = null;
 let domainModalBound = false;
+let projectGithubConnections = [];
 const $ = selector => document.querySelector(selector);
 const esc = value => context.esc(value);
 const api = (path, options) => context.api(path, options);
@@ -160,8 +161,9 @@ function openDomainModal(kind,id){
   }
   modal.hidden=false;
   if(kind==='projects'){
-    void loadProjectConnections(item);
     syncProjectEnvironmentIcon();
+    syncProjectConnectionFields();
+    void loadProjectConnections(item);
   }
 }
 async function loadProjectConnections(item){
@@ -174,6 +176,7 @@ async function loadProjectConnections(item){
     let sshConnections=Array.isArray(state.sshConnections)?state.sshConnections:[];
     if(!sshConnections.length){try{sshConnections=JSON.parse(localStorage.getItem('pqlocalagentosv3.ssh-connections.v1')||'[]')}catch(_){}}
     const githubConnections=results[0].connections||[];
+    projectGithubConnections=githubConnections;
     const options=['<option value="">'+(currentType==='local'?'Не требуется':'Выберите подключение')+'</option>']
       .concat(githubConnections.map(x=>'<option data-env="github" value="'+esc(x.id)+'">'+esc((x.name||x.repository||x.id)+' · '+(x.repository||''))+'</option>'))
       .concat(sshConnections.map(x=>'<option data-env="ssh" value="'+esc(x.id)+'">'+esc((x.name||x.host||x.id)+' · '+(x.username||'')+'@'+(x.host||''))+'</option>'));
@@ -199,7 +202,7 @@ function syncProjectConnectionFields(){
   if(note){note.hidden=type==='local';note.textContent=type==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.'}
   if(repoField)repoField.hidden=type!=='github';
   if(repoInput){
-    const chosen=(context.getState?.().githubConnections||[]).find(x=>x.id===select?.value);
+    const chosen=projectGithubConnections.find(x=>x.id===select?.value);
     repoInput.value=type==='github'?(chosen?.repository||repoInput.value||''):'';
   }
   if(sshHidden)sshHidden.value=type==='ssh'?(select?.value||''):'';
