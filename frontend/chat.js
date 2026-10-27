@@ -292,7 +292,7 @@
       add.onclick = (event) => { event.stopPropagation(); createConversation(project.id); };
       const remove = createElement('button', 'icon-btn chat-tree-action danger', '');
       remove.type = 'button'; remove.title = 'Удалить проект'; remove.setAttribute('aria-label', 'Удалить проект ' + (project.name || ''));
-      remove.innerHTML = '<img src="/icons/delete.svg" alt="×">';
+      remove.innerHTML = '<img src="/icons/remove.svg" alt="×">';
       remove.onclick = async (event) => {
         event.stopPropagation();
         if (!window.confirm('Удалить проект «' + (project.name || 'Без названия') + '»? Чаты проекта останутся в истории, но будут отвязаны от проекта.')) return;
@@ -331,7 +331,7 @@
     rename.innerHTML='<img src="/icons/edit.svg" alt="Переименовать">'; rename.onclick=()=>renameConversation(chat.id);
     const remove = createElement('button', 'icon-btn chat-tree-action danger', '');
     remove.type='button'; remove.title='Удалить чат'; remove.setAttribute('aria-label','Удалить чат');
-    remove.innerHTML='<img src="/icons/delete.svg" alt="Удалить">'; remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
+    remove.innerHTML='<img src="/icons/remove.svg" alt="Удалить">'; remove.onclick=()=>{if(window.confirm('Удалить этот чат и его историю?'))deleteConversation(chat.id)};
     actions.append(rename, remove); row.append(label, actions);
     return row;
   }
