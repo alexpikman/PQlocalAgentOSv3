@@ -130,7 +130,7 @@ def _validate_public_url(raw_url: str) -> str:
         raise ValueError('URL с логином или паролем запрещён.')
     host = parsed.hostname.rstrip('.').lower()
     if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
-        raise PermissionError('SSRF запрещён: локальные адреса недоступны.')
+        raise PermissionError('SSRF запрещен: локальные адреса недоступны.')
     try:
         addresses = {ipaddress.ip_address(host)}
     except ValueError:
@@ -141,13 +141,13 @@ def _validate_public_url(raw_url: str) -> str:
     blocked_networks = tuple(ipaddress.ip_network(net) for net in ('127.0.0.0/8','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','0.0.0.0/8','100.64.0.0/10','192.0.0.0/24','198.18.0.0/15','224.0.0.0/4','240.0.0.0/4','::1/128','fc00::/7','fe80::/10','::/128'))
     for address in addresses:
         if address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_reserved or any(address.version == net.version and address in net for net in blocked_networks):
-            raise PermissionError('SSRF запрещён: адрес ведёт в локальную или зарезервированную сеть.')
+            raise PermissionError('SSRF запрещен: адрес ведёт в локальную или зарезервированную сеть.')
     return urllib.parse.urlunsplit((parsed.scheme.lower(), parsed.netloc, parsed.path or '/', parsed.query, ''))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise PermissionError('SSRF запрещён: перенаправления URL отключены.')
+        raise PermissionError('SSRF запрещен: перенаправления URL отключены.')
 
 
 def _fetch_public_url(raw_url: str) -> dict[str, Any]:
