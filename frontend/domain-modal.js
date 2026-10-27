@@ -22,7 +22,7 @@ const refresh = async () => {
   if (typeof context.refresh === 'function') return await context.refresh();
   if (typeof window.PQRefresh === 'function') return await window.PQRefresh();
 };
-function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div><h2 id="domain-modal-title">Создать элемент</h2><p>Создание и редактирование в одном окне.</p></div><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="domain-si-history" id="domain-si-history" hidden><button type="button" class="btn secondary" id="domain-si-history-load">История версий</button><div id="domain-si-history-picker" hidden><select id="domain-si-history-select" aria-label="Версия инструкции"></select><button type="button" class="btn soft-danger" id="domain-si-revert">Откатить выбранную версию</button></div></div><div class="modal-card-actions domain-modal-actions"><button type="button" class="btn secondary" id="domain-si-cancel" data-domain-modal-close hidden>Отмена</button><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
+function domainModalMarkup(){return '<div class="modal-overlay domain-modal model-assign-modal" id="domain-modal" hidden><div class="modal-backdrop" data-domain-modal-close></div><section class="modal-card" role="dialog" aria-modal="true"><div class="section-title modal-card-head"><div class="domain-modal-title-wrap"><img id="domain-project-env-icon" class="domain-project-env-icon" src="/icons/connect_local.svg" alt="" hidden><div><h2 id="domain-modal-title">Создать элемент</h2><p id="domain-modal-description">Создание и редактирование в одном окне.</p></div></div></div><div class="model-tabs" id="domain-modal-tabs" style="display:none;margin-bottom:12px"><button type="button" class="btn primary" data-domain-tab="profile">Профиль</button><button type="button" class="btn secondary" data-domain-tab="avatar">Аватар</button></div><div class="domain-modal-content"><form id="domain-modal-form" class="field-grid modal-card-body"></form><div id="domain-modal-avatar" style="display:none"></div></div><div id="domain-modal-status"></div><div class="domain-si-history" id="domain-si-history" hidden><button type="button" class="btn secondary" id="domain-si-history-load">История версий</button><div id="domain-si-history-picker" hidden><select id="domain-si-history-select" aria-label="Версия инструкции"></select><button type="button" class="btn soft-danger" id="domain-si-revert">Откатить выбранную версию</button></div></div><div class="modal-card-actions domain-modal-actions"><button type="button" class="btn secondary" data-domain-modal-close>Закрыть</button><button type="button" class="btn secondary" id="domain-si-cancel" data-domain-modal-close hidden>Отмена</button><button type="submit" form="domain-modal-form" class="btn primary" id="domain-modal-save">Сохранить</button></div></section></div>'}
 function ensureDomainModal(){let modal=$('#domain-modal');if(!modal){document.body.insertAdjacentHTML('beforeend',domainModalMarkup());modal=$('#domain-modal')}bindDomainModal();return modal}
 function fixedSystemInstructionPlan(){
   return [
@@ -92,6 +92,8 @@ function openDomainModal(kind,id){
   // Submit handling is explicit so hidden required profile fields can be reported on either tab.
   form.noValidate=true;
   $('#domain-modal-title').textContent=(item?'Изменить: ':'Создать: ')+({agents:'агента',projects:'проект',tasks:'задачу','system-instructions':'системную инструкцию'}[kind]);
+  const modalDescription=$('#domain-modal-description');if(modalDescription)modalDescription.hidden=kind==='projects';
+  const projectEnvIcon=$('#domain-project-env-icon');if(projectEnvIcon){projectEnvIcon.hidden=kind!=='projects';projectEnvIcon.src='/icons/connect_'+(item?.env_type||'local')+'.svg';}
   $('#domain-modal-save').textContent=kind==='agents'?'Сохранить':(item?'Сохранить изменения':'Создать');
   $('#domain-modal-status').innerHTML='';
   const tabsEl=$('#domain-modal-tabs'),avatarEl=$('#domain-modal-avatar');
@@ -121,11 +123,17 @@ function openDomainModal(kind,id){
       +'</div>';
   }else if(kind==='projects'){
     const sshConnections=Array.isArray(state.sshConnections)?state.sshConnections:[];
+    const githubConnections=Array.isArray(state.githubConnections)?state.githubConnections:[];
+    const envType=item?.env_type||'local';
     html=field('Название','name',item?.name||'','text','required maxlength="120"')
-      +'<div class="field"><label for="domain-env_type">Тип окружения</label><select id="domain-env_type" name="env_type"><option value="local" '+((item?.env_type||'local')==='local'?'selected':'')+'>Локальный (файлы на этом ПК)</option><option value="github" '+(item?.env_type==='github'?'selected':'')+'>GitHub (репозиторий)</option><option value="ssh" '+(item?.env_type==='ssh'?'selected':'')+'>Удаленный сервер (SSH)</option></select></div>'
-      +field('Путь к рабочей папке','path',item?.path||'','text','maxlength="1000"')
-      +'<div class="field" id="domain-ssh-connection-field" '+(item?.env_type==='ssh'?'':'hidden')+'><label for="domain-ssh_connection_id">SSH-подключение</label><select id="domain-ssh_connection_id" name="ssh_connection_id"><option value="">Выберите подключение</option>'+sshConnections.map(x=>'<option value="'+esc(x.id)+'" '+(x.id===(item?.ssh_connection_id||'')?'selected':'')+'>'+esc((x.name||x.host||x.id)+' · '+(x.username||'')+'@'+(x.host||''))+'</option>').join('')+'</select><small>Сначала сохраните SSH-подключение на сервере на странице SSH.</small></div>'
-      +'<div class="field" id="domain-repo-name-field" '+(item?.env_type==='github'?'':'hidden')+'><label for="domain-repo_name">Имя репозитория</label><input id="domain-repo_name" name="repo_name" type="text" value="'+esc(item?.repo_name||'')+'" maxlength="300" placeholder="owner/repository"></div>'
+      +'<div class="project-environment-row"><div class="field"><label for="domain-env_type">Тип окружения</label><select id="domain-env_type" name="env_type"><option value="local" '+(envType==='local'?'selected':'')+'>Локальный</option><option value="github" '+(envType==='github'?'selected':'')+'>GitHub</option><option value="ssh" '+(envType==='ssh'?'selected':'')+'>SSH</option></select></div>'
+      +'<div class="field" id="domain-connection-field"><label for="domain-connection_id">Подключение</label><select id="domain-connection_id" name="connection_id"><option value="">'+(envType==='local'?'Не требуется': 'Выберите подключение')+'</option>'
+      +githubConnections.map(x=>'<option data-env="github" value="'+esc(x.id)+'" '+(envType==='github'&&x.id===(item?.github_connection_id||item?.connection_id||'')?'selected':'')+'>'+esc((x.name||x.repository||x.id)+' · '+(x.repository||''))+'</option>').join('')
+      +sshConnections.map(x=>'<option data-env="ssh" value="'+esc(x.id)+'" '+(envType==='ssh'&&x.id===(item?.ssh_connection_id||item?.connection_id||'')?'selected':'')+'>'+esc((x.name||x.host||x.id)+' · '+(x.username||'')+'@'+(x.host||''))+'</option>').join('')
+      +'</select><small id="domain-connection-note" '+(envType==='local'?'hidden':'')+'>'+(envType==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.')+'</small></div></div>'
+      +'<div class="field" id="domain-repo-name-field" '+(envType==='github'?'':'hidden')+'><label for="domain-repo_name">Имя репозитория</label><input id="domain-repo_name" name="repo_name" type="text" value="'+esc(item?.repo_name||githubConnections.find(x=>x.id===(item?.github_connection_id||item?.connection_id||''))?.repository||'')+'" maxlength="300" placeholder="owner/repository" readonly></div>'
+      +'<div class="field project-path-field"><label for="domain-path">Путь к рабочей папке</label><div class="project-path-control"><input id="domain-path" name="path" type="text" value="'+esc(item?.path||'')+'" maxlength="1000" placeholder="Например, C:\\PROJECT\\MyProject"><button type="button" class="btn secondary" id="domain-project-path-choose">Выбрать</button><input type="file" id="domain-project-path-picker" webkitdirectory directory multiple hidden></div></div>'
+      +'<div class="field" id="domain-ssh-connection-field" '+(envType==='ssh'?'':'hidden')+'><label for="domain-ssh_connection_id">SSH-подключение</label><input type="hidden" id="domain-ssh_connection_id" name="ssh_connection_id" value="'+esc(item?.ssh_connection_id||'')+'"><small>Рабочая папка на удалённом сервере указывается в поле «Путь к рабочей папке».</small></div>'
       +field('Краткое описание','description',item?.description||'','textarea','rows="3" maxlength="1000"')+'<div class="field project-logo-editor" style="grid-column:1/-1"><label for="domain-project-logo-file">Логотип проекта</label><div class="project-logo-editor-row"><div class="project-logo-editor-preview">'+(item?.logo?'<img id="domain-project-logo-preview" src="'+esc(item.logo)+'" alt="Предпросмотр логотипа">':'<img id="domain-project-logo-preview" alt="Предпросмотр логотипа" hidden>')+'<span id="domain-project-logo-empty" '+(item?.logo?'hidden':'')+'>Нет логотипа</span></div><div class="project-logo-editor-controls"><input id="domain-project-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><small>PNG, JPG, WebP или GIF. Максимум 700 КБ.</small><button type="button" class="btn secondary" id="domain-project-logo-clear" '+(item?.logo?'':'hidden')+'>Убрать логотип</button></div></div><input type="hidden" id="domain-project-logo" name="logo" value="'+esc(item?.logo||'')+'"></div>';
   }else{
     const taskRoles=['MANAGER','DISPATCHER','ARCHITECT','ANALYST','CODER','DESIGNER','COPYWRITER','TESTER','DEVOPS'];
@@ -151,6 +159,50 @@ function openDomainModal(kind,id){
     editor.currentRole=item?.role||'ANALYST';
   }
   modal.hidden=false;
+  if(kind==='projects'){
+    void loadProjectConnections(item);
+    syncProjectEnvironmentIcon();
+  }
+}
+async function loadProjectConnections(item){
+  const select=$('#domain-connection_id');if(!select)return;
+  const currentType=$('#domain-env_type')?.value||'local';
+  const currentId=select.value||item?.github_connection_id||item?.ssh_connection_id||item?.connection_id||'';
+  try{
+    const results=await Promise.all([api('/github/connections'),Promise.resolve({connections:Array.isArray((context.getState?.()||{}).sshConnections)?(context.getState().sshConnections):[]})]);
+    const state=context.getState?context.getState():{};
+    let sshConnections=Array.isArray(state.sshConnections)?state.sshConnections:[];
+    if(!sshConnections.length){try{sshConnections=JSON.parse(localStorage.getItem('pqlocalagentosv3.ssh-connections.v1')||'[]')}catch(_){}}
+    const githubConnections=results[0].connections||[];
+    const options=['<option value="">'+(currentType==='local'?'Не требуется':'Выберите подключение')+'</option>']
+      .concat(githubConnections.map(x=>'<option data-env="github" value="'+esc(x.id)+'">'+esc((x.name||x.repository||x.id)+' · '+(x.repository||''))+'</option>'))
+      .concat(sshConnections.map(x=>'<option data-env="ssh" value="'+esc(x.id)+'">'+esc((x.name||x.host||x.id)+' · '+(x.username||'')+'@'+(x.host||''))+'</option>'));
+    select.innerHTML=options.join('');
+    select.value=currentId;
+    syncProjectConnectionFields();
+  }catch(error){
+    const note=$('#domain-connection-note');if(note)note.textContent='Не удалось загрузить подключения: '+(error.message||'ошибка');
+  }
+}
+function syncProjectEnvironmentIcon(){
+  const type=$('#domain-env_type')?.value||'local',icon=$('#domain-project-env-icon');
+  if(icon)icon.src='/icons/connect_'+type+'.svg';
+}
+function syncProjectConnectionFields(){
+  const type=$('#domain-env_type')?.value||'local',select=$('#domain-connection_id'),field=$('#domain-connection-field'),note=$('#domain-connection-note'),repoField=$('#domain-repo-name-field'),repoInput=$('#domain-repo_name'),sshHidden=$('#domain-ssh_connection_id');
+  if(field)field.hidden=type==='local';
+  if(select){
+    Array.from(select.options).forEach(option=>{if(!option.value){option.hidden=false;return}option.hidden=option.dataset.env!==type});
+    const selected=select.selectedOptions?.[0];
+    if(selected?.dataset.env!==type)select.value='';
+  }
+  if(note){note.hidden=type==='local';note.textContent=type==='github'?'Выберите сохранённое GitHub-подключение.':'Выберите сохранённое SSH-подключение.'}
+  if(repoField)repoField.hidden=type!=='github';
+  if(repoInput){
+    const chosen=(context.getState?.().githubConnections||[]).find(x=>x.id===select?.value);
+    repoInput.value=type==='github'?(chosen?.repository||repoInput.value||''):'';
+  }
+  if(sshHidden)sshHidden.value=type==='ssh'?(select?.value||''):'';
 }
 async function saveDomainItem(event){
   event.preventDefault();if(!editor)return;
@@ -175,6 +227,18 @@ async function saveDomainItem(event){
     delete payload.system_prompt;delete payload.memory;
     payload.avatar=JSON.stringify(avatarState);payload.permissions={};
     ['file_loading','file_saving','file_moving','directory_moving','file_deletion','directory_creation','directory_deletion','github_access','terminal_access','web_access','ssh_access'].forEach(key=>payload.permissions[key]=fd.get('perm_'+key)==='on');
+  }
+  if(editor.kind==='projects'){
+    const envType=String(payload.env_type||'local');
+    const selectedConnection=String(fd.get('connection_id')||'');
+    delete payload.connection_id;
+    payload.github_connection_id=envType==='github'?selectedConnection:'';
+    payload.ssh_connection_id=envType==='ssh'?selectedConnection:'';
+    if(envType==='github'&&!payload.repo_name) {
+      const repoInput=$('#domain-repo_name');
+      payload.repo_name=repoInput?.value||'';
+    }
+    if(envType!=='github')payload.repo_name='';
   }
   if(editor.kind==='tasks'){
     payload.team_mode=fd.get('team_mode')==='on';
@@ -226,7 +290,9 @@ function bindDomainModal(){
   if(domainModalBound)return;domainModalBound=true;
   document.addEventListener('submit',event=>{if(event.target?.matches('#domain-modal-form'))void saveDomainItem(event)});
   document.addEventListener('change',event=>{
-    if(event.target?.id==='domain-env_type'){const type=event.target.value,ssh=$('#domain-ssh-connection-field'),github=$('#domain-repo-name-field');if(ssh)ssh.hidden=type!=='ssh';if(github)github.hidden=type!=='github';return}
+    if(event.target?.id==='domain-env_type'){syncProjectEnvironmentIcon();syncProjectConnectionFields();return}
+    if(event.target?.id==='domain-connection_id'){syncProjectConnectionFields();return}
+    if(event.target?.id==='domain-project-path-picker'){const input=event.target,files=input.files;if(files?.length){const relative=files[0].webkitRelativePath||'';const folder=relative.split('/')[0];const path=$('#domain-path');if(path&&folder&&!path.value)path.value=folder;}return}
     if(event.target?.id==='domain-model'){const button=$('#domain-model-test'),result=$('#domain-model-test-result');if(button)button.disabled=!String(event.target.value||'').trim();if(result)result.textContent=event.target.value?'Готово к проверке.':'Выберите модель для проверки.';return}
     const input=event.target;
     if(!(input instanceof HTMLInputElement)||input.id!=='domain-project-logo-file')return;
@@ -246,6 +312,7 @@ function bindDomainModal(){
   });
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;if(!target)return;
+    const choosePath=target.closest('#domain-project-path-choose');if(choosePath){const picker=$('#domain-project-path-picker');if(picker)picker.click();return}
     const testButton=target.closest('#domain-model-test');if(testButton){const select=$('#domain-model'),opt=select?.selectedOptions?.[0],model=String(select?.value||'').trim(),providerId=opt?.dataset.providerId||'',kind=opt?.dataset.modelKind||'local',result=$('#domain-model-test-result');if(!model){if(result)result.textContent='Сначала выберите модель.';return}testButton.disabled=true;if(result)result.innerHTML='<span class="model-test-loading"><span class="page-loading-mark"><span class="page-loading-orbit page-loading-orbit-a"></span><span class="page-loading-orbit page-loading-orbit-b"></span><span class="page-loading-core">PQ</span><span class="page-loading-spark"></span></span><span>Отправляем «Привет» модели…</span></span>';try{const response=await api('/models/test',{method:'POST',body:JSON.stringify({model,provider_id:providerId,kind,prompt:'Ответь одним коротким предложением на приветствие: «Привет!»'})});if(result)result.innerHTML='<span class="model-test-success">Модель доступна и отвечает</span>'+(response.response?'<small class="model-test-preview">'+esc(response.response.slice(0,180))+'</small>':'')}catch(error){if(result)result.innerHTML='<span class="model-test-error">Модель не ответила</span><small class="model-test-preview">'+esc(error.message||'Ошибка проверки')+'</small>'}finally{testButton.disabled=false}return}const clearLogo=target.closest('#domain-project-logo-clear');if(clearLogo){const hidden=$('#domain-project-logo'),preview=$('#domain-project-logo-preview'),empty=$('#domain-project-logo-empty'),file=$('#domain-project-logo-file');if(hidden)hidden.value='';if(preview){preview.removeAttribute('src');preview.hidden=true}if(empty)empty.hidden=false;if(file)file.value='';clearLogo.hidden=true;return}
     const close=target.closest('[data-domain-modal-close]');if(close){const modal=$('#domain-modal');if(modal)modal.hidden=true;return}
     const tab=target.closest('[data-domain-tab]');if(tab){
