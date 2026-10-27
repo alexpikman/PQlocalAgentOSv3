@@ -16,6 +16,14 @@ except Exception:
     HfApi = None
     hf_hub_download = None
 
+try:
+    import audit_checks
+    _AUDIT_IMPORT_ERROR = ''
+except Exception as exc:
+    audit_checks = None
+    _AUDIT_IMPORT_ERROR = f'{type(exc).__name__}: {exc}'
+    print('[audit] Не удалось импортировать audit_checks: ' + _AUDIT_IMPORT_ERROR, file=sys.stderr)
+
 _LOCAL_GGUF_MODELS = {}
 _LOCAL_GGUF_LOCK = threading.Lock()
 
@@ -2553,6 +2561,53 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/audit/run':
+            if audit_checks is None:
+                return self.send_json(503, {
+                    'ok': False,
+                    'error': 'Модуль аудита недоступен',
+                    'errorType': 'AuditModuleUnavailable',
+                    'details': _AUDIT_IMPORT_ERROR[:500],
+                })
+            try:
+                report = audit_checks.run_audit()
+                if not isinstance(report, dict):
+                    raise TypeError('run_audit() должен вернуть объект отчёта')
+                report_path = DATA / 'audit_last_report.json'
+                write_json(report_path, report)
+                return self.send_json(200, report)
+            except Exception as exc:
+                print('[audit] Ошибка выполнения аудита: ' + type(exc).__name__ + ': ' + str(exc), file=sys.stderr)
+                return self.send_json(500, {
+                    'ok': False,
+                    'error': 'Не удалось выполнить или сохранить аудит',
+                    'errorType': type(exc).__name__,
+                    'details': str(exc)[:500],
+                })
+        if path == '/api/audit/report':
+            report_path = DATA / 'audit_last_report.json'
+            if not report_path.is_file():
+                return self.send_json(404, {
+                    'ok': False,
+                    'status': 'not_run',
+                    'error': 'Аудит ещё не запускался: сохранённый отчёт отсутствует.',
+                })
+            try:
+                report = read_json(report_path, None)
+                if not isinstance(report, dict):
+                    return self.send_json(500, {
+                        'ok': False,
+                        'error': 'Сохранённый отчёт аудита имеет неверный формат.',
+                        'errorType': 'InvalidAuditReport',
+                    })
+                return self.send_json(200, report)
+            except (OSError, ValueError) as exc:
+                return self.send_json(500, {
+                    'ok': False,
+                    'error': 'Не удалось прочитать сохранённый отчёт аудита.',
+                    'errorType': type(exc).__name__,
+                    'details': str(exc)[:500],
+                })
         if path == '/api/dialog/select-folder':
             try:
                 import tkinter as tk
