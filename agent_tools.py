@@ -13,6 +13,7 @@ import urllib.error
 import subprocess
 import socket
 import ipaddress
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'github_search_code','description':'Search code in the configured GitHub repository for a symbol or distinctive text. Requires github_access.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
     {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'}},'required':['command']}}},
     {'type':'function','function':{'name':'fetch_url','description':'Fetch text content from a public HTTP/HTTPS URL.','parameters':{'type':'object','properties':{'url':{'type':'string'}},'required':['url']}}},
-    {'type':'function','function':{'name':'ssh_execute','description':'Execute a command on a remote server via SSH.','parameters':{'type':'object','properties':{'connection_id':{'type':'string'},'command':{'type':'string'}},'required':['connection_id','command']}}},
+    {'type':'function','function':{'name':'ssh_execute','description':'Execute a command on a remote server via SSH in the specified project working directory.','parameters':{'type':'object','properties':{'connection_id':{'type':'string'},'command':{'type':'string'},'working_dir':{'type':'string'}},'required':['connection_id','command']}}},
 ]
 
 PERMISSION_FOR_TOOL = {
@@ -165,7 +166,7 @@ def _fetch_public_url(raw_url: str) -> dict[str, Any]:
         return {'url':url,'status':response.status,'content':raw.decode(charset, errors='replace')}
 
 
-def _execute_ssh(connection_id: str, command: str) -> dict[str, Any]:
+def _execute_ssh(connection_id: str, command: str, working_dir: str = '') -> dict[str, Any]:
     if not connection_id or len(connection_id) > 200:
         raise ValueError('Не указан корректный connection_id.')
     if not command.strip() or len(command) > 4000:
@@ -182,6 +183,9 @@ def _execute_ssh(connection_id: str, command: str) -> dict[str, Any]:
     username = str(connection.get('username','')).strip()
     port = int(connection.get('port',22))
     key_path = str(connection.get('key_path','')).strip()
+    working_dir = str(working_dir or connection.get('working_dir') or connection.get('path') or '').strip()
+    if working_dir and (len(working_dir) > 1000 or '\\x00' in working_dir):
+        raise ValueError('Некорректный working_dir для SSH.')
     if not host or not username or not (1 <= port <= 65535):
         raise ValueError('У SSH-подключения не заполнены host, username или корректный port.')
     if key_path and not Path(key_path).expanduser().is_file():
@@ -195,7 +199,8 @@ def _execute_ssh(connection_id: str, command: str) -> dict[str, Any]:
     client.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
         client.connect(hostname=host, port=port, username=username, key_filename=str(Path(key_path).expanduser()) if key_path else None, allow_agent=True, look_for_keys=True, timeout=10, banner_timeout=10, auth_timeout=10)
-        stdin, stdout, stderr = client.exec_command(command, timeout=30)
+        remote_command = ('cd -- ' + shlex.quote(working_dir) + ' && ' + command) if working_dir else command
+        stdin, stdout, stderr = client.exec_command(remote_command, timeout=30)
         try: stdin.close()
         except Exception: pass
         out = stdout.read(60001).decode('utf-8','replace')
@@ -227,7 +232,9 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             connection_id=str(args.get('connection_id','')).strip()
             command=args.get('command')
             if not isinstance(command,str): return {'error':'Команда должна быть текстом.'}
-            return _execute_ssh(connection_id,command)
+            working_dir=args.get('working_dir','')
+            if not isinstance(working_dir,str): return {'error':'working_dir должен быть строкой.'}
+            return _execute_ssh(connection_id,command,working_dir)
         if name.startswith('github_'):
             if not os.environ.get('GITHUB_TOKEN'): return {'error':'GITHUB_TOKEN не задан.'}
             if name=='github_list_files':
