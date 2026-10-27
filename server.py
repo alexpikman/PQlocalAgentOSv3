@@ -365,14 +365,14 @@ def agent_ssh_context(agent):
     stored = read_json(DATA/'ssh_connections.json', [])
     entries = stored.get('connections', []) if isinstance(stored, dict) else stored
     if not isinstance(entries, list):
-        return '\\n\\nSSH-подключения недоступны: реестр имеет неверный формат.'
+        return '\n\nSSH-подключения недоступны: реестр имеет неверный формат.'
     visible = [
         {'connection_id': str(item.get('id','')), 'host': str(item.get('host','')), 'port': int(item.get('port',22) or 22), 'username': str(item.get('username',''))}
         for item in entries if isinstance(item, dict) and item.get('id') and item.get('host')
     ][:100]
     if not visible:
-        return '\\n\\nSSH-разрешение включено, но подключений нет. Пользователь должен сохранить подключения кнопкой «Сохранить на сервер» на странице SSH.'
-    return '\\n\\nДОСТУПНЫЕ SSH-ПОДКЛЮЧЕНИЯ (используй connection_id точно как указан):\\n' + json.dumps(visible, ensure_ascii=False)
+        return '\n\nSSH-разрешение включено, но подключений нет. Пользователь должен сохранить подключения кнопкой «Сохранить на сервер» на странице SSH.'
+    return '\n\nДОСТУПНЫЕ SSH-ПОДКЛЮЧЕНИЯ (используй connection_id точно как указан):\n' + json.dumps(visible, ensure_ascii=False)
 
 
 def permission_settings():
