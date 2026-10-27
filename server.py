@@ -375,6 +375,23 @@ def agent_ssh_context(agent):
     return '\n\nДОСТУПНЫЕ SSH-ПОДКЛЮЧЕНИЯ (используй connection_id точно как указан):\n' + json.dumps(visible, ensure_ascii=False)
 
 
+def grant_project_folder_to_agents(raw_path):
+    """Automatically add the selected local project folder to agent file-access roots."""
+    folder = Path(str(raw_path or '').strip()).expanduser().resolve(strict=True)
+    if not folder.is_dir():
+        raise ValueError('Путь к рабочей папке должен указывать на существующую папку.')
+    current = permission_settings()
+    roots = [str(x) for x in current.get('roots', []) if str(x).strip()]
+    normalized = str(folder)
+    if not any(os.path.normcase(os.path.abspath(x)) == os.path.normcase(normalized) for x in roots):
+        roots.append(normalized)
+    current['roots'] = roots
+    current['local_files'] = True
+    write_json(DATA/'permissions.json', current)
+    log_event('permissions.project_folder.granted', normalized)
+    return normalized
+
+
 def permission_settings():
     current=read_json(DATA/'permissions.json', {'local_files':False,'roots':[]})
     if not isinstance(current,dict): current={'local_files':False,'roots':[]}
@@ -2513,6 +2530,20 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/dialog/select-folder':
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                try:
+                    root.attributes('-topmost', True)
+                    selected = filedialog.askdirectory(parent=root, title='Выберите рабочую папку проекта', mustexist=True)
+                finally:
+                    root.destroy()
+                return self.send_json(200, {'ok':bool(selected),'path':str(Path(selected).resolve()) if selected else ''})
+            except Exception as exc:
+                return self.send_json(500, {'error':'Не удалось открыть системный выбор папки Windows: '+str(exc)[:300]})
         if path == '/api/system-instructions/defaults':
             ensure_system_instructions()
             return self.send_json(200, {'defaults': system_instruction_defaults()})
@@ -3232,11 +3263,16 @@ class Handler(SimpleHTTPRequestHandler):
             elif kind=='projects':
                 env_type = str(data.get('env_type','local') or 'local').strip().lower()
                 if env_type not in ('local','github','ssh'): return self.send_json(400, {'error':'env_type должен быть local, github или ssh'})
+                project_path = str(data.get('path','')).strip()[:1000]
+                if env_type == 'local':
+                    if not project_path: return self.send_json(400, {'error':'Для локального проекта обязательно укажите рабочую папку.'})
+                    try: project_path = grant_project_folder_to_agents(project_path)
+                    except (OSError, RuntimeError, ValueError) as exc: return self.send_json(400, {'error':str(exc) or 'Рабочая папка не найдена.'})
                 try:
                     logo = save_project_logo(item['id'], data.get('logo', ''))
                 except ValueError as exc:
                     return self.send_json(400, {'error': str(exc)})
-                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'env_type':env_type,'ssh_connection_id':str(data.get('ssh_connection_id','')).strip()[:200],'github_connection_id':str(data.get('github_connection_id','')).strip()[:200],'repo_name':str(data.get('repo_name','')).strip()[:300],'status':'active'})
+                item.update({'path':project_path,'description':str(data.get('description','')).strip()[:1000],'logo':logo,'env_type':env_type,'ssh_connection_id':str(data.get('ssh_connection_id','')).strip()[:200],'github_connection_id':str(data.get('github_connection_id','')).strip()[:200],'repo_name':str(data.get('repo_name','')).strip()[:300],'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
                 if isinstance(raw_roles, list):
@@ -3296,6 +3332,14 @@ class Handler(SimpleHTTPRequestHandler):
             allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo','env_type','ssh_connection_id','github_connection_id','repo_name'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
             if kind == 'projects' and 'env_type' in data and str(data.get('env_type','')).strip().lower() not in ('local','github','ssh'):
                 return self.send_json(400, {'error':'env_type должен быть local, github или ssh'})
+            if kind == 'projects':
+                target_env = str(data.get('env_type', item.get('env_type', 'local')) or 'local').strip().lower()
+                target_path = str(data.get('path', item.get('path', '')) or '').strip()[:1000]
+                if target_env == 'local':
+                    if not target_path: return self.send_json(400, {'error':'Для локального проекта обязательно укажите рабочую папку.'})
+                    try: target_path = grant_project_folder_to_agents(target_path)
+                    except (OSError, RuntimeError, ValueError) as exc: return self.send_json(400, {'error':str(exc) or 'Рабочая папка не найдена.'})
+                if 'path' in data: data['path'] = target_path
             for key in allowed:
                 if key not in data: continue
                 if kind=='projects' and key=='env_type': item[key]=str(data[key]).strip().lower()
