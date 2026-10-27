@@ -163,7 +163,12 @@
 .modal-card input,.modal-card select{width:100%;min-width:0}
 .modal-card .provider-list{margin-top:12px}
 .modal-card .provider-row{background:var(--panel2)}
-.domain-modal .modal-card{width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto}
+.domain-modal .modal-card{width:min(90vw,900px);height:min(85vh,800px);max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.domain-modal .modal-card-head{flex:0 0 auto}
+.domain-modal .domain-modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 2px 14px}
+.domain-modal .modal-card-actions{flex:0 0 auto;padding-top:12px;border-top:1px solid var(--line)}
+.domain-modal .model-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.domain-modal .model-tabs .btn{border-radius:999px}
 .domain-modal .field-grid{margin-top:14px}
 .modal-card-body{min-width:0}
 .modal-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:5px}
