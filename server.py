@@ -3692,6 +3692,10 @@ class Handler(SimpleHTTPRequestHandler):
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
             if kind=='agents' and item.get('system'): return self.send_json(403, {'error':'Системного агента нельзя удалить'})
+            if kind=='projects':
+                tasks=domain_items('tasks')
+                if any(str(task.get('project_id') or task.get('projectId') or '')==str(item_id) for task in tasks):
+                    return self.send_json(409, {'error':'Нельзя удалить проект, к которому привязаны задачи. Сначала удалите или переназначьте задачи'})
             items.remove(item); save_domain(kind,items); log_event(kind[:-1]+'.delete',item.get('name',item.get('title','')))
             return self.send_json(200, {'ok':True})
         if path.startswith('/api/modules/'):
