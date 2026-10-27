@@ -168,6 +168,8 @@
     addProject.onclick=openProjectModal;projectsHeader.append(addProject);
     const projectsList=createElement('div','sidebar-chat-list');projectsList.id='chat-project-list';
     const historyHeader=createElement('div','nav-group-label chat-tree-heading','НЕДАВНИЕ');
+    const historyToggle=createElement('button','icon-btn chat-history-toggle','⌄');historyToggle.type='button';historyToggle.title='Свернуть историю чатов';historyToggle.setAttribute('aria-label','Свернуть историю чатов');
+    historyToggle.style.cssText='margin-left:auto;padding:0 6px;min-width:24px;height:24px;border:0;background:transparent;color:inherit;cursor:pointer;font:inherit';historyHeader.append(historyToggle);
     const historyList=createElement('div','sidebar-chat-list');historyList.id='chat-history-list';
     const collapsed=localStorage.getItem('pqlocalagentosv3.chat-history-collapsed')==='true';historyList.hidden=collapsed;historyToggle.setAttribute('aria-expanded',String(!collapsed));historyToggle.classList.toggle('is-collapsed',collapsed);
     historyToggle.onclick=()=>{const close=historyToggle.getAttribute('aria-expanded')==='true';historyToggle.setAttribute('aria-expanded',String(!close));historyToggle.classList.toggle('is-collapsed',close);historyList.hidden=close;localStorage.setItem('pqlocalagentosv3.chat-history-collapsed',String(close))};
