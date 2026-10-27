@@ -3280,6 +3280,7 @@ class Handler(SimpleHTTPRequestHandler):
                                 function=call.get('function',{}) if isinstance(call,dict) else {}
                                 name=function.get('name') if isinstance(function,dict) else None
                                 args=function.get('arguments',{}) if isinstance(function,dict) else {}
+                                tool_started = None
                                 if isinstance(args,str):
                                     try: args=json.loads(args)
                                     except ValueError: args={}
@@ -3295,7 +3296,7 @@ class Handler(SimpleHTTPRequestHandler):
                                     _record_agent_activity(chat_id, agent_id, 'waiting_tool', 'Ожидает результат инструмента.', tool=name)
                                     result=execute_tool(name,args,agent,permission_config)
                                 status='error' if isinstance(result,dict) and result.get('error') else 'ok'
-                                tool_duration = (time.monotonic() - tool_started) * 1000 if 'tool_started' in locals() else None
+                                tool_duration = (time.monotonic() - tool_started) * 1000 if tool_started is not None else None
                                 _record_agent_activity(chat_id, agent_id, 'checking', 'Проверяет результат инструмента.', tool=name, duration_ms=tool_duration)
                                 tool_summaries.append({'name':name,'status':status})
                                 log_event('agent.tool_called',str(agent.get('id',''))+' · '+str(name)+' · '+status)
@@ -3306,9 +3307,9 @@ class Handler(SimpleHTTPRequestHandler):
                         _record_agent_activity(chat_id, agent_id, 'writing', 'Формирует итоговый ответ после вызовов инструментов.')
                         _record_agent_activity(chat_id, agent_id, 'done', 'Ответ подготовлен.', duration_ms=(time.monotonic() - activity_started) * 1000)
                         return self.send_json(200,{'response':response_text,'tool_calls':tool_summaries,'warning':'Достигнут лимит циклов вызова инструментов.'})
-                _record_agent_activity(chat_id, agent_id, 'thinking', 'Подготавливает ответ модели.')
-                _record_agent_activity(chat_id, agent_id, 'writing', 'Формирует ответ.')
+                _record_agent_activity(chat_id, agent_id, 'thinking', 'Анализирует запрос с помощью модели.')
                 result = send_chat_request(provider, model, validated_messages, timeout=120)
+                _record_agent_activity(chat_id, agent_id, 'writing', 'Формирует итоговый ответ.')
                 _record_agent_activity(chat_id, agent_id, 'done', 'Ответ подготовлен.', duration_ms=(time.monotonic() - activity_started) * 1000)
                 log_event('chat.message', str(provider.get('name',provider.get('id','provider')))+'/'+model)
                 return self.send_json(200, {'response': result['response'],'tool_calls':tool_summaries})
