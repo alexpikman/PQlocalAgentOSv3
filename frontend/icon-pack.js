@@ -263,17 +263,17 @@ window.PQRenderIcon = function (id, settings, sizeOverride) {
   const secondary = /^#[0-9a-fA-F]{6}$/.test(config.secondary || '') ? config.secondary : '#64748b';
   const size = Math.max(12, Math.min(64, Number(sizeOverride) || Number(config.size) || 24));
   let svg = entry.variants[variant] || entry.variants[0];
-  svg = svg.replace(/(<svg\\b[^>]*?)\\bwidth="[^"]*"/i, '$1width="' + size + '"')
-    .replace(/(<svg\\b[^>]*?)\\bheight="[^"]*"/i, '$1height="' + size + '"');
-  svg = svg.replace(/<([a-z][\\w:-]*)([^>]*)>/gi, (tag, name, rawAttrs) => {
+  svg = svg.replace(/(<svg\b[^>]*?)\bwidth="[^"]*"/i, '$1width="' + size + '"')
+    .replace(/(<svg\b[^>]*?)\bheight="[^"]*"/i, '$1height="' + size + '"');
+  svg = svg.replace(/<([a-z][\w:-]*)([^>]*)>/gi, (tag, name, rawAttrs) => {
     const classes = [];
-    let attrs = rawAttrs.replace(/\\sclass="([^"]*)"/gi, (_, value) => { classes.push(...value.split(/\\s+/)); return ''; });
+    let attrs = rawAttrs.replace(/\sclass="([^"]*)"/gi, (_, value) => { classes.push(...value.split(/\s+/)); return ''; });
     const styles = [];
     if (classes.includes('primary')) styles.push('fill="' + primary + '"');
-    if (classes.includes('secondary')) { styles.push('fill="' + secondary + '"'); if (!/\\sopacity=/i.test(attrs)) styles.push('opacity="0.7"'); }
+    if (classes.includes('secondary')) { styles.push('fill="' + secondary + '"'); if (!/\sopacity=/i.test(attrs)) styles.push('opacity="0.7"'); }
     if (classes.includes('primary-stroke')) styles.push('stroke="' + primary + '"');
     if (classes.includes('secondary-stroke')) styles.push('stroke="' + secondary + '"');
-    if (!classes.includes('primary') && !classes.includes('secondary') && (classes.includes('primary-stroke') || classes.includes('secondary-stroke')) && !/\\sfill=/i.test(attrs)) styles.push('fill="none"');
+    if (!classes.includes('primary') && !classes.includes('secondary') && (classes.includes('primary-stroke') || classes.includes('secondary-stroke')) && !/\sfill=/i.test(attrs)) styles.push('fill="none"');
     attrs += styles.length ? ' ' + styles.join(' ') : '';
     return '<' + name + attrs + '>';
   });
