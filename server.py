@@ -733,6 +733,19 @@ SYSTEM_AGENT_DEFINITIONS = [
     {'id':'tester','name':'Тестировщик','role':'TESTER','description':'Bug reporter: поиск дефектов, регрессий и проверка критериев приёмки.','authority':8},
 ]
 def domain_items(kind):
+    if kind == 'projects':
+        raw_projects = read_json(DOMAIN_FILES[kind], [])
+        if isinstance(raw_projects, list):
+            changed = False
+            for project_item in raw_projects:
+                if isinstance(project_item, dict):
+                    if project_item.get('env_type') not in ('local','github','ssh'):
+                        project_item['env_type'] = 'local'; changed = True
+                    if 'ssh_connection_id' not in project_item:
+                        project_item['ssh_connection_id'] = ''; changed = True
+                    if 'repo_name' not in project_item:
+                        project_item['repo_name'] = ''; changed = True
+            if changed: write_json(DOMAIN_FILES[kind], raw_projects)
     fallback=[{'id':'manager','name':'Агент №1','role':'MANAGER','model':'','status':'idle','system':True,'system_enabled':True,'description':'Менеджер — руководитель системы.'}] if kind=='agents' else []
     items = read_json(DOMAIN_FILES[kind],fallback)
     if kind == 'agents' and isinstance(items, list):
@@ -1402,6 +1415,16 @@ def run_agent_task(model, task, agent=None, project=None):
         prompt += '\n\nКонтекст проекта:\nНазвание: '+str(project.get('name',''))+'\nОписание: '+str(project.get('description',''))+'\nРабочая папка: '+(str(project.get('path','')).strip() or 'не указана')+'\nВсе файловые операции выполняй только в этой папке и через разрешённые инструменты.'
     available=effective_tools(agent or {},permissions) if agent else []
     if project and role != 'MANAGER':
+        env_type = str(project.get('env_type', 'local') or 'local').strip().lower()
+        project_path = str(project.get('path', '') or '').strip()
+        if env_type == 'ssh':
+            connection_id = str(project.get('ssh_connection_id', '') or '').strip()
+            system_prompt += '\n\n=== SSH ИНСТРУКЦИЯ ===\nЭтот проект находится на удалённом сервере. Используй ТОЛЬКО инструмент ssh_execute для работы с файлами проекта. Рабочий путь должен быть взят из поля проекта path и не должен выдумываться: ' + (project_path or '/') + '. Передавай working_dir точно этим значением. Не пытайся выйти за пределы рабочей папки. ' + (('Используй connection_id: ' + connection_id + '.') if connection_id else 'Выбери connection_id из доступных сохранённых SSH-подключений.')
+        elif env_type == 'github':
+            system_prompt += '\n\n=== ИНСТРУКЦИЯ GITHUB ===\nЭтот проект находится в GitHub. Для работы с файлами проекта используй инструменты github_*; не используй локальные файловые инструменты или SSH. Репозиторий проекта: ' + str(project.get('repo_name', '') or 'не указан') + '. Рабочая папка/путь проекта: ' + project_path + '.'
+        else:
+            system_prompt += '\n\n=== ИНСТРУКЦИЯ ЛОКАЛЬНОГО ПРОЕКТА ===\nЭтот проект локальный. Используй файловые инструменты (read_file, write_file и другие доступные файловые инструменты) для работы с файлами. Путь проекта: ' + (project_path or 'не указан') + '. Не используй SSH или GitHub-инструменты для изменения файлов локального проекта.'
+    if project and role != 'MANAGER':
         project_dir=str(project.get('path','')).strip() or 'не указана'
         github_info='Доступ к GitHub разрешён.' if (agent or {}).get('permissions',{}).get('github_access') else 'Доступ к GitHub не разрешён.'
         system_prompt += '\n\n=== ИНФОРМАЦИЯ О ПРОЕКТЕ ===\nНазвание: '+str(project.get('name',''))+'\nРабочая папка проекта: '+project_dir+'\nОписание: '+str(project.get('description',''))+'\n'+github_info+'\nВАЖНО: если работаешь с файлами проекта, используй только указанную рабочую папку и разрешённые файловые инструменты. Не обращайся к другим папкам и не утверждай, что файл прочитан или изменён без результата инструмента.'
@@ -1445,6 +1468,9 @@ def run_agent_task(model, task, agent=None, project=None):
             else:
                 if name=='run_command' and project and project.get('path'):
                     args['cwd']=str(project.get('path'))
+                if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
+                    args.setdefault('working_dir',str(project.get('path','') or '/'))
+                    if project.get('ssh_connection_id'): args.setdefault('connection_id',str(project.get('ssh_connection_id')))
                 result=execute_tool(name,args,agent,permissions)
             log_event('agent.tool_called',str((agent or {}).get('id',''))+' · '+name+' · '+('error' if 'error' in result else 'ok'))
             messages.append({'role':'tool','tool_name':name,'content':json.dumps(result,ensure_ascii=False)[:12000]})
@@ -3115,6 +3141,9 @@ class Handler(SimpleHTTPRequestHandler):
                                     result={'error':'Некорректный или недоступный инструмент.'}; name=str(name or 'unknown')
                                 else:
                                     if name=='run_command' and project and project.get('path'): args['cwd']=str(project.get('path'))
+                                    if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
+                                        args.setdefault('working_dir',str(project.get('path','') or '/'))
+                                        if project.get('ssh_connection_id'): args.setdefault('connection_id',str(project.get('ssh_connection_id')))
                                     result=execute_tool(name,args,agent,permission_config)
                                 status='error' if isinstance(result,dict) and result.get('error') else 'ok'
                                 tool_summaries.append({'name':name,'status':status})
@@ -3199,11 +3228,13 @@ class Handler(SimpleHTTPRequestHandler):
                 if role not in AGENT_ROLES and not role_item: return self.send_json(400, {'error':'Неизвестная роль агента'})
                 item.update({'role':role,'model':str(data.get('model','')).strip()[:160],'description':str(data.get('description','')).strip()[:1000],'system_prompt':str(data.get('system_prompt') or '').strip()[:4000],'memory':str(data.get('memory','')).strip()[:8000],'permissions':{**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data.get('permissions',{}).items() if k in AGENT_PERMISSION_KEYS}} if isinstance(data.get('permissions',{}),dict) else DEFAULT_AGENT_PERMISSIONS.copy(),'status':'idle','system':False})
             elif kind=='projects':
+                env_type = str(data.get('env_type','local') or 'local').strip().lower()
+                if env_type not in ('local','github','ssh'): return self.send_json(400, {'error':'env_type должен быть local, github или ssh'})
                 try:
                     logo = save_project_logo(item['id'], data.get('logo', ''))
                 except ValueError as exc:
                     return self.send_json(400, {'error': str(exc)})
-                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'status':'active'})
+                item.update({'path':str(data.get('path','')).strip()[:1000],'description':str(data.get('description','')).strip()[:1000],'logo':logo,'env_type':env_type,'ssh_connection_id':str(data.get('ssh_connection_id','')).strip()[:200],'repo_name':str(data.get('repo_name','')).strip()[:300],'status':'active'})
             else:
                 raw_roles = data.get('active_roles')
                 if isinstance(raw_roles, list):
@@ -3260,10 +3291,13 @@ class Handler(SimpleHTTPRequestHandler):
             if kind not in DOMAIN_FILES: return self.send_json(404, {'error':'Неизвестный раздел'})
             items=domain_items(kind); item=next((x for x in items if x.get('id')==item_id),None)
             if not item: return self.send_json(404, {'error':'Запись не найдена'})
-            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
+            allowed={'agents':{'name','role','model','description','system_prompt','memory','permissions','avatar','system_enabled'},'projects':{'name','path','description','logo','env_type','ssh_connection_id','repo_name'},'tasks':{'title','description','model','agent_id','project_id','team_mode','active_roles'}}[kind]
+            if kind == 'projects' and 'env_type' in data and str(data.get('env_type','')).strip().lower() not in ('local','github','ssh'):
+                return self.send_json(400, {'error':'env_type должен быть local, github или ssh'})
             for key in allowed:
                 if key not in data: continue
-                if kind=='agents' and key=='permissions':
+                if kind=='projects' and key=='env_type': item[key]=str(data[key]).strip().lower()
+                elif kind=='agents' and key=='permissions':
                     if not isinstance(data[key],dict) or set(data[key])-AGENT_PERMISSION_KEYS: return self.send_json(400, {'error':'Некорректные разрешения агента'})
                     item[key]={**DEFAULT_AGENT_PERMISSIONS,**{k:bool(v) for k,v in data[key].items()}}
                 elif kind=='agents' and key=='system_enabled':
