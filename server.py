@@ -3362,10 +3362,8 @@ class Handler(SimpleHTTPRequestHandler):
                 elif kind=='agents' and key=='permissions':
                     if not isinstance(data[key], dict):
                         return self.send_json(400, {'error':'Некорректные разрешения агента: поле "permissions" должно быть объектом.'})
-                    unknown_keys = sorted(set(data[key]) - AGENT_PERMISSION_KEYS)
-                    if unknown_keys:
-                        return self.send_json(400, {'error':'Некорректные разрешения агента: неизвестные поля — ' + ', '.join(unknown_keys) + '.'})
-                    item[key] = {**DEFAULT_AGENT_PERMISSIONS, **{k: bool(v) for k, v in data[key].items()}}
+                    # Match agent creation: ignore unsupported legacy keys and persist only known permissions.
+                    item[key] = {**DEFAULT_AGENT_PERMISSIONS, **{k: bool(v) for k, v in data[key].items() if k in AGENT_PERMISSION_KEYS}}
                 elif kind=='agents' and key=='system_enabled':
                     if not item.get('system'): return self.send_json(400, {'error':'Переключать можно только системных агентов'})
                     item[key]=bool(data[key])
