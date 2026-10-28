@@ -3210,6 +3210,8 @@ class Handler(SimpleHTTPRequestHandler):
                     active_now = _CHAT_ACTIVE.get(cid)
                     if active_now:
                         active_command = str(active_now.get('command_id') or '')
+                        if active_command.startswith('approval-resume:'):
+                            return self.send_json(409, {'error':'Возобновление подтверждения уже запущено'})
                         active_result = _CHAT_COMMANDS.get((cid, active_command), {})
                         if str(active_result.get('task_id') or '') != str(approval.get('task_id') or ''):
                             return self.send_json(409, {'error':'В этом диалоге уже выполняется другая задача'})
