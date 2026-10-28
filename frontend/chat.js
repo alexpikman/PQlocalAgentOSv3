@@ -26,6 +26,14 @@
     return element;
   }
 
+  function setChatHeaderStatus(text, kind) {
+    const node = document.getElementById('chat-task-status');
+    if (!node) return;
+    node.textContent = text || '';
+    node.classList.remove('warning', 'running', 'ok', 'fail');
+    if (kind) node.classList.add(kind);
+  }
+
   function buildUI() {
     const root = createElement('section', 'panel chat-layout');
     root.id = 'chat-root';
@@ -597,9 +605,9 @@
       onStatus: status => {
         const statusNode = document.getElementById('chat-task-status');
         if (!statusNode) return;
-        if (status === 'sequence_gap') statusNode.textContent = 'Восстанавливаю пропущенные события…';
-        else if (status === 'reconnecting') statusNode.textContent = 'Переподключение…';
-        else if (status === 'connected' && /^(Переподключение…|Восстанавливаю пропущенные события…)$/.test(statusNode.textContent)) statusNode.textContent = '';
+        if (status === 'sequence_gap') setChatHeaderStatus('Восстанавливаю пропущенные события…', 'warning');
+        else if (status === 'reconnecting') setChatHeaderStatus('Переподключение…', 'running');
+        else if (status === 'connected' && /^(Переподключение…|Восстанавливаю пропущенные события…)$/.test(statusNode.textContent)) setChatHeaderStatus('', null);
       }
     });
     const history = await transport.loadHistory(0);
