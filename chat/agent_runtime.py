@@ -91,7 +91,7 @@ class AgentRuntime:
                                  "content":str(p.get("result",p.get("message",p.get("error","Tool execution failed"))) )})
         return messages
 
-    def run_turn(self, conversation_id: str, user_text: str, cancel_event: threading.Event, command_id: str, task_id: str | None = None) -> dict:
+    def run_turn(self, conversation_id: str, user_text: str | None, cancel_event: threading.Event, command_id: str, task_id: str | None = None) -> dict:
         if not isinstance(command_id, str) or not command_id.strip(): raise ValueError("command_id обязателен")
         with self._command_lock:
             if command_id in self._processed_commands: return dict(self._processed_commands[command_id])
@@ -105,7 +105,8 @@ class AgentRuntime:
                     with self._command_lock: self._processed_commands[command_id] = result
                     return result
                 self._active_tasks[task_id] = (conversation_id, cancel_event)
-            self._emit(conversation_id,"user_message",{"text":_redact(str(user_text)),"command_id":command_id},task_id=task_id)
+            if user_text is not None:
+                self._emit(conversation_id,"user_message",{"text":_redact(str(user_text)),"command_id":command_id},task_id=task_id)
             self._emit(conversation_id,"turn_state",{"state":"thinking"},task_id=task_id)
             messages = self._messages(conversation_id)
             system = str(self.agent_config.get("system_prompt") or "").strip()
@@ -257,6 +258,84 @@ class AgentRuntime:
             with self._active_lock: self._active_tasks.pop(task_id,None)
             with self._command_lock: self._processed_commands[command_id]=dict(result)
         return result
+
+
+    def resolve_approval(self, conversation_id: str, approval_id: str, decision: str,
+                         cancel_event: threading.Event, command_id: str) -> dict:
+        """Resolve an approval, execute the pending tool if allowed, then resume the LLM turn."""
+        if decision not in ("approved", "rejected"):
+            raise ValueError('decision должен быть "approved" или "rejected"')
+        approval = self.store.get_approval(conversation_id, approval_id)
+        if approval is None:
+            raise ValueError("Запрос подтверждения не найден")
+        if approval.get("resolved_at"):
+            return {"task_id": approval.get("task_id"), "status": "already_resolved"}
+        approval = self.store.resolve_approval(conversation_id, approval_id, decision)
+        task_id = str(approval.get("task_id") or "")
+        tool_call_id = str(approval.get("tool_call_id") or "")
+        tool_name = str(approval.get("tool_name") or "")
+        arguments = approval.get("arguments") if isinstance(approval.get("arguments"), dict) else {}
+        serialized = ""
+        tool_status = "denied"
+        verification = {"verified": True, "reason": "approval_rejected_no_change"}
+        if decision == "approved":
+            try:
+                from agent_tools import check_allowed_paths
+                allowed = (self.agent_config or {}).get("allowed_paths") or []
+                check_allowed_paths(tool_name, arguments, allowed)
+                raw_result = self.tool_executor(tool_name, arguments)
+                serialized = json.dumps(_redact(raw_result), ensure_ascii=False, default=str)
+                if len(serialized) > 12000:
+                    serialized = serialized[:12000] + "…[обрезано]"
+                failed = isinstance(raw_result, dict) and bool(raw_result.get("error"))
+                tool_status = "error" if failed else "completed"
+                if tool_name == "create_directory":
+                    path_value = str(arguments.get("path") or "")
+                    try:
+                        from pathlib import Path
+                        exists = bool(path_value) and Path(path_value).is_dir()
+                    except (OSError, ValueError):
+                        exists = False
+                    verification = {
+                        "verified": bool(not failed and exists),
+                        "reason": "directory_exists" if not failed and exists else "directory_not_created",
+                    }
+                elif tool_name in {"write_file", "move_file", "delete_file", "delete_directory", "run_command", "ssh_execute"}:
+                    verification = {"verified": False, "reason": "project_changed_after_verification", "invalidated_by": tool_name}
+                if failed and tool_name != "create_directory":
+                    verification = {"verified": False, "reason": "tool_execution_failed"}
+            except Exception as exc:
+                tool_status = "error"
+                serialized = json.dumps({
+                    "error": "tool_execution_failed",
+                    "message": f"Не удалось выполнить {tool_name}: {type(exc).__name__}: {str(exc)[:500]}",
+                }, ensure_ascii=False)
+                verification = {"verified": tool_name == "create_directory", "reason": "tool_failed_no_change"}
+        else:
+            serialized = json.dumps({
+                "status": "denied",
+                "message": f"Пользователь отклонил выполнение инструмента «{tool_name}».",
+            }, ensure_ascii=False)
+        # _emit writes the durable event to ConversationStore before publishing it to EventHub.
+        self._emit(conversation_id, "tool_result",
+                   {"status": tool_status, "result": serialized,
+                    **({"error": "tool_execution_failed"} if tool_status == "error" else {})},
+                   task_id=task_id, tool_call_id=tool_call_id)
+        self._emit(conversation_id, "approval_resolved",
+                   {"approval_id": approval_id, "decision": decision,
+                    "resolved_at": approval.get("resolved_at")},
+                   task_id=task_id, tool_call_id=tool_call_id)
+        self._emit(conversation_id, "verification",
+                   {"checks": [{"name": "tool_outcome", "status": "passed" if verification.get("verified") else "failed",
+                                "output": str(verification.get("reason", ""))}],
+                    **verification},
+                   task_id=task_id, tool_call_id=tool_call_id)
+        if cancel_event.is_set():
+            self._emit(conversation_id, "turn_cancelled", {"reason": "user_cancelled"}, task_id=task_id)
+            return {"task_id": task_id, "status": "cancelled"}
+        # Rebuild messages from the durable journal: the pending assistant tool_call and
+        # its tool_result are now both present, so the provider can continue the same turn.
+        return self.run_turn(conversation_id, None, cancel_event, command_id + ":resume", task_id=task_id)
 
     _CLAIM_RE = None
 
