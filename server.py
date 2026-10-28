@@ -3207,9 +3207,16 @@ class Handler(SimpleHTTPRequestHandler):
                 runtime = runtime_entry[1]
                 resume_command_id = 'approval-resume:' + command_id
                 with _CHAT_ACTIVE_LOCK:
-                    if cid in _CHAT_ACTIVE:
-                        return self.send_json(409, {'error':'В этом диалоге уже выполняется задача'})
+                    active_now = _CHAT_ACTIVE.get(cid)
+                    if active_now:
+                        active_command = str(active_now.get('command_id') or '')
+                        active_result = _CHAT_COMMANDS.get((cid, active_command), {})
+                        if str(active_result.get('task_id') or '') != str(approval.get('task_id') or ''):
+                            return self.send_json(409, {'error':'В этом диалоге уже выполняется другая задача'})
                     cancel_event = threading.Event()
+                    # If the approval arrives just before the original worker returns,
+                    # reserve the conversation for resume now; the resume worker waits
+                    # for the original runtime task to leave its active set.
                     _CHAT_ACTIVE[cid] = {'cancel_event':cancel_event,'command_id':resume_command_id}
                     _CHAT_COMMANDS[(cid,resume_command_id)] = {
                         'accepted':True,'conversation_id':cid,'command_id':resume_command_id,
@@ -3217,6 +3224,17 @@ class Handler(SimpleHTTPRequestHandler):
                     }
                 def resume_worker():
                     try:
+                        wait_until = time.monotonic() + 30
+                        while time.monotonic() < wait_until:
+                            with runtime._active_lock:
+                                runtime_still_active = any(
+                                    active_cid == cid for active_cid, _event in runtime._active_tasks.values()
+                                )
+                            if not runtime_still_active:
+                                break
+                            time.sleep(0.05)
+                        else:
+                            raise TimeoutError('Предыдущий ход агента не завершился после запроса подтверждения')
                         result = runtime.resolve_approval(cid, aid, decision, cancel_event, resume_command_id)
                         with _CHAT_ACTIVE_LOCK:
                             _CHAT_COMMANDS[(cid,resume_command_id)] = {
