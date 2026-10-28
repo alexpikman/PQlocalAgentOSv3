@@ -98,7 +98,11 @@ export class ChatRenderer {
       const parsed=typeof result==='string'?JSON.parse(result):result;
       if(parsed&&typeof parsed==='object'&&parsed.error)result='Ошибка: '+String(parsed.message||parsed.error);
       else if(parsed&&typeof parsed==='object'&&typeof parsed.content==='string')result=parsed.content;
+      else if(parsed&&typeof parsed==='object'&&Array.isArray(parsed.items))result=parsed.items.length
+        ? parsed.items.map(item=>typeof item==='string'?item:String(item.name||item.path||item.title||JSON.stringify(item))).join('\n')
+        : 'Список пуст.';
       else if(parsed&&typeof parsed==='object'&&typeof parsed.message==='string')result=parsed.message;
+      else if(parsed&&typeof parsed==='object')result=Object.entries(parsed).map(([key,value])=>key+': '+(typeof value==='string'?value:JSON.stringify(value))).join('\n');
     } catch (_) {}
     card.append(this._el('pre','chat-tool-result',result));
     if(p.status==='error'||p.status==='denied'||p.error)card.dataset.status='error';
