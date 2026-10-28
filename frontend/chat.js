@@ -93,7 +93,7 @@
     const modeSelect = document.createElement('select');
     modeSelect.id = 'chat-mode';
     modeSelect.setAttribute('aria-label', 'Режим чата');
-    modeSelect.className = 'chat-mode-toggle'; modeSelect.add(new Option('ЧАТ', 'chat')); modeSelect.add(new Option('ПРОЕКТ', 'project')); modeBlock.append(modeSelect);
+    modeSelect.className = 'chat-mode-toggle'; modeSelect.add(new Option('ЧАТ', 'chat')); modeSelect.add(new Option('ПРОЕКТ', 'project')); modeBlock.append(modeSelect, projectSelect);
     const projectSelect = document.createElement('select');
     projectSelect.id = 'chat-project-context';
     projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
@@ -104,7 +104,7 @@
     clearButton.type = 'button';
     clearButton.id = 'chat-clear';
     const saveButton = createElement('button', 'btn secondary', 'Сохранить'); saveButton.type = 'button'; saveButton.id = 'chat-save';
-    controls.classList.add('chat-header-right'); controls.append(projectSelect, modelSelect, clearButton, saveButton);
+    controls.classList.add('chat-header-right'); controls.append(modelSelect, clearButton, saveButton);
     toolbar.append(leftZone, centerZone, controls);
 
     const messages = createElement('div', 'chat-messages');
