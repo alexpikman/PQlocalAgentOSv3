@@ -152,6 +152,10 @@ class AgentRuntime:
                         self._emit(conversation_id,"tool_result",{"result":serialized},task_id=task_id,tool_call_id=call_id)
                         messages.append({"role":"tool","tool_call_id":call_id,"content":serialized})
                     except Exception as exc:
+                        if name == "run_tests":
+                            self._emit(conversation_id,"verification",{"checks":[{"name":"tests","status":"failed","output":"Инструмент тестирования завершился исключением."}],"verified":False},task_id=task_id,tool_call_id=call_id)
+                        elif name in {"write_file", "move_file", "delete_file", "create_directory", "delete_directory", "run_command", "ssh_execute"}:
+                            self._emit(conversation_id,"verification",{"checks":[],"verified":False,"reason":"project_changed_after_verification","invalidated_by":name},task_id=task_id,tool_call_id=call_id)
                         print(f"[AgentRuntime] Инструмент {name}: {type(exc).__name__}: {exc}",file=sys.stderr)
                         msg="Ошибка выполнения инструмента"
                         self._emit(conversation_id,"tool_result",{"error":"tool_execution_failed","message":msg},task_id=task_id,tool_call_id=call_id)
