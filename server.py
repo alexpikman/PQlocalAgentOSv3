@@ -3007,9 +3007,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(text_value,str) or not text_value.strip() or len(text_value)>100000:
                 return self.send_json(400, {'error':'Сообщение должно содержать от 1 до 100000 символов'})
             if not command_id or not agent_id: return self.send_json(400, {'error':'Обязательны command_id и agent_id'})
-            if not cid:
-                try: cid = CHAT_STORE.create_conversation(text_value.strip().replace('\n',' ')[:60])
-                except Exception as exc: return self.send_json(500, {'error':'Не удалось создать диалог: '+str(exc)[:180]})
+            if not cid: return self.send_json(400, {'error':'conversation_id обязателен; сначала создайте диалог'})
             try: CHAT_STORE.get_meta(cid)
             except Exception as exc: return self.send_json(400, {'error':'Диалог не найден: '+str(exc)[:180]})
             with _CHAT_ACTIVE_LOCK:
