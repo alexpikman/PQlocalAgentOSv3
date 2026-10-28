@@ -560,7 +560,7 @@
     } else if (event.type === 'error') {
       showNotice(payload.message || 'Ошибка выполнения агента.', 'warning');
     } else if (event.type === 'turn_completed' || event.type === 'turn_cancelled') {
-      setSending(false); saveEventConversation(); elements.input?.focus();
+      setSending(false); if (!replay) saveEventConversation(); elements.input?.focus();
     }
     if (!replay && event.type !== 'assistant_delta') saveWorkspace();
   }
@@ -599,6 +599,9 @@
     const lastSequence = (history.events || []).reduce((max, event) => Math.max(max, Number(event.sequence) || 0), 0);
     state.transport = transport; state.transportConversationId = conversation.serverConversationId; window.PQChatTransport = transport;
     transport.connect({ lastSequence, epoch: history.meta?.epoch ?? null });
+    if (activeConversation()?.id === conversation.id) {
+      conversation.messages = state.messages; conversation.agentId = state.agent;
+    }
     saveWorkspace();
     return transport;
   }
