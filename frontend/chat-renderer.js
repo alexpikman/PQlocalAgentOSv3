@@ -51,9 +51,9 @@ export class ChatRenderer {
       case 'tool_result':this._toolResult(event.tool_call_id,p);break;
       case 'approval_required':this._approval(p);break;
       case 'approval_resolved':this._approvalResolved(p);break;
-      case 'error':this.container.append(this._el('div','chat-event-error',p.message||'Ошибка агента'));break;
-      case 'turn_completed':this._status('');window.dispatchEvent(new CustomEvent('pq-chat-turn-completed',{detail:event}));break;
-      case 'turn_cancelled':this._status('');window.dispatchEvent(new CustomEvent('pq-chat-turn-cancelled',{detail:event}));break;
+      case 'error':this._status('Ошибка');this.container.append(this._el('div','chat-event-error',p.message||'Ошибка агента'));break;
+      case 'turn_completed':this._status(String(p.status||'success').toLowerCase()==='failed'?'Ошибка':'');window.dispatchEvent(new CustomEvent('pq-chat-turn-completed',{detail:event}));break;
+      case 'turn_cancelled':this._status('Отменено');window.dispatchEvent(new CustomEvent('pq-chat-turn-cancelled',{detail:event}));break;
     }
   }
   _message(role,text,event){
