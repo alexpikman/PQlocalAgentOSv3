@@ -297,8 +297,10 @@ class AgentRuntime:
                     except (OSError, ValueError):
                         exists = False
                     verification = {
-                        "verified": bool(not failed and exists),
-                        "reason": "directory_exists" if not failed and exists else "directory_not_created",
+                        # A returned tool error confirms that this operation did not complete;
+                        # allow the model to explain that error instead of trapping the turn.
+                        "verified": bool(failed or exists),
+                        "reason": "directory_creation_failed_no_change" if failed else ("directory_exists" if exists else "directory_not_created"),
                     }
                 elif tool_name in {"write_file", "move_file", "delete_file", "delete_directory", "run_command", "ssh_execute"}:
                     verification = {"verified": False, "reason": "project_changed_after_verification", "invalidated_by": tool_name}
