@@ -2980,6 +2980,20 @@ class Handler(SimpleHTTPRequestHandler):
                 cid = CHAT_STORE.create_conversation(title)
                 return self.send_json(201, {'conversation_id':cid,'meta':CHAT_STORE.get_meta(cid)})
             except Exception as exc: return self.send_json(500, {'error':'Не удалось создать диалог: '+str(exc)[:200]})
+        if path == '/api/chat/import':
+            cid = str(data.get('conversation_id') or '').strip()
+            messages = data.get('messages')
+            if not isinstance(messages,list) or len(messages)>200: return self.send_json(400, {'error':'Ожидается список до 200 сообщений'})
+            try:
+                if CHAT_STORE.read_all(cid): return self.send_json(409, {'error':'В диалоге уже есть события; импорт запрещён'})
+                for item in messages:
+                    if not isinstance(item,dict) or item.get('role') not in ('user','assistant') or not isinstance(item.get('content'),str): continue
+                    if item['role']=='user':
+                        CHAT_STORE.append_event(cid,'user_message',{'text':item['content'][:100000],'legacy_import':True})
+                    else:
+                        CHAT_STORE.append_event(cid,'assistant_message',{'content':item['content'][:100000],'legacy_import':True,'tool_calls':[]},message_id='msg_'+uuid.uuid4().hex)
+                return self.send_json(200, {'ok':True,'imported':len(messages)})
+            except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
         if path == '/api/chat/send':
             cid = str(data.get('conversation_id') or '').strip(); text_value = data.get('text')
             command_id = str(data.get('command_id') or '').strip()[:160]
