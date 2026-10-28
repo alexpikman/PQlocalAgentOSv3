@@ -5,6 +5,10 @@ import urllib.parse
 import json, os, re, urllib.request, urllib.error, datetime, uuid, shutil, base64, threading, hashlib, hmac, secrets, ctypes, ctypes.wintypes, sys, time, subprocess
 from http.cookies import SimpleCookie
 import audit_checks
+from chat.conversation_store import ConversationStore
+from chat.chat_events import EventHub
+from chat.provider_adapter import OllamaAdapter
+from chat.agent_runtime import AgentRuntime
 
 try:
     from llama_cpp import Llama
@@ -32,6 +36,49 @@ PORT = int(os.environ.get('PQ_PORT', '8765'))
 HOST = '127.0.0.1'
 REPO = os.environ.get('GITHUB_REPOSITORY', 'alexpikman/PQlocalAgentOSv3')
 for p in (FRONTEND, DATA, PAGES, MODULES, ICONS_DIR, AVATARS_DIR): p.mkdir(parents=True, exist_ok=True)
+
+# Событийный чат: журнал — источник истины, EventHub только доставляет события.
+CHAT_STORE = ConversationStore(DATA / 'conversations')
+CHAT_HUB = EventHub()
+CHAT_PROVIDER = OllamaAdapter(os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'))
+_CHAT_RUNTIME_LOCK = threading.Lock()
+_CHAT_RUNTIMES = {}
+_CHAT_ACTIVE_LOCK = threading.Lock()
+_CHAT_ACTIVE = {}
+_CHAT_COMMANDS = {}
+
+def _chat_runtime_for(conversation_id, agent_id, project_id=''):
+    from agent_tools import effective_tools, execute_tool
+    agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
+    if not agent: raise ValueError('Выбранный агент не найден')
+    model = str(agent.get('model') or '').strip()
+    if not model: raise ValueError('У выбранного агента не назначена модель')
+    provider = provider_for_model(model, str(agent.get('provider_id') or '').strip())
+    if provider.get('format') != 'ollama': raise ValueError('Потоковый чат первой версии поддерживает провайдера Ollama')
+    model = resolve_ollama_model(model)
+    project = next((x for x in domain_items('projects') if isinstance(x, dict) and x.get('id') == project_id), None) if project_id else None
+    permissions = permission_settings()
+    schemas = effective_tools(agent, permissions)
+    system = resolve_agent_system_prompt(agent)
+    system += '\n\nПрофиль агента: ' + str(agent.get('name', '')) + '\nНазначение: ' + str(agent.get('description', ''))[:1000]
+    if project:
+        system += '\n\nКонтекст проекта: ' + str(project.get('name', '')) + '; описание: ' + str(project.get('description', ''))[:1000] + '; рабочая папка: ' + str(project.get('path', 'не указана'))
+    if schemas:
+        system += '\n\nДоступные инструменты: ' + ', '.join(x['function']['name'] for x in schemas) + '. Используй только переданные инструменты и не утверждай, что действие выполнено без результата.'
+    def execute(name, arguments):
+        args = dict(arguments)
+        if project and name == 'run_command' and not str(args.get('cwd') or '').strip(): args['cwd'] = str(project.get('path') or '')
+        if project and name == 'ssh_execute' and not str(args.get('working_dir') or '').strip(): args['working_dir'] = str(project.get('path') or '')
+        return execute_tool(name, args, agent, permissions)
+    cache_key = (agent_id, model, project_id)
+    with _CHAT_RUNTIME_LOCK:
+        cached = _CHAT_RUNTIMES.get(conversation_id)
+        if cached and cached[0] == cache_key: return cached[1], agent
+        runtime = AgentRuntime(CHAT_STORE, CHAT_HUB, CHAT_PROVIDER, execute,
+            {'model':model,'system_prompt':system,'tools':schemas,
+             'approval_required_tools':['write_file','move_file','delete_file','create_directory','delete_directory','run_command','ssh_execute']}, max_steps=12)
+        _CHAT_RUNTIMES[conversation_id] = (cache_key, runtime)
+        return runtime, agent
 DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}, 'icons': {}}
 DEFAULT_PAGES = [{'id':'system-map','title':'Карта системы','description':'Интерактивная схема ролей, памяти проекта и потоков данных.','icon':'git-branch','content':'Архитектура взаимодействия агентов и инструментов.','system':True},{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'chat','title':'Чат','description':'Общение с локальными моделями Ollama.','icon':'file-text','content':'Диалог с выбранной локальной моделью.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True},{'id':'system-instructions','title':'Системные инструкции','description':'Базовые инструкции для ролей агентов и план взаимодействия.','icon':'file-text','content':'Управление системными инструкциями.','system':True}]
 def read_json(path, fallback):
@@ -2555,6 +2602,45 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/chat/conversations':
+            try: return self.send_json(200, {'items': CHAT_STORE.list_conversations()})
+            except Exception as exc: return self.send_json(500, {'error':'Не удалось прочитать список диалогов: '+str(exc)[:200]})
+        if path == '/api/chat/history':
+            qs = parse_qs(urlparse(self.path).query); cid = str((qs.get('conversation_id') or [''])[0])
+            try: after = max(0, int((qs.get('after') or ['0'])[0]))
+            except (TypeError, ValueError): return self.send_json(400, {'error':'Параметр after должен быть целым числом'})
+            try: return self.send_json(200, {'events':CHAT_STORE.read_after(cid,after),'meta':CHAT_STORE.get_meta(cid)})
+            except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
+        if path == '/api/chat/events':
+            qs = parse_qs(urlparse(self.path).query); cid = str((qs.get('conversation_id') or [''])[0])
+            try: after = max(0,int((qs.get('after') or ['0'])[0])); CHAT_STORE.get_meta(cid)
+            except Exception as exc: return self.send_json(400, {'error':'Некорректный диалог или after: '+str(exc)[:160]})
+            subscriber = CHAT_HUB.subscribe(cid)
+            try:
+                history = CHAT_STORE.read_after(cid,after)
+                self.send_response(200)
+                self.send_header('Content-Type','text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control','no-cache, no-transform')
+                self.send_header('Connection','keep-alive')
+                self.send_header('X-Accel-Buffering','no')
+                self.end_headers()
+                last_sent = after
+                def send_event(event):
+                    self.wfile.write(('event: message\ndata: '+json.dumps(event,ensure_ascii=False,separators=(',',':'))+'\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                for event in history:
+                    if event['sequence'] > last_sent: send_event(event); last_sent = event['sequence']
+                while True:
+                    try: event = subscriber.get(timeout=15)
+                    except __import__('queue').Empty:
+                        self.wfile.write(b': keep-alive\n\n'); self.wfile.flush(); continue
+                    seq = int(event.get('sequence',0))
+                    if seq <= last_sent: continue
+                    if seq != last_sent + 1: break
+                    send_event(event); last_sent = seq
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError): pass
+            finally: CHAT_HUB.unsubscribe(cid,subscriber)
+            return
         if path == '/api/audit/run':
             report = audit_checks.run_audit(ROOT)
             try:
@@ -2888,6 +2974,64 @@ class Handler(SimpleHTTPRequestHandler):
             log_event('auth.password_change', config.get('username', 'root'))
             return self.send_json(200, {'ok':True,'must_change_password':False})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/chat/conversations':
+            title = str(data.get('title') or 'Новый диалог').strip()[:200]
+            try:
+                cid = CHAT_STORE.create_conversation(title)
+                return self.send_json(201, {'conversation_id':cid,'meta':CHAT_STORE.get_meta(cid)})
+            except Exception as exc: return self.send_json(500, {'error':'Не удалось создать диалог: '+str(exc)[:200]})
+        if path == '/api/chat/send':
+            cid = str(data.get('conversation_id') or '').strip(); text_value = data.get('text')
+            command_id = str(data.get('command_id') or '').strip()[:160]
+            agent_id = str(data.get('agent_id') or '').strip()[:160]
+            project_id = str(data.get('project_id') or '').strip()[:160]
+            if not isinstance(text_value,str) or not text_value.strip() or len(text_value)>100000:
+                return self.send_json(400, {'error':'Сообщение должно содержать от 1 до 100000 символов'})
+            if not command_id or not agent_id: return self.send_json(400, {'error':'Обязательны command_id и agent_id'})
+            if not cid:
+                try: cid = CHAT_STORE.create_conversation(text_value.strip().replace('\n',' ')[:60])
+                except Exception as exc: return self.send_json(500, {'error':'Не удалось создать диалог: '+str(exc)[:180]})
+            try: CHAT_STORE.get_meta(cid)
+            except Exception as exc: return self.send_json(400, {'error':'Диалог не найден: '+str(exc)[:180]})
+            with _CHAT_ACTIVE_LOCK:
+                known = _CHAT_COMMANDS.get(command_id)
+                if known: return self.send_json(202, dict(known))
+                if cid in _CHAT_ACTIVE: return self.send_json(409, {'error':'В этом диалоге уже выполняется задача'})
+                cancel_event = threading.Event()
+                _CHAT_ACTIVE[cid] = {'cancel_event':cancel_event,'command_id':command_id}
+                accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'status':'queued'}
+                _CHAT_COMMANDS[command_id] = accepted
+            try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id)
+            except Exception as exc:
+                with _CHAT_ACTIVE_LOCK: _CHAT_ACTIVE.pop(cid,None); _CHAT_COMMANDS.pop(command_id,None)
+                return self.send_json(400, {'error':str(exc)[:300]})
+            def worker():
+                try:
+                    result = runtime.run_turn(cid,text_value.strip(),cancel_event,command_id)
+                    with _CHAT_ACTIVE_LOCK: _CHAT_COMMANDS[command_id] = {'accepted':True,'conversation_id':cid,'command_id':command_id,**result}
+                finally:
+                    with _CHAT_ACTIVE_LOCK:
+                        active = _CHAT_ACTIVE.get(cid)
+                        if active and active.get('command_id') == command_id: _CHAT_ACTIVE.pop(cid,None)
+            threading.Thread(target=worker,name='chat-'+cid[-8:],daemon=True).start()
+            return self.send_json(202,accepted)
+        if path == '/api/chat/approve':
+            cid = str(data.get('conversation_id') or '').strip(); aid = str(data.get('approval_id') or '').strip()
+            decision = str(data.get('decision') or '').strip(); command_id = str(data.get('command_id') or '').strip()[:160]
+            if not command_id: return self.send_json(400, {'error':'command_id обязателен'})
+            try:
+                approval = CHAT_STORE.resolve_approval(cid,aid,decision)
+                if approval is None: return self.send_json(404, {'error':'Запрос подтверждения не найден'})
+                event = CHAT_STORE.append_event(cid,'approval_resolved',{'approval_id':aid,'decision':decision,'resolved_at':approval.get('resolved_at')},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
+                CHAT_HUB.publish(cid,event)
+                return self.send_json(200, {'ok':True,'approval':approval,'resume_supported':False})
+            except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
+        if path == '/api/chat/cancel':
+            cid = str(data.get('conversation_id') or '').strip(); command_id = str(data.get('command_id') or '').strip()[:160]
+            with _CHAT_ACTIVE_LOCK: active = _CHAT_ACTIVE.get(cid)
+            if not active: return self.send_json(200, {'ok':True,'cancelled':False})
+            active['cancel_event'].set()
+            return self.send_json(200, {'ok':True,'cancelled':True,'command_id':command_id})
         if path == '/api/ssh/save':
             connections = data.get('connections', [])
             if not isinstance(connections, list) or len(connections) > 200:
