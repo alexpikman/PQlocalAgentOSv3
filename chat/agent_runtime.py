@@ -1,9 +1,30 @@
 from __future__ import annotations
-import json, sys, threading, uuid
+import json, re, sys, threading, uuid
 from typing import Any, Callable
 from chat.chat_events import EventHub
 from chat.conversation_store import ConversationStore
 from chat.provider_adapter import OllamaAdapter
+
+_SECRET_KEY = re.compile(r"(?:token|secret|password|api[_-]?key|authorization|private[_-]?key|client[_-]?secret)", re.I)
+_SECRET_TEXT = (
+    re.compile(r"(?i)\\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\\b\\s*[:=]\\s*([^\\s,;]+)"),
+    re.compile(r"\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b"),
+    re.compile(r"\\bgithub_pat_[A-Za-z0-9_]{20,}\\b"),
+    re.compile(r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{12,}"),
+)
+
+def _redact(value):
+    """Best-effort redaction before durable events are written."""
+    if isinstance(value, dict):
+        return {str(key): ("[REDACTED]" if _SECRET_KEY.search(str(key)) else _redact(item)) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact(item) for item in value]
+    if isinstance(value, str):
+        result = value
+        result = _SECRET_TEXT[0].sub(lambda m: m.group(0).split(m.group(1))[0] + "[REDACTED]", result)
+        for pattern in _SECRET_TEXT[1:]: result = pattern.sub("[REDACTED]", result)
+        return result
+    return value
 
 class AgentRuntime:
     """Выполняет один ход агента. command_id дедуплицируется только в памяти процесса."""
@@ -56,7 +77,7 @@ class AgentRuntime:
                     with self._command_lock: self._processed_commands[command_id] = result
                     return result
                 self._active_tasks[task_id] = (conversation_id, cancel_event)
-            self._emit(conversation_id,"user_message",{"text":str(user_text),"command_id":command_id},task_id=task_id)
+            self._emit(conversation_id,"user_message",{"text":_redact(str(user_text)),"command_id":command_id},task_id=task_id)
             self._emit(conversation_id,"turn_state",{"state":"thinking"},task_id=task_id)
             messages = self._messages(conversation_id)
             system = str(self.agent_config.get("system_prompt") or "").strip()
@@ -74,7 +95,7 @@ class AgentRuntime:
                     if cancel_event.is_set(): break
                     if chunk.kind=="text":
                         text_parts.append(chunk.text)
-                        self._emit(conversation_id,"assistant_delta",{"text":chunk.text},task_id=task_id,message_id=msg_id)
+                        self._emit(conversation_id,"assistant_delta",{"text":_redact(chunk.text)},task_id=task_id,message_id=msg_id)
                     elif chunk.kind=="tool_calls": raw_calls.extend(chunk.tool_calls or [])
                     elif chunk.kind=="error": error=chunk.text or "Ошибка провайдера"; break
                     elif chunk.kind=="done": break
@@ -92,7 +113,7 @@ class AgentRuntime:
                     calls.append({"type":"function","id":str(raw.get("id") or "call_"+uuid.uuid4().hex),
                                   "function":{"name":name,"arguments":args}})
                 if full_text or calls:
-                    self._emit(conversation_id,"assistant_message",{"content":full_text,"tool_calls":calls},task_id=task_id,message_id=msg_id)
+                    self._emit(conversation_id,"assistant_message",{"content":_redact(full_text),"tool_calls":_redact(calls)},task_id=task_id,message_id=msg_id)
                     messages.append({"role":"assistant","content":full_text,**({"tool_calls":calls} if calls else {})})
                 if error:
                     self._emit(conversation_id,"error",{"code":"provider_error","message":error[:1000]},task_id=task_id)
@@ -104,9 +125,9 @@ class AgentRuntime:
                 stop=False
                 for call in calls:
                     fn=call["function"]; name=fn["name"]; args=fn["arguments"]; call_id=call["id"]
-                    self._emit(conversation_id,"tool_call",{"name":name,"arguments":args},task_id=task_id,tool_call_id=call_id)
+                    self._emit(conversation_id,"tool_call",{"name":name,"arguments":_redact(args)},task_id=task_id,tool_call_id=call_id)
                     if name in approval_tools:
-                        aid=self.store.create_approval(conversation_id,task_id,call_id,name,args,f"Агент запрашивает разрешение на инструмент «{name}».")
+                        aid=self.store.create_approval(conversation_id,task_id,call_id,name,_redact(args),f"Агент запрашивает разрешение на инструмент «{name}».")
                         self._emit(conversation_id,"approval_required",{"approval_id":aid,"tool_name":name,"tool_call_id":call_id,"description":f"Разрешить инструмент «{name}»?"},task_id=task_id,tool_call_id=call_id)
                         self._emit(conversation_id,"turn_state",{"state":"waiting_approval"},task_id=task_id)
                         result={"task_id":task_id,"status":"waiting_approval","approval_id":aid}; stop=True; break
@@ -115,7 +136,7 @@ class AgentRuntime:
                         result={"task_id":task_id,"status":"cancelled"}; stop=True; break
                     try:
                         raw_result=self.tool_executor(name,args)
-                        serialized=json.dumps(raw_result,ensure_ascii=False,default=str)
+                        serialized=json.dumps(_redact(raw_result),ensure_ascii=False,default=str)
                         if len(serialized)>12000: serialized=serialized[:12000]+"…[обрезано]"
                         self._emit(conversation_id,"tool_result",{"result":serialized},task_id=task_id,tool_call_id=call_id)
                         messages.append({"role":"tool","tool_call_id":call_id,"content":serialized})
