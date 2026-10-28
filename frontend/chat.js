@@ -57,18 +57,27 @@
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
     const activityTemplate = document.getElementById('chat-activity-template');
     const activity = activityTemplate?.content?.firstElementChild?.cloneNode(true);
-    modelInfo.append(label, modelAvatar, modelName, taskStatus);
+    const agentIdentity = createElement('div', 'chat-agent-identity');
+    agentIdentity.append(availability, modelName);
+    modelInfo.append(label, modelAvatar, agentIdentity, taskStatus);
     if (activity) modelInfo.append(activity);
-    modelInfo.append(availability);
 
     const controls = createElement('div', 'chat-toolbar-controls');
+    const modeSelect = document.createElement('select');
+    modeSelect.id = 'chat-mode';
+    modeSelect.setAttribute('aria-label', 'Режим чата');
+    modeSelect.add(new Option('ПРОСТО ЧАТ', 'chat'));
+    modeSelect.add(new Option('ВНУТРИ ПРОЕКТА', 'project'));
+    const projectSelect = document.createElement('select');
+    projectSelect.id = 'chat-project-context';
+    projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
     const modelSelect = document.createElement('select');
     modelSelect.id = 'chat-agent';
     modelSelect.setAttribute('aria-label', 'Выбрать агента');
     const clearButton = createElement('button', 'btn secondary', 'Очистить чат');
     clearButton.type = 'button';
     clearButton.id = 'chat-clear';
-    controls.append(modelSelect, clearButton);
+    controls.append(modeSelect, projectSelect, modelSelect, clearButton);
     toolbar.append(modelInfo, controls);
 
     const messages = createElement('div', 'chat-messages');
@@ -104,6 +113,8 @@
     elements.root = root;
     elements.modelName = modelName; elements.availability = availability;
     elements.agent = modelSelect;
+    elements.mode = modeSelect;
+    elements.projectContext = projectSelect;
     elements.messages = messages;
     elements.form = form;
     elements.input = input;
@@ -220,6 +231,7 @@
       id: makeId('chat'),
       title: 'Новый чат',
       projectId: projectId || '',
+      mode: projectId ? 'project' : 'chat',
       agentId: state.agent,
       messages: [],
       createdAt: new Date().toISOString(),
@@ -245,6 +257,7 @@
     if (!conversation) return;
     state.activeConversationId = id;
     state.activeProjectId = conversation.projectId || '';
+    if (conversation.mode !== 'chat' && conversation.mode !== 'project') conversation.mode = conversation.projectId ? 'project' : 'chat';
     state.messages = Array.isArray(conversation.messages) ? conversation.messages.slice() : [];
     if (conversation.agentId && state.agents.some((agent) => agent.id === conversation.agentId)) {
       state.agent = conversation.agentId;
@@ -285,8 +298,23 @@
     renderChatWorkspace();
   }
 
+  function syncChatModeControls() {
+    const conversation = activeConversation();
+    if (!elements.mode || !elements.projectContext) return;
+    if (conversation && conversation.mode !== 'chat' && conversation.mode !== 'project') conversation.mode = conversation.projectId ? 'project' : 'chat';
+    const mode = conversation?.mode || 'chat';
+    elements.mode.value = mode;
+    elements.projectContext.replaceChildren(new Option('Выберите проект…', ''));
+    state.projects.forEach(project => elements.projectContext.add(new Option(project.name || 'Без названия', project.id)));
+    elements.projectContext.value = conversation?.projectId || '';
+    elements.projectContext.hidden = mode !== 'project';
+    elements.projectContext.disabled = state.sending;
+    elements.mode.disabled = state.sending;
+  }
+
   function renderChatWorkspace() {
     if (!elements.projectsList || !elements.historyList) return;
+    syncChatModeControls();
     elements.projectsList.replaceChildren();
     if (!state.projects.length) {
       elements.projectsList.append(createElement('div', 'sidebar-chat-empty', 'Нет проектов'));
@@ -317,7 +345,7 @@
         event.stopPropagation();
         if (!window.confirm('Убрать проект «' + (project.name || 'Без названия') + '» из чата? Чаты останутся в истории без привязки к проекту.')) return;
         state.projects = state.projects.filter(item => item.id !== project.id);
-        state.conversations.forEach(item => { if (item.projectId === project.id) item.projectId = ''; });
+        state.conversations.forEach(item => { if (item.projectId === project.id) { item.projectId = ''; if (item.mode === 'project') item.mode = 'chat'; } });
         if (state.activeProjectId === project.id) state.activeProjectId = '';
         saveWorkspace();
         renderChatWorkspace();
@@ -417,6 +445,8 @@
     elements.input.disabled = sending || !state.agent;
     elements.agent.disabled = sending || !state.agents.length;
     elements.clear.disabled = sending;
+    if (elements.mode) elements.mode.disabled = sending;
+    if (elements.projectContext) elements.projectContext.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
     elements.typing.hidden = !sending;
     if (sending) scrollToBottom();
@@ -641,7 +671,14 @@
       const conversation = activeConversation();
       const transport = await setupEventTransport(conversation);
       const commandId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cmd-' + Date.now() + '-' + Math.random().toString(16).slice(2));
-      await transport.sendMessage(content, commandId, state.agent, conversation?.projectId || '');
+      const mode = conversation?.mode || (conversation?.projectId ? 'project' : 'chat');
+      if (mode === 'project' && !conversation?.projectId) {
+        setSending(false);
+        showNotice('Выберите проект для режима «ВНУТРИ ПРОЕКТА».', 'warning');
+        elements.input.value = content; resizeInput();
+        return;
+      }
+      await transport.sendMessage(content, commandId, state.agent, mode === 'project' ? conversation.projectId : '', mode);
     } catch (error) {
       setSending(false);
       showNotice(error.message || 'Не удалось отправить сообщение.', 'warning');
@@ -688,6 +725,32 @@
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
       updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
+    });
+    elements.mode.addEventListener('change', () => {
+      const conversation = activeConversation();
+      if (!conversation) return;
+      conversation.mode = elements.mode.value === 'project' ? 'project' : 'chat';
+      if (conversation.mode === 'project' && !conversation.projectId && state.activeProjectId && state.projects.some(project => project.id === state.activeProjectId)) {
+        conversation.projectId = state.activeProjectId;
+      }
+      saveWorkspace();
+      renderChatWorkspace();
+      if (conversation.mode === 'project' && !conversation.projectId) {
+        showNotice('Выберите проект в появившемся списке, чтобы передать его контекст агенту.', 'warning');
+        elements.projectContext.focus();
+      }
+    });
+    elements.projectContext.addEventListener('change', () => {
+      const conversation = activeConversation();
+      if (!conversation) return;
+      const projectId = elements.projectContext.value;
+      if (!projectId) return;
+      conversation.projectId = projectId;
+      conversation.mode = 'project';
+      state.activeProjectId = projectId;
+      saveWorkspace();
+      renderChatWorkspace();
+      void syncProjectChatMemory(conversation);
     });
     elements.clear.addEventListener('click', clearChat);
   }
