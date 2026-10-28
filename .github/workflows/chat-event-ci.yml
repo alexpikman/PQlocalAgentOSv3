@@ -16,5 +16,7 @@ jobs:
         run: python -m compileall -q server.py agent_tools.py chat tests
       - name: Conversation store tests
         run: python -m unittest tests.test_conversation_store -v
+      - name: Agent runtime verification tests
+        run: python -m unittest tests.test_chat_agent_runtime -v
       - name: Server contract tests
         run: python -m unittest tests.test_server -v
