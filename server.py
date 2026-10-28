@@ -3034,10 +3034,19 @@ class Handler(SimpleHTTPRequestHandler):
             decision = str(data.get('decision') or '').strip(); command_id = str(data.get('command_id') or '').strip()[:160]
             if not command_id: return self.send_json(400, {'error':'command_id обязателен'})
             try:
+                before = CHAT_STORE.get_approval(cid,aid)
+                if before is None: return self.send_json(404, {'error':'Запрос подтверждения не найден'})
                 approval = CHAT_STORE.resolve_approval(cid,aid,decision)
                 if approval is None: return self.send_json(404, {'error':'Запрос подтверждения не найден'})
-                event = CHAT_STORE.append_event(cid,'approval_resolved',{'approval_id':aid,'decision':decision,'resolved_at':approval.get('resolved_at')},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
-                CHAT_HUB.publish(cid,event)
+                if not before.get('resolved_at'):
+                    outcome = {'approved':decision == 'approved','executed':False,
+                               'message':'Подтверждение сохранено. Автоматическое возобновление и выполнение инструмента ещё не реализованы.'}
+                    result_event = CHAT_STORE.append_event(cid,'tool_result',{'result':json.dumps(outcome,ensure_ascii=False)},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
+                    CHAT_HUB.publish(cid,result_event)
+                    resolved_event = CHAT_STORE.append_event(cid,'approval_resolved',{'approval_id':aid,'decision':decision,'resolved_at':approval.get('resolved_at')},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
+                    CHAT_HUB.publish(cid,resolved_event)
+                    completed = CHAT_STORE.append_event(cid,'turn_completed',{'status':'waiting_approval_resolved','resume_supported':False},task_id=approval.get('task_id'))
+                    CHAT_HUB.publish(cid,completed)
                 return self.send_json(200, {'ok':True,'approval':approval,'resume_supported':False})
             except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
         if path == '/api/chat/cancel':
