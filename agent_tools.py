@@ -77,6 +77,49 @@ def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) ->
             allowed.append(item)
     return allowed
 
+
+def check_allowed_paths(tool_name: str, arguments: dict, allowed_paths: list[str] | None) -> None:
+    """Проверяет, что путь в аргументах write-инструмента лежит внутри allowed_paths.
+
+    Бросает PermissionError, если:
+    - инструмент модифицирующий (write/delete/move/create_directory/delete_directory),
+    - передан allowed_paths (не None и не пустой),
+    - путь из аргументов не входит ни в один из allowed_paths.
+
+    Если allowed_paths is None или пустой — проверка пропускается (старое поведение).
+    """
+    if not allowed_paths:
+        return
+
+    modifying_tools = {
+        "write_file", "delete_file", "move_file",
+        "create_directory", "delete_directory",
+    }
+    if tool_name not in modifying_tools:
+        return
+
+    raw_path = arguments.get("path") or arguments.get("destination") or ""
+    if not raw_path:
+        return
+
+    from pathlib import Path as _Path
+
+    target = _Path(str(raw_path)).resolve()
+    allowed_roots = [_Path(p).resolve() for p in allowed_paths if p]
+
+    for root in allowed_roots:
+        try:
+            target.relative_to(root)
+            return  # путь внутри разрешённого корня
+        except ValueError:
+            continue
+
+    raise PermissionError(
+        f"Запись вне разрешённых путей проекта: {target}. "
+        f"Разрешено: {[str(r) for r in allowed_roots]}"
+    )
+
+
 def _reparse(path: Path) -> bool:
     try:
         if path.is_symlink(): return True

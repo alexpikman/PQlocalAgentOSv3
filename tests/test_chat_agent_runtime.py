@@ -92,6 +92,37 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         self.assertFalse(any(event["type"] == "turn_completed" for event in events))
         self.assertEqual(result["status"], "failed")
 
+    def test_allowed_paths_blocks_write_outside_project(self):
+        """write_file вне allowed_paths — отклоняется, событие tool_result status=denied."""
+        import agent_tools
+        from agent_tools import check_allowed_paths
+
+        # Прямая проверка функции
+        with self.assertRaises(PermissionError):
+            check_allowed_paths(
+                "write_file",
+                {"path": "/tmp/other_project/x.txt"},
+                ["/tmp/allowed_project"],
+            )
+        # Внутри разрешённого — не бросает
+        check_allowed_paths(
+            "write_file",
+            {"path": "/tmp/allowed_project/x.txt"},
+            ["/tmp/allowed_project"],
+        )
+        # Не модифицирующий инструмент — не бросает
+        check_allowed_paths(
+            "read_file",
+            {"path": "/tmp/other_project/x.txt"},
+            ["/tmp/allowed_project"],
+        )
+        # allowed_paths пустой — не бросает (старое поведение)
+        check_allowed_paths(
+            "write_file",
+            {"path": "/tmp/other_project/x.txt"},
+            [],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

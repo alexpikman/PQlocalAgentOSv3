@@ -129,6 +129,26 @@ class AgentRuntime:
                 stop=False
                 for call in calls:
                     fn=call["function"]; name=fn["name"]; args=fn["arguments"]; call_id=call["id"]
+                    # Проверка allowed_paths (если агент ограничен проектом)
+                    try:
+                        from agent_tools import check_allowed_paths
+                        allowed = (self.agent_config or {}).get("allowed_paths") or []
+                        check_allowed_paths(name, args or {}, allowed)
+                    except PermissionError as exc:
+                        denied_result = f"Заблокировано политикой allowed_paths: {exc}"
+                        self.store.append_event(
+                            conversation_id, "tool_result",
+                            {"tool_call_id": call_id, "status": "denied",
+                             "result": denied_result},
+                            task_id=task_id, tool_call_id=call_id,
+                        )
+                        self._emit(conversation_id, "tool_result",
+                                   {"tool_call_id": call_id, "status": "denied",
+                                    "result": denied_result},
+                                   task_id=task_id, tool_call_id=call_id)
+                        messages.append({"role": "tool", "tool_call_id": call_id,
+                                         "content": denied_result})
+                        continue  # переходим к следующему tool_call, не выполняем этот
                     self._emit(conversation_id,"tool_call",{"name":name,"arguments":_redact(args)},task_id=task_id,tool_call_id=call_id)
                     if name in approval_tools:
                         aid=self.store.create_approval(conversation_id,task_id,call_id,name,_redact(args),f"Агент запрашивает разрешение на инструмент «{name}».")
