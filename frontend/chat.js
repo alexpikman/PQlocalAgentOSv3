@@ -591,12 +591,12 @@
         if (statusNode && ['reconnecting', 'sequence_gap'].includes(status)) statusNode.textContent = status === 'sequence_gap' ? 'Восстанавливаю пропущенные события…' : 'Переподключение…';
       }
     });
-    state.transport = transport; state.transportConversationId = conversation.serverConversationId; window.PQChatTransport = transport;
     const history = await transport.loadHistory(0);
     state.renderer.reset();
     state.messages = [];
     for (const event of (history.events || [])) handleChatEvent(event, true);
     const lastSequence = (history.events || []).reduce((max, event) => Math.max(max, Number(event.sequence) || 0), 0);
+    state.transport = transport; state.transportConversationId = conversation.serverConversationId; window.PQChatTransport = transport;
     transport.connect({ lastSequence, epoch: history.meta?.epoch ?? null });
     saveWorkspace();
     return transport;
