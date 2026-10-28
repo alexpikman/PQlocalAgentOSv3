@@ -35,6 +35,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'github_read_file','description':'Read a UTF-8 text file from the configured GitHub repository using a repository-relative path. Requires github_access.','parameters':{'type':'object','properties':{'path':{'type':'string'}},'required':['path']}}},
     {'type':'function','function':{'name':'github_search_code','description':'Search code in the configured GitHub repository for a symbol or distinctive text. Requires github_access.','parameters':{'type':'object','properties':{'query':{'type':'string'}},'required':['query']}}},
     {'type':'function','function':{'name':'run_command','description':'Execute a shell command with the authorized project directory as its working directory. Requires terminal_access. Commands run with server-user privileges.','parameters':{'type':'object','properties':{'command':{'type':'string'}},'required':['command']}}},
+    {'type':'function','function':{'name':'run_tests','description':'Run the project test suite in the authorized project directory. Requires terminal_access. Only Python unittest or pytest commands are accepted.','parameters':{'type':'object','properties':{'command':{'type':'string','default':'python -m unittest discover -v'}},'required':[]}}},
     {'type':'function','function':{'name':'fetch_url','description':'Fetch text content from a public HTTP/HTTPS URL.','parameters':{'type':'object','properties':{'url':{'type':'string'}},'required':['url']}}},
     {'type':'function','function':{'name':'ssh_execute','description':'Execute a command on a remote server via SSH in the specified project working directory.','parameters':{'type':'object','properties':{'connection_id':{'type':'string'},'command':{'type':'string'},'working_dir':{'type':'string'}},'required':['connection_id','command']}}},
 ]
@@ -45,7 +46,7 @@ PERMISSION_FOR_TOOL = {
     'move_file':('file_moving',), 'delete_file':('file_deletion',),
     'create_directory':('directory_creation',), 'delete_directory':('directory_deletion',),
     'github_list_files':('github_access',), 'github_read_file':('github_access',),
-    'github_search_code':('github_access',), 'run_command':('terminal_access',),
+    'github_search_code':('github_access',), 'run_command':('terminal_access',), 'run_tests':('terminal_access',),
     'fetch_url':('web_access',), 'ssh_execute':('ssh_access',),
 }
 
@@ -257,6 +258,42 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             q=urllib.parse.quote(query+' repo:'+repo)
             result=_github_request('/search/code?q='+q+'&per_page=10')
             return {'items':[{'path':x.get('path'),'url':x.get('html_url')} for x in result.get('items',[])]}
+        if name=='run_tests':
+            command=args.get('command','python -m unittest discover -v')
+            if not isinstance(command,str) or not command.strip() or len(command)>1000:
+                return {'error':'Укажите команду тестирования длиной от 1 до 1000 символов.'}
+            # No shell: run_tests is intentionally narrower than run_command.
+            if any(char in command for char in (';', '|', '&', '>', '<', '\\n', '\\r', '\\x00')):
+                return {'error':'run_tests принимает только одну команду без shell-операторов.'}
+            try:
+                argv=shlex.split(command, posix=(os.name!='nt'))
+            except ValueError:
+                return {'error':'Не удалось разобрать команду тестирования.'}
+            if not argv:
+                return {'error':'Команда тестирования пуста.'}
+            executable=Path(argv[0]).name.lower()
+            args_tail=argv[1:]
+            allowed=False
+            if executable in ('python','python.exe','python3','python3.exe','py','py.exe'):
+                if args_tail and args_tail[0]=='-m' and len(args_tail)>=2 and args_tail[1] in ('unittest','pytest'):
+                    allowed=True
+            elif executable in ('pytest','pytest.exe'):
+                allowed=True
+            if not allowed:
+                return {'error':'Разрешены только python -m unittest, python -m pytest или pytest.'}
+            cwd_raw=str(args.get('cwd','')).strip()
+            if not cwd_raw:
+                return {'error':'Не задан путь проекта для запуска тестов.'}
+            cwd=resolve_authorized_path(cwd_raw,permission_config,must_exist=True)
+            if not cwd.is_dir():
+                return {'error':'Рабочий путь проекта не является папкой.'}
+            try:
+                completed=subprocess.run(argv,cwd=str(cwd),shell=False,capture_output=True,text=True,timeout=120,encoding='utf-8',errors='replace')
+                return {'cwd':str(cwd),'command':command,'stdout':completed.stdout[-60000:],'stderr':completed.stderr[-30000:],'exit_code':completed.returncode}
+            except subprocess.TimeoutExpired as exc:
+                stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
+                stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
+                return {'cwd':str(cwd),'command':command,'stdout':stdout[-60000:],'stderr':(stderr+'\\nТесты остановлены по тайм-ауту 120 секунд.')[-30000:],'exit_code':124}
         if name=='run_command':
             command=args.get('command')
             if not isinstance(command,str) or not command.strip() or len(command)>4000: return {'error':'Укажите команду длиной от 1 до 4000 символов.'}
