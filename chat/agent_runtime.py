@@ -26,6 +26,34 @@ def _redact(value):
         return result
     return value
 
+
+def _parse_structured_response(text: str) -> tuple[str, list[dict]]:
+    """Convert JSON-style model output into plain text or a normalized tool call."""
+    candidate = text.strip()
+    if not candidate.startswith("{"):
+        return text, []
+    try:
+        payload = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return text, []
+    if not isinstance(payload, dict):
+        return text, []
+    response_type = str(payload.get("type") or "").lower()
+    if response_type in {"message", "assistant_message"}:
+        return str(payload.get("text") or payload.get("content") or ""), []
+    if response_type in {"tool_call", "tool-call"} or (
+        isinstance(payload.get("name"), str)
+        and ("parameters" in payload or "arguments" in payload)
+    ):
+        name = payload.get("name")
+        arguments = payload.get("parameters", payload.get("arguments", {}))
+        if isinstance(name, str) and isinstance(arguments, dict):
+            return "", [{"id": "call_" + uuid.uuid4().hex,
+                         "function": {"name": name, "arguments": arguments}}]
+    if isinstance(payload.get("text"), str):
+        return payload["text"], []
+    return "Я получил ответ в неподдерживаемом структурированном формате.", []
+
 class AgentRuntime:
     """Выполняет один ход агента. command_id дедуплицируется только в памяти процесса."""
     def __init__(self, store: ConversationStore, hub: EventHub, provider: OllamaAdapter,
@@ -81,7 +109,13 @@ class AgentRuntime:
             self._emit(conversation_id,"turn_state",{"state":"thinking"},task_id=task_id)
             messages = self._messages(conversation_id)
             system = str(self.agent_config.get("system_prompt") or "").strip()
-            if system: messages.insert(0,{"role":"system","content":system})
+            tool_guidance = (
+                "Если вызванный тобой инструмент вернул ошибку, это ошибка выполнения твоего действия, "
+                "а не пользователя. Изучи результат инструмента, попробуй исправить аргументы или путь "
+                "и повтори вызов, если это безопасно и уместно. Если исправить нельзя, сообщи от первого "
+                "лица: что именно тебе не удалось сделать и почему; не обвиняй пользователя."
+            )
+            messages.insert(0, {"role": "system", "content": (system + "\n\n" + tool_guidance).strip()})
             model = str(self.agent_config.get("model") or "").strip()
             tools = self.agent_config.get("tools") if isinstance(self.agent_config.get("tools"),list) else []
             approval_tools = set(self.agent_config.get("approval_required_tools") or [])
@@ -95,14 +129,16 @@ class AgentRuntime:
                     if cancel_event.is_set(): break
                     if chunk.kind=="text":
                         text_parts.append(chunk.text)
-                        self._emit(conversation_id,"assistant_delta",{"text":_redact(chunk.text)},task_id=task_id,message_id=msg_id)
                     elif chunk.kind=="tool_calls": raw_calls.extend(chunk.tool_calls or [])
                     elif chunk.kind=="error": error=chunk.text or "Ошибка провайдера"; break
                     elif chunk.kind=="done": break
                 if cancel_event.is_set():
                     self._emit(conversation_id,"turn_cancelled",{"reason":"user_cancelled"},task_id=task_id)
                     result={"task_id":task_id,"status":"cancelled"}; break
-                full_text="".join(text_parts); calls=[]
+                full_text="".join(text_parts)
+                full_text, structured_calls = _parse_structured_response(full_text)
+                raw_calls.extend(structured_calls)
+                calls=[]
                 for raw in raw_calls:
                     fn=raw.get("function") or {}; name=fn.get("name"); args=fn.get("arguments",{})
                     if isinstance(args,str):
@@ -112,6 +148,9 @@ class AgentRuntime:
                         self._emit(conversation_id,"error",{"code":"invalid_tool_call","message":"Модель вернула некорректный вызов инструмента"},task_id=task_id); continue
                     calls.append({"type":"function","id":str(raw.get("id") or "call_"+uuid.uuid4().hex),
                                   "function":{"name":name,"arguments":args}})
+                if full_text:
+                    self._emit(conversation_id, "assistant_delta", {"text": _redact(full_text)},
+                               task_id=task_id, message_id=msg_id)
                 if full_text or calls:
                     self._emit(conversation_id,"assistant_message",{"content":_redact(full_text),"tool_calls":_redact(calls)},task_id=task_id,message_id=msg_id)
                     messages.append({"role":"assistant","content":full_text,**({"tool_calls":calls} if calls else {})})
@@ -183,7 +222,10 @@ class AgentRuntime:
                             self._emit(conversation_id,"verification",{"checks":[],"verified":False,"reason":"project_changed_after_verification","invalidated_by":name},task_id=task_id,tool_call_id=call_id)
                         serialized=json.dumps(_redact(raw_result),ensure_ascii=False,default=str)
                         if len(serialized)>12000: serialized=serialized[:12000]+"…[обрезано]"
-                        self._emit(conversation_id,"tool_result",{"result":serialized},task_id=task_id,tool_call_id=call_id)
+                        tool_failed = isinstance(raw_result, dict) and bool(raw_result.get("error"))
+                        self._emit(conversation_id, "tool_result",
+                                   {"status": "error" if tool_failed else "completed", "result": serialized},
+                                   task_id=task_id, tool_call_id=call_id)
                         messages.append({"role":"tool","tool_call_id":call_id,"content":serialized})
                     except Exception as exc:
                         if name == "run_tests":
@@ -191,9 +233,14 @@ class AgentRuntime:
                         elif name in {"write_file", "move_file", "delete_file", "create_directory", "delete_directory", "run_command", "ssh_execute"}:
                             self._emit(conversation_id,"verification",{"checks":[],"verified":False,"reason":"project_changed_after_verification","invalidated_by":name},task_id=task_id,tool_call_id=call_id)
                         print(f"[AgentRuntime] Инструмент {name}: {type(exc).__name__}: {exc}",file=sys.stderr)
-                        msg="Ошибка выполнения инструмента"
-                        self._emit(conversation_id,"tool_result",{"error":"tool_execution_failed","message":msg},task_id=task_id,tool_call_id=call_id)
-                        messages.append({"role":"tool","tool_call_id":call_id,"content":msg})
+                        tool_error = {"error": "tool_execution_failed",
+                                      "message": f"Не удалось выполнить {name}: {type(exc).__name__}: {str(exc)[:500]}"}
+                        serialized = json.dumps(_redact(tool_error), ensure_ascii=False)
+                        self._emit(conversation_id, "tool_result",
+                                   {"status": "error", "error": "tool_execution_failed",
+                                    "message": "Инструмент не выполнен.", "result": serialized},
+                                   task_id=task_id, tool_call_id=call_id)
+                        messages.append({"role":"tool","tool_call_id":call_id,"content":serialized})
                 if stop: break
             else:
                 self._emit(conversation_id,"error",{"code":"step_limit","message":"Превышен максимальный лимит шагов агента"},task_id=task_id)
