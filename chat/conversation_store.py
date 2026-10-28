@@ -154,6 +154,19 @@ class ConversationStore:
 
     def read_all(self, conversation_id: str) -> list[dict]: return self.read_after(conversation_id, 0)
 
+    def has_recent_verification(self, conversation_id: str, task_id: str) -> bool:
+        """Return whether the current task has a latest, still-active successful verification."""
+        for event in reversed(self.read_all(conversation_id)):
+            if event.get("task_id") != task_id:
+                continue
+            event_type = event.get("type")
+            if event_type == "verification":
+                payload = event.get("payload")
+                return bool(payload.get("verified")) if isinstance(payload, dict) else False
+            if event_type in ("turn_completed", "turn_cancelled", "error"):
+                break
+        return False
+
     def create_approval(self, conversation_id: str, task_id: str, tool_call_id: str, tool_name: str, arguments: dict, description: str) -> str:
         cid = self._valid_id(conversation_id); approval_id = "approval_" + uuid.uuid4().hex
         item = {"approval_id":approval_id,"conversation_id":cid,"task_id":task_id,"tool_call_id":tool_call_id,"tool_name":str(tool_name)[:160],"arguments":arguments,"description":str(description)[:1000],"status":"pending","created_at":_now(),"resolved_at":None}
