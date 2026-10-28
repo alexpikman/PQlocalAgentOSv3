@@ -141,7 +141,7 @@ class AgentRuntime:
                         raw_result=self.tool_executor(name,args)
                         if name == "run_tests":
                             verified = isinstance(raw_result, dict) and raw_result.get("exit_code") == 0 and not raw_result.get("error")
-                            output = "\\n".join(str(raw_result.get(key) or "") for key in ("stdout", "stderr", "error") if isinstance(raw_result, dict)).strip()
+                            output = "\n".join(str(raw_result.get(key) or "") for key in ("stdout", "stderr", "error") if isinstance(raw_result, dict)).strip()
                             self._emit(conversation_id,"verification",{"checks":[{"name":"tests","status":"passed" if verified else "failed","output":_redact(output[:4000])}],"verified":verified},task_id=task_id,tool_call_id=call_id)
                         elif name in {"write_file", "move_file", "delete_file", "create_directory", "delete_directory", "run_command", "ssh_execute"}:
                             # Any subsequent write/command can invalidate an earlier test result.
