@@ -281,7 +281,7 @@
   }
   async function syncProjectChatMemory(conversation) {
     if(!conversation?.projectId)return;
-    try{const projectChats=state.conversations.filter(item=>item.projectId===conversation.projectId).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,40).map(item=>({id:item.id,title:item.title||'Новый чат',updated_at:item.updatedAt||'',agent_id:item.agentId||'',messages:(item.messages||[]).slice(-30).map(m=>({role:m.role,content:String(m.content||'').slice(0,3000),time:m.time||''}))}));await chatApi('/projects/'+encodeURIComponent(conversation.projectId)+'/memory',{method:'POST',body:JSON.stringify({chats:projectChats})})}catch(error){showNotice('История сохранена в браузере, но память проекта не обновилась: '+error.message,'warning')}
+    try{const projectChats=state.conversations.filter(item=>item.projectId===conversation.projectId&&(item.mode==='project'||(!item.mode&&item.projectId))).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).slice(0,40).map(item=>({id:item.id,title:item.title||'Новый чат',updated_at:item.updatedAt||'',agent_id:item.agentId||'',messages:(item.messages||[]).slice(-30).map(m=>({role:m.role,content:String(m.content||'').slice(0,3000),time:m.time||''}))}));await chatApi('/projects/'+encodeURIComponent(conversation.projectId)+'/memory',{method:'POST',body:JSON.stringify({chats:projectChats})})}catch(error){showNotice('История сохранена в браузере, но память проекта не обновилась: '+error.message,'warning')}
   }
 
   function deleteConversation(id) {
@@ -735,6 +735,7 @@
       }
       saveWorkspace();
       renderChatWorkspace();
+      if (conversation.projectId) void syncProjectChatMemory(conversation);
       if (conversation.mode === 'project' && !conversation.projectId) {
         showNotice('Выберите проект в появившемся списке, чтобы передать его контекст агенту.', 'warning');
         elements.projectContext.focus();
