@@ -38,7 +38,7 @@ export class ChatTransport {
     let body={};try{body=await response.json();}catch(_){}
     if(!response.ok)throw new Error(body.error||'HTTP '+response.status);return body;
   }
-  sendMessage(text,commandId=(window.crypto&&crypto.randomUUID?crypto.randomUUID():'cmd-'+Date.now()),agentId='',projectId=''){return this._post('/api/chat/send',{text,command_id:commandId,agent_id:agentId,project_id:projectId});}
+  sendMessage(text,commandId=(window.crypto&&crypto.randomUUID?crypto.randomUUID():'cmd-'+Date.now()),agentId='',projectId='',mode='chat'){return this._post('/api/chat/send',{text,command_id:commandId,agent_id:agentId,project_id:projectId,mode});}
   approveTool(approvalId,decision,commandId=crypto.randomUUID()){
     if(!['approved','rejected'].includes(decision))return Promise.reject(new Error('Недопустимое решение подтверждения'));
     return this._post('/api/chat/approve',{approval_id:approvalId,decision,command_id:commandId});
