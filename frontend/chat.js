@@ -421,7 +421,10 @@
       const toolsDiv = createElement('div', 'chat-tool-calls');
       message.tool_calls.forEach((tc) => {
         if (!tc || typeof tc.name !== 'string') return;
-        toolsDiv.append(createElement('span', 'chat-tool-badge', '🛠 ' + tc.name + (tc.status === 'error' ? ' · ошибка' : '')));
+        const card = createElement('section', 'chat-tool-card');
+        card.append(createElement('span', 'chat-tool-badge', 'Инструмент: ' + tc.name + (tc.status === 'error' ? ' · ошибка' : '')));
+        if (tc.arguments && Object.keys(tc.arguments).length) card.append(createElement('pre', '', JSON.stringify(tc.arguments, null, 2)));
+        toolsDiv.append(card);
       });
       if (toolsDiv.childElementCount) content.append(toolsDiv);
     }
@@ -588,16 +591,30 @@
         state.messages.push(message);
       }
       message.content = String(payload.content || '');
-      if (Array.isArray(payload.tool_calls)) message.tool_calls = payload.tool_calls.map(call => ({ name: call?.function?.name || call?.name || 'Инструмент', id: call?.id || '' }));
+      if (message.content.trimStart().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(message.content.trim());
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const type = String(parsed.type || '').toLowerCase();
+            if (type === 'message' || type === 'assistant_message') message.content = String(parsed.text ?? parsed.content ?? '');
+            else if (type === 'tool_call' || type === 'tool-call' || (typeof parsed.name === 'string' && ('parameters' in parsed || 'arguments' in parsed))) {
+              message.content = '';
+              message.tool_calls = [{ name: parsed.name || 'Инструмент', arguments: parsed.parameters ?? parsed.arguments ?? {}, id: '' }];
+            } else if (typeof parsed.text === 'string') message.content = parsed.text;
+            else message.content = 'Получен структурированный ответ без распознанного текста.';
+          }
+        } catch (_) {}
+      }
+      if (Array.isArray(payload.tool_calls)) message.tool_calls = payload.tool_calls.map(call => ({ name: call?.function?.name || call?.name || 'Инструмент', arguments: call?.function?.arguments || call?.arguments || {}, id: call?.id || '' }));
     } else if (event.type === 'tool_call') {
       const message = [...state.messages].reverse().find(item => item.role === 'assistant');
       if (message) {
         message.tool_calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-        if (!message.tool_calls.some(item => item.id === event.tool_call_id)) message.tool_calls.push({ id: event.tool_call_id, name: payload.name || 'Инструмент', status: 'running' });
+        if (!message.tool_calls.some(item => item.id && item.id === event.tool_call_id)) message.tool_calls.push({ id: event.tool_call_id, name: payload.name || 'Инструмент', arguments: payload.arguments || {}, status: 'running' });
       }
     } else if (event.type === 'tool_result') {
       for (const message of state.messages) {
-        for (const call of message.tool_calls || []) if (call.id === event.tool_call_id) call.status = payload.error ? 'error' : 'completed';
+        for (const call of message.tool_calls || []) if (call.id === event.tool_call_id) call.status = (payload.status === 'error' || payload.status === 'denied' || payload.error) ? 'error' : 'completed';
       }
     } else if (event.type === 'error') {
       if (payload.code === 'verification_required') { setSending(false); elements.input?.focus(); }
