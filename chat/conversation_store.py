@@ -135,6 +135,9 @@ class ConversationStore:
                 with (d / "events.jsonl").open("ab") as f:
                     f.write((json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
                     f.flush(); os.fsync(f.fileno())
+                # Журнал уже надёжен на диске: sequence обязан продвинуться,
+                # даже если последующая запись meta.json завершится ошибкой.
+                self._sequences[cid] = seq
                 meta = self.get_meta(cid); meta.update({"updated_at":event["created_at"],"last_sequence":seq})
                 if event_type == "turn_state": meta["turn_state"] = str(payload.get("state", "idle"))
                 elif event_type in ("turn_completed","turn_cancelled"): meta["turn_state"] = "idle"
