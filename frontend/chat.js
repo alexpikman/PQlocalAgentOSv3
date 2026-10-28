@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pqlocalagentosv3.chat-workspace.v1';
-  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false, iconSettings: {} };
+  const state = { agents: [], agent: '', messages: [], sending: false, projects: [], systemProjects: [], conversations: [], activeConversationId: '', activeProjectId: '', modelAvailable: false, iconSettings: {}, transport: null, renderer: null, transportConversationId: '' };
   const elements = {};
 
   async function chatApi(path, options) {
@@ -44,9 +44,10 @@
       if (!state.agent) return;
       window.location.href = '/?edit_agent=' + encodeURIComponent(state.agent) + '&return_to_chat=1';
     });
+    const taskStatus = createElement('span', 'chat-task-status', ''); taskStatus.id = 'chat-task-status'; taskStatus.setAttribute('role', 'status');
     const availability = createElement('span', 'chat-model-availability is-unavailable');
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
-    modelInfo.append(label, modelAvatar, modelName, availability);
+    modelInfo.append(label, modelAvatar, modelName, taskStatus, availability);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modelSelect = document.createElement('select');
@@ -202,6 +203,7 @@
   }
   function createConversation(projectId) {
     if (state.sending) return;
+    state.transport?.close(); state.transport = null; state.renderer = null; state.transportConversationId = ''; window.PQChatTransport = null;
     const conversation = {
       id: makeId('chat'),
       title: 'Новый чат',
@@ -226,6 +228,7 @@
 
   function openConversation(id) {
     if (state.sending || id === state.activeConversationId) return;
+    state.transport?.close(); state.transport = null; state.renderer = null; state.transportConversationId = ''; window.PQChatTransport = null;
     const conversation = state.conversations.find((item) => item.id === id);
     if (!conversation) return;
     state.activeConversationId = id;
@@ -506,48 +509,115 @@
     }
   }
 
+  function saveEventConversation() {
+    const conversation = activeConversation();
+    if (!conversation) return;
+    conversation.messages = state.messages;
+    conversation.agentId = state.agent;
+    conversation.updatedAt = new Date().toISOString();
+    const firstUser = state.messages.find(message => message.role === 'user');
+    if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
+      conversation.title = firstUser.content.trim().replace(/\\s+/g, ' ').split(' ').slice(0, 3).join(' ').slice(0, 48) || 'Новый чат';
+    }
+    saveWorkspace(); renderChatWorkspace();
+    void syncProjectChatMemory(conversation);
+  }
+
+  function handleChatEvent(event, replay = false) {
+    const payload = event.payload || {};
+    if (state.renderer) state.renderer.apply(event);
+    if (event.type === 'user_message') {
+      const commandId = payload.command_id || '';
+      if (!state.messages.some(message => commandId && message.commandId === commandId)) {
+        state.messages.push({ role: 'user', content: String(payload.text || ''), commandId, eventId: event.event_id, time: formatTime(new Date(event.created_at || Date.now())) });
+      }
+    } else if (event.type === 'assistant_delta') {
+      let message = state.messages.find(item => item.messageId === event.message_id);
+      if (!message) {
+        message = { role: 'assistant', content: '', messageId: event.message_id, time: formatTime(new Date(event.created_at || Date.now())) };
+        state.messages.push(message);
+      }
+      message.content += String(payload.text || '');
+    } else if (event.type === 'assistant_message') {
+      let message = state.messages.find(item => item.messageId === event.message_id);
+      if (!message) {
+        message = { role: 'assistant', content: '', messageId: event.message_id, time: formatTime(new Date(event.created_at || Date.now())) };
+        state.messages.push(message);
+      }
+      message.content = String(payload.content || '');
+      if (Array.isArray(payload.tool_calls)) message.tool_calls = payload.tool_calls.map(call => ({ name: call?.function?.name || call?.name || 'Инструмент', id: call?.id || '' }));
+    } else if (event.type === 'tool_call') {
+      const message = [...state.messages].reverse().find(item => item.role === 'assistant');
+      if (message) {
+        message.tool_calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+        if (!message.tool_calls.some(item => item.id === event.tool_call_id)) message.tool_calls.push({ id: event.tool_call_id, name: payload.name || 'Инструмент', status: 'running' });
+      }
+    } else if (event.type === 'tool_result') {
+      for (const message of state.messages) {
+        for (const call of message.tool_calls || []) if (call.id === event.tool_call_id) call.status = payload.error ? 'error' : 'completed';
+      }
+    } else if (event.type === 'error') {
+      showNotice(payload.message || 'Ошибка выполнения агента.', 'warning');
+    } else if (event.type === 'turn_completed' || event.type === 'turn_cancelled') {
+      setSending(false); saveEventConversation(); elements.input?.focus();
+    }
+    if (!replay && event.type !== 'assistant_delta') saveWorkspace();
+  }
+
+  async function setupEventTransport(conversation) {
+    if (!conversation) throw new Error('Не выбран диалог.');
+    if (!conversation.serverConversationId) {
+      const created = await chatApi('/chat/conversations', { method: 'POST', body: JSON.stringify({ title: conversation.title || 'Новый чат' }) });
+      conversation.serverConversationId = created.conversation_id;
+      const legacyMessages = Array.isArray(state.messages) ? state.messages.slice() : [];
+      if (legacyMessages.length) {
+        await chatApi('/chat/import', { method: 'POST', body: JSON.stringify({ conversation_id: conversation.serverConversationId, messages: legacyMessages.map(message => ({ role: message.role, content: String(message.content || '') })) }) });
+      }
+      saveWorkspace();
+    }
+    if (state.transport && state.transportConversationId === conversation.serverConversationId) return state.transport;
+    state.transport?.close();
+    const [{ ChatTransport }, { ChatRenderer }] = await Promise.all([
+      import('/chat-transport.js'), import('/chat-renderer.js')
+    ]);
+    elements.messages.replaceChildren();
+    state.messages = [];
+    state.renderer = new ChatRenderer(elements.messages);
+    const transport = new ChatTransport({
+      conversationId: conversation.serverConversationId,
+      onEvent: event => handleChatEvent(event, false),
+      onStatus: status => {
+        const statusNode = document.getElementById('chat-task-status');
+        if (statusNode && ['reconnecting', 'sequence_gap'].includes(status)) statusNode.textContent = status === 'sequence_gap' ? 'Восстанавливаю пропущенные события…' : 'Переподключение…';
+      }
+    });
+    state.transport = transport; state.transportConversationId = conversation.serverConversationId; window.PQChatTransport = transport;
+    const history = await transport.loadHistory(0);
+    state.renderer.reset();
+    state.messages = [];
+    for (const event of (history.events || [])) handleChatEvent(event, true);
+    const lastSequence = (history.events || []).reduce((max, event) => Math.max(max, Number(event.sequence) || 0), 0);
+    transport.connect({ lastSequence, epoch: history.meta?.epoch ?? null });
+    saveWorkspace();
+    return transport;
+  }
+
   async function sendMessage() {
     const content = elements.input.value.trim();
     if (!content || state.sending || !state.agent) return;
-
     clearNotice();
-    const userMessage = { role: 'user', content, time: formatTime(new Date()) };
-    state.messages.push(userMessage);
-    persistActiveConversation();
-    elements.messages.querySelector('.chat-empty')?.remove();
-    renderMessage(userMessage);
-    elements.input.value = '';
-    resizeInput();
     setSending(true);
-
+    elements.input.value = ''; resizeInput();
     try {
-      const messages = state.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }));
-      await syncProjectChatMemory(activeConversation());
-      const startTime = performance.now();
-      const data = await chatApi('/chat', {
-        method: 'POST',
-        body: JSON.stringify({ agent_id: state.agent, project_id: activeConversation()?.projectId || '', conversation_id: state.activeConversationId, messages })
-      });
-      if (typeof data.response !== 'string') {
-        throw new Error('Сервер вернул пустой или некорректный ответ модели.');
-      }
-      const duration = ((performance.now() - startTime) / 1000).toFixed(1);
-      const assistantMessage = {
-        role: 'assistant',
-        content: data.response,
-        tool_calls: Array.isArray(data.tool_calls) ? data.tool_calls : [],
-        time: formatTime(new Date()) + ' · ⏱ ' + duration + ' сек'
-      };
-      state.messages.push(assistantMessage);
-      persistActiveConversation();
-      renderMessage(assistantMessage);
+      const conversation = activeConversation();
+      const transport = await setupEventTransport(conversation);
+      const commandId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cmd-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+      await transport.sendMessage(content, commandId, state.agent, conversation?.projectId || '');
     } catch (error) {
-      showNotice(error.message || 'Не удалось получить ответ модели.', 'warning');
-    } finally {
       setSending(false);
+      showNotice(error.message || 'Не удалось отправить сообщение.', 'warning');
+      elements.input.value = content; resizeInput();
+    } finally {
       elements.input.focus();
     }
   }
