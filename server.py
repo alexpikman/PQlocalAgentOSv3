@@ -3191,21 +3191,63 @@ class Handler(SimpleHTTPRequestHandler):
             cid = str(data.get('conversation_id') or '').strip(); aid = str(data.get('approval_id') or '').strip()
             decision = str(data.get('decision') or '').strip(); command_id = str(data.get('command_id') or '').strip()[:160]
             if not command_id: return self.send_json(400, {'error':'command_id обязателен'})
+            if decision not in ('approved', 'rejected'):
+                return self.send_json(400, {'error':'decision должен быть approved или rejected'})
             try:
-                before = CHAT_STORE.get_approval(cid,aid)
-                if before is None: return self.send_json(404, {'error':'Запрос подтверждения не найден'})
-                approval = CHAT_STORE.resolve_approval(cid,aid,decision)
+                approval = CHAT_STORE.get_approval(cid, aid)
                 if approval is None: return self.send_json(404, {'error':'Запрос подтверждения не найден'})
-                if not before.get('resolved_at'):
-                    outcome = {'approved':decision == 'approved','executed':False,
-                               'message':'Подтверждение сохранено. Автоматическое возобновление и выполнение инструмента ещё не реализованы.'}
-                    result_event = CHAT_STORE.append_event(cid,'tool_result',{'result':json.dumps(outcome,ensure_ascii=False)},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
-                    CHAT_HUB.publish(cid,result_event)
-                    resolved_event = CHAT_STORE.append_event(cid,'approval_resolved',{'approval_id':aid,'decision':decision,'resolved_at':approval.get('resolved_at')},task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
-                    CHAT_HUB.publish(cid,resolved_event)
-                    completed = CHAT_STORE.append_event(cid,'turn_completed',{'status':'waiting_approval_resolved','resume_supported':False},task_id=approval.get('task_id'))
-                    CHAT_HUB.publish(cid,completed)
-                return self.send_json(200, {'ok':True,'approval':approval,'resume_supported':False})
+                if approval.get('resolved_at'):
+                    if approval.get('status') != decision:
+                        return self.send_json(409, {'error':'Подтверждение уже разрешено противоположным решением'})
+                    return self.send_json(200, {'ok':True,'already_resolved':True,'approval':approval})
+                with _CHAT_RUNTIME_LOCK:
+                    runtime_entry = _CHAT_RUNTIMES.get(cid)
+                if not runtime_entry:
+                    return self.send_json(409, {'error':'Runtime этого хода недоступен. Создайте новый ход; неподтверждённый инструмент не запускался.'})
+                runtime = runtime_entry[1]
+                resume_command_id = 'approval-resume:' + command_id
+                with _CHAT_ACTIVE_LOCK:
+                    if cid in _CHAT_ACTIVE:
+                        return self.send_json(409, {'error':'В этом диалоге уже выполняется задача'})
+                    cancel_event = threading.Event()
+                    _CHAT_ACTIVE[cid] = {'cancel_event':cancel_event,'command_id':resume_command_id}
+                    _CHAT_COMMANDS[(cid,resume_command_id)] = {
+                        'accepted':True,'conversation_id':cid,'command_id':resume_command_id,
+                        'task_id':approval.get('task_id'),'status':'queued'
+                    }
+                def resume_worker():
+                    try:
+                        result = runtime.resolve_approval(cid, aid, decision, cancel_event, resume_command_id)
+                        with _CHAT_ACTIVE_LOCK:
+                            _CHAT_COMMANDS[(cid,resume_command_id)] = {
+                                'accepted':True,'conversation_id':cid,'command_id':resume_command_id,**result
+                            }
+                    except Exception as exc:
+                        print(f"[ChatApproval] Не удалось возобновить {aid}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                        try:
+                            error_event = CHAT_STORE.append_event(
+                                cid,'error',{'code':'approval_resume_failed','message':'Не удалось возобновить выполнение инструмента.'},
+                                task_id=approval.get('task_id'),tool_call_id=approval.get('tool_call_id'))
+                            CHAT_HUB.publish(cid,error_event)
+                            completed = CHAT_STORE.append_event(
+                                cid,'turn_completed',{'status':'failed','reason':'approval_resume_failed'},
+                                task_id=approval.get('task_id'))
+                            CHAT_HUB.publish(cid,completed)
+                        except Exception as log_exc:
+                            print(f"[ChatApproval] Не удалось записать ошибку возобновления: {log_exc}", file=sys.stderr)
+                        with _CHAT_ACTIVE_LOCK:
+                            _CHAT_COMMANDS[(cid,resume_command_id)] = {
+                                'accepted':True,'conversation_id':cid,'command_id':resume_command_id,
+                                'task_id':approval.get('task_id'),'status':'failed'
+                            }
+                    finally:
+                        with _CHAT_ACTIVE_LOCK:
+                            active = _CHAT_ACTIVE.get(cid)
+                            if active and active.get('command_id') == resume_command_id:
+                                _CHAT_ACTIVE.pop(cid,None)
+                threading.Thread(target=resume_worker,name='chat-approval-'+cid[-8:],daemon=True).start()
+                return self.send_json(202, {'ok':True,'accepted':True,'resume_supported':True,
+                                            'task_id':approval.get('task_id'),'status':'queued'})
             except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
         if path == '/api/chat/cancel':
             cid = str(data.get('conversation_id') or '').strip(); command_id = str(data.get('command_id') or '').strip()[:160]
