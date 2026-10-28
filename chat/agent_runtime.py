@@ -138,8 +138,8 @@ class AgentRuntime:
                         result={"task_id":task_id,"status":"failed","reason":"verification_required"}; break
 
                     kind = "verified" if requires_verification else "informational"
-                    self._emit(conversation_id,"turn_completed",{"status":"success","kind":kind},task_id=task_id)
-                    result={"task_id":task_id,"status":"success"}; break
+                    self._emit(conversation_id,"turn_completed",{"status":"completed","kind":kind},task_id=task_id)
+                    result={"task_id":task_id,"status":"completed"}; break
                 stop=False
                 for call in calls:
                     fn=call["function"]; name=fn["name"]; args=fn["arguments"]; call_id=call["id"]
