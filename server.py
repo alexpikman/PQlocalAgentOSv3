@@ -73,6 +73,7 @@ def _chat_runtime_for(conversation_id, agent_id, project_id=''):
         current_permissions = permission_settings()
         args = dict(arguments)
         if project and name == 'run_command' and not str(args.get('cwd') or '').strip(): args['cwd'] = str(project.get('path') or '')
+        if project and name == 'run_tests' and not str(args.get('cwd') or '').strip(): args['cwd'] = str(project.get('path') or '')
         if project and name == 'ssh_execute' and not str(args.get('working_dir') or '').strip(): args['working_dir'] = str(project.get('path') or '')
         return execute_tool(name, args, current_agent, current_permissions)
     # Новый runtime на каждый ход — так изменения разрешений/профиля не остаются
