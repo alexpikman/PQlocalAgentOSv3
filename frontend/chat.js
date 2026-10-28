@@ -291,6 +291,7 @@
       elements.agent.value = state.agent;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+      if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
     }
     renderHistory();
     saveWorkspace();
