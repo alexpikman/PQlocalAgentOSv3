@@ -629,6 +629,9 @@
 
   function clearChat() {
     if (state.sending) return;
+    state.transport?.close(); state.transport = null; state.renderer = null; state.transportConversationId = ''; window.PQChatTransport = null;
+    const conversation = activeConversation();
+    if (conversation) conversation.serverConversationId = '';
     state.messages = [];
     persistActiveConversation();
     clearNotice();
