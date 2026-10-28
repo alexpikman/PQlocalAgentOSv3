@@ -120,6 +120,9 @@ class AgentRuntime:
                     self._emit(conversation_id,"turn_completed",{"status":"failed"},task_id=task_id)
                     result={"task_id":task_id,"status":"failed"}; break
                 if not calls:
+                    if not self.store.has_recent_verification(conversation_id, task_id):
+                        self._emit(conversation_id,"error",{"code":"verification_required","message":"Задача не может быть завершена без успешного verification-события. Запустите тесты через run_tests и проверьте результат."},task_id=task_id)
+                        result={"task_id":task_id,"status":"failed","reason":"verification_required"}; break
                     self._emit(conversation_id,"turn_completed",{"status":"completed","steps":step+1},task_id=task_id)
                     result={"task_id":task_id,"status":"completed"}; break
                 stop=False
@@ -136,6 +139,13 @@ class AgentRuntime:
                         result={"task_id":task_id,"status":"cancelled"}; stop=True; break
                     try:
                         raw_result=self.tool_executor(name,args)
+                        if name == "run_tests":
+                            verified = isinstance(raw_result, dict) and raw_result.get("exit_code") == 0 and not raw_result.get("error")
+                            output = "\\n".join(str(raw_result.get(key) or "") for key in ("stdout", "stderr", "error") if isinstance(raw_result, dict)).strip()
+                            self._emit(conversation_id,"verification",{"checks":[{"name":"tests","status":"passed" if verified else "failed","output":_redact(output[:4000])}],"verified":verified},task_id=task_id,tool_call_id=call_id)
+                        elif name in {"write_file", "move_file", "delete_file", "create_directory", "delete_directory", "run_command", "ssh_execute"}:
+                            # Any subsequent write/command can invalidate an earlier test result.
+                            self._emit(conversation_id,"verification",{"checks":[],"verified":False,"reason":"project_changed_after_verification","invalidated_by":name},task_id=task_id,tool_call_id=call_id)
                         serialized=json.dumps(_redact(raw_result),ensure_ascii=False,default=str)
                         if len(serialized)>12000: serialized=serialized[:12000]+"…[обрезано]"
                         self._emit(conversation_id,"tool_result",{"result":serialized},task_id=task_id,tool_call_id=call_id)
