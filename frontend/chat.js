@@ -79,10 +79,11 @@
     const availability = createElement('span', 'chat-model-availability is-unavailable');
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
     const agentIdentity = createElement('div', 'chat-agent-identity');
-    agentIdentity.append(availability, modelName);
+    const agentStatusDot = createElement('span', 'chat-agent-status-dot'); agentStatusDot.setAttribute('aria-hidden', 'true');
+    agentIdentity.append(agentStatusDot, modelName);
     const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
     const modelBlock = createElement('div', 'chat-header-model-block'); modelBlock.append(createElement('span', 'chat-header-label', 'Модель'));
-    const headerModelName = createElement('b', 'chat-header-model-name', 'Модель не выбрана'); headerModelName.id = 'chat-header-model-name'; modelBlock.append(headerModelName);
+    const headerModelName = createElement('b', 'chat-header-model-name', 'Модель не выбрана'); headerModelName.id = 'chat-header-model-name'; modelBlock.append(headerModelName, availability);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
     const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modelBlock, modeBlock); leftZone.append(modelInfo);
     const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
