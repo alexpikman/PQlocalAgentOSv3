@@ -86,6 +86,19 @@
     const headerModelName = createElement('b', 'chat-header-model-name', 'Модель не выбрана'); headerModelName.id = 'chat-header-model-name'; modelBlock.append(headerModelName, availability);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
     const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modelBlock, modeBlock); leftZone.append(modelInfo);
+    const indicators = createElement('div', 'chat-header-indicators');
+    const indicatorSpecs = [
+      ['error', '⚠', 'Ошибка агента'],
+      ['files', '▣', 'Работа с файлами'],
+      ['approval', '?', 'Ожидание подтверждения'],
+      ['remote', '◎', 'Удалённое подключение SSH/GitHub']
+    ];
+    for (const [kind, glyph, title] of indicatorSpecs) {
+      const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind, glyph);
+      indicator.dataset.chatIndicator = kind; indicator.title = title; indicator.setAttribute('aria-label', title); indicator.setAttribute('role', 'status');
+      indicators.append(indicator);
+    }
+    leftZone.append(indicators);
     const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
     const brain = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); brain.setAttribute('viewBox', '0 0 48 48'); brain.setAttribute('class', 'chat-brain-icon'); brain.setAttribute('aria-hidden', 'true');
     const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); brainPath.setAttribute('d', 'M23 8c-5-5-13-1-12 5-5 2-6 9-2 12-3 5 0 11 6 11 1 5 7 6 10 2V9M25 8c5-5 13-1 12 5 5 2 6 9 2 12 3 5 0 11-6 11-1 5-7 6-10 2V9M15 15c4 0 6 3 6 6m-12 4c5-2 9 0 10 4m19-14c-4 0-6 3-6 6m12 4c-5-2-9 0-10 4M24 9v28'); brainPath.setAttribute('fill', 'none'); brainPath.setAttribute('stroke', 'currentColor'); brainPath.setAttribute('stroke-width', '2.4'); brainPath.setAttribute('stroke-linecap', 'round'); brainPath.setAttribute('stroke-linejoin', 'round'); brain.append(brainPath); centerZone.append(brain, taskStatus);
@@ -152,6 +165,7 @@
     document.getElementById('content').replaceChildren(root);
 
     elements.root = root;
+    elements.headerIndicators = indicators;
     elements.modelName = modelName; elements.availability = availability; elements.headerModelName = headerModelName; elements.save = saveButton;
     elements.agent = modelSelect;
     elements.mode = modeSelect;
@@ -624,6 +638,21 @@
     saveWorkspace(); renderChatWorkspace();
     void syncProjectChatMemory(conversation);
   }
+
+  document.addEventListener('pq-chat-retry', async (event) => {
+    const conversation = activeConversation();
+    const lastUser = [...(state.messages || [])].reverse().find(message => message.role === 'user');
+    if (!conversation || !lastUser || state.sending) return;
+    try {
+      setSending(true);
+      const transport = state.transport;
+      if (!transport) throw new Error('Транспорт чата не подключён');
+      await transport.sendMessage(lastUser.content, makeId('retry'), state.agent, conversation.projectId || '', conversation.mode || 'chat');
+    } catch (error) {
+      setSending(false);
+      showNotice(error.message || 'Не удалось повторить запрос.', 'warning');
+    }
+  });
 
   function handleChatEvent(event, replay = false) {
     const payload = event.payload || {};
