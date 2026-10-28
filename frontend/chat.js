@@ -589,7 +589,10 @@
       onEvent: event => handleChatEvent(event, false),
       onStatus: status => {
         const statusNode = document.getElementById('chat-task-status');
-        if (statusNode && ['reconnecting', 'sequence_gap'].includes(status)) statusNode.textContent = status === 'sequence_gap' ? 'Восстанавливаю пропущенные события…' : 'Переподключение…';
+        if (!statusNode) return;
+        if (status === 'sequence_gap') statusNode.textContent = 'Восстанавливаю пропущенные события…';
+        else if (status === 'reconnecting') statusNode.textContent = 'Переподключение…';
+        else if (status === 'connected' && /^(Переподключение…|Восстанавливаю пропущенные события…)$/.test(statusNode.textContent)) statusNode.textContent = '';
       }
     });
     const history = await transport.loadHistory(0);
