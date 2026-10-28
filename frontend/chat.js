@@ -93,7 +93,20 @@
     const modeSelect = document.createElement('select');
     modeSelect.id = 'chat-mode';
     modeSelect.setAttribute('aria-label', 'Режим чата');
-    modeSelect.className = 'chat-mode-toggle'; modeSelect.add(new Option('ЧАТ', 'chat')); modeSelect.add(new Option('ПРОЕКТ', 'project')); modeBlock.append(modeSelect, projectSelect);
+    modeSelect.className = 'chat-mode-native'; modeSelect.add(new Option('ЧАТ', 'chat')); modeSelect.add(new Option('ПРОЕКТ', 'project'));
+    const modeSwitch = createElement('div', 'chat-mode-switch'); modeSwitch.setAttribute('role', 'group'); modeSwitch.setAttribute('aria-label', 'Режим чата');
+    for (const [value, label] of [['chat', 'ЧАТ'], ['project', 'ПРОЕКТ']]) {
+      const option = createElement('button', 'chat-mode-option', label);
+      option.type = 'button'; option.dataset.chatModeChoice = value;
+      option.setAttribute('aria-pressed', String(value === 'chat'));
+      option.addEventListener('click', () => {
+        if (modeSelect.disabled) return;
+        modeSelect.value = value;
+        modeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      modeSwitch.append(option);
+    }
+    modeBlock.append(modeSwitch, modeSelect, projectSelect);
     const projectSelect = document.createElement('select');
     projectSelect.id = 'chat-project-context';
     projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
@@ -326,18 +339,30 @@
     renderChatWorkspace();
   }
 
+  function syncModeSwitch() {
+    const mode = elements.mode?.value === 'project' ? 'project' : 'chat';
+    document.querySelectorAll('[data-chat-mode-choice]').forEach(button => {
+      const active = button.dataset.chatModeChoice === mode;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+      button.disabled = !!elements.mode?.disabled;
+    });
+  }
+
   function syncChatModeControls() {
     const conversation = activeConversation();
     if (!elements.mode || !elements.projectContext) return;
     if (conversation && conversation.mode !== 'chat' && conversation.mode !== 'project') conversation.mode = conversation.projectId ? 'project' : 'chat';
     const mode = conversation?.mode || 'chat';
     elements.mode.value = mode;
+    syncModeSwitch();
     elements.projectContext.replaceChildren(new Option('Выберите проект…', ''));
     state.projects.forEach(project => elements.projectContext.add(new Option(project.name || 'Без названия', project.id)));
     elements.projectContext.value = conversation?.projectId || '';
     elements.projectContext.hidden = mode !== 'project';
     elements.projectContext.disabled = state.sending;
     elements.mode.disabled = state.sending;
+    syncModeSwitch();
   }
 
   function renderChatWorkspace() {
@@ -477,7 +502,7 @@
     elements.agent.disabled = sending || !state.agents.length;
     elements.clear.disabled = sending;
     if (elements.save) elements.save.disabled = sending;
-    if (elements.mode) elements.mode.disabled = sending;
+    if (elements.mode) { elements.mode.disabled = sending; syncModeSwitch(); }
     if (elements.projectContext) elements.projectContext.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
     elements.typing.hidden = !sending;
@@ -786,6 +811,7 @@
       const conversation = activeConversation();
       if (!conversation) return;
       conversation.mode = elements.mode.value === 'project' ? 'project' : 'chat';
+      syncModeSwitch();
       if (conversation.mode === 'project' && !conversation.projectId && state.activeProjectId && state.projects.some(project => project.id === state.activeProjectId)) {
         conversation.projectId = state.activeProjectId;
       }
