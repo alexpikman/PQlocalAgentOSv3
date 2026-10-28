@@ -66,19 +66,23 @@ def _chat_runtime_for(conversation_id, agent_id, project_id=''):
     if schemas:
         system += '\n\nДоступные инструменты: ' + ', '.join(x['function']['name'] for x in schemas) + '. Используй только переданные инструменты и не утверждай, что действие выполнено без результата.'
     def execute(name, arguments):
+        # Перепроверяем разрешения непосредственно перед каждым действием:
+        # отзыв разрешения во время работы должен вступить в силу немедленно.
+        current_agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
+        if not current_agent: raise PermissionError('Агент удалён во время выполнения')
+        current_permissions = permission_settings()
         args = dict(arguments)
         if project and name == 'run_command' and not str(args.get('cwd') or '').strip(): args['cwd'] = str(project.get('path') or '')
         if project and name == 'ssh_execute' and not str(args.get('working_dir') or '').strip(): args['working_dir'] = str(project.get('path') or '')
-        return execute_tool(name, args, agent, permissions)
-    cache_key = (agent_id, model, project_id)
+        return execute_tool(name, args, current_agent, current_permissions)
+    # Новый runtime на каждый ход — так изменения разрешений/профиля не остаются
+    # скрыты в старом замыкании. command_id дополнительно дедуплицируется маршрутом.
+    runtime = AgentRuntime(CHAT_STORE, CHAT_HUB, CHAT_PROVIDER, execute,
+        {'model':model,'system_prompt':system,'tools':schemas,
+         'approval_required_tools':['write_file','move_file','delete_file','create_directory','delete_directory','run_command','ssh_execute']}, max_steps=12)
     with _CHAT_RUNTIME_LOCK:
-        cached = _CHAT_RUNTIMES.get(conversation_id)
-        if cached and cached[0] == cache_key: return cached[1], agent
-        runtime = AgentRuntime(CHAT_STORE, CHAT_HUB, CHAT_PROVIDER, execute,
-            {'model':model,'system_prompt':system,'tools':schemas,
-             'approval_required_tools':['write_file','move_file','delete_file','create_directory','delete_directory','run_command','ssh_execute']}, max_steps=12)
-        _CHAT_RUNTIMES[conversation_id] = (cache_key, runtime)
-        return runtime, agent
+        _CHAT_RUNTIMES[conversation_id] = ((agent_id, model, project_id), runtime)
+    return runtime, agent
 DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}, 'icons': {}}
 DEFAULT_PAGES = [{'id':'system-map','title':'Карта системы','description':'Интерактивная схема ролей, памяти проекта и потоков данных.','icon':'git-branch','content':'Архитектура взаимодействия агентов и инструментов.','system':True},{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'chat','title':'Чат','description':'Общение с локальными моделями Ollama.','icon':'file-text','content':'Диалог с выбранной локальной моделью.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True},{'id':'system-instructions','title':'Системные инструкции','description':'Базовые инструкции для ролей агентов и план взаимодействия.','icon':'file-text','content':'Управление системными инструкциями.','system':True}]
 def read_json(path, fallback):
