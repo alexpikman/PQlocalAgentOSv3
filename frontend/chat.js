@@ -558,6 +558,7 @@
         for (const call of message.tool_calls || []) if (call.id === event.tool_call_id) call.status = payload.error ? 'error' : 'completed';
       }
     } else if (event.type === 'error') {
+      if (payload.code === 'verification_required') { setSending(false); elements.input?.focus(); }
       showNotice(payload.message || 'Ошибка выполнения агента.', 'warning');
     } else if (event.type === 'turn_completed' || event.type === 'turn_cancelled') {
       setSending(false); if (!replay) saveEventConversation(); elements.input?.focus();
