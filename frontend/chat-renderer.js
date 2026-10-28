@@ -46,14 +46,14 @@ export class ChatRenderer {
       case 'assistant_delta':this._assistantDelta(event.message_id,p.text||'');break;
       case 'assistant_message':this._assistantFinal(event.message_id,p.content||'');break;
       case 'thinking':this._status('Думает…');break;
-      case 'turn_state':this._status(({thinking:'Думает…',streaming:'Генерирует ответ…',waiting_approval:'Ожидает подтверждения',idle:'Готово'})[p.state]||p.state||'');break;
-      case 'tool_call':this._toolCall(event.tool_call_id,p);break;
-      case 'tool_result':this._toolResult(event.tool_call_id,p);break;
-      case 'approval_required':this._approval(p);break;
-      case 'approval_resolved':this._approvalResolved(p);break;
+      case 'turn_state':this._status(({thinking:'Думает…',streaming:'Генерирует ответ…',tool_running:'Выполняет инструмент…',waiting_approval:'Ожидает подтверждения',idle:''})[p.state]||p.state||'');break;
+      case 'tool_call':this._status('Выполняет инструмент: '+(p.name||p.tool_name||'инструмент'));this._toolCall(event.tool_call_id,p);break;
+      case 'tool_result':this._status(p.status==='error'?'Ошибка инструмента':'Получен результат инструмента');this._toolResult(event.tool_call_id,p);break;
+      case 'approval_required':this._status('Ожидает подтверждения');this._approval(p);break;
+      case 'approval_resolved':this._status(p.decision==='approved'?'Возобновляет выполнение…':'Продолжает после отказа…');this._approvalResolved(p);break;
       case 'error':this._status('Ошибка');this.container.append(this._el('div','chat-event-error',p.message||'Ошибка агента'));break;
-      case 'turn_completed':this._status(['failed','error'].includes(String(p.status||'success').toLowerCase())?'Ошибка':'');window.dispatchEvent(new CustomEvent('pq-chat-turn-completed',{detail:event}));break;
-      case 'turn_cancelled':this._status('Отменено');window.dispatchEvent(new CustomEvent('pq-chat-turn-cancelled',{detail:event}));break;
+      case 'turn_completed':this._status('');window.dispatchEvent(new CustomEvent('pq-chat-turn-completed',{detail:event}));break;
+      case 'turn_cancelled':this._status('');window.dispatchEvent(new CustomEvent('pq-chat-turn-cancelled',{detail:event}));break;
     }
   }
   _message(role,text,event){
