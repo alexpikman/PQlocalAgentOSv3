@@ -26,21 +26,44 @@
     return element;
   }
 
+  function saveCurrentChatAsText() {
+    const conversation = activeConversation();
+    if (!conversation) { showNotice('Нет активного чата для сохранения.', 'warning'); return; }
+    const selected = state.agents.find(agent => agent.id === (conversation.agentId || state.agent));
+    const model = (selected?.model || selected?.model_name || 'model').replace(/[^\p{L}\p{N}._-]+/gu, '_');
+    const agent = (selected?.name || 'agent').replace(/[^\p{L}\p{N}._-]+/gu, '_');
+    const mode = (conversation.mode || (conversation.projectId ? 'project' : 'chat')) === 'project' ? 'проект' : 'чат';
+    const started = new Date(conversation.createdAt || Date.now());
+    const date = [started.getFullYear(), String(started.getMonth() + 1).padStart(2, '0'), String(started.getDate()).padStart(2, '0')].join('-') + '_' + String(started.getHours()).padStart(2, '0') + '-' + String(started.getMinutes()).padStart(2, '0');
+    const filename = date + '_' + agent + '_' + model + '_' + mode + '.txt';
+    const lines = ['Чат PQlocalAgentOS', 'Начало: ' + started.toLocaleString(), 'Агент: ' + (selected?.name || state.agent || 'не выбран'), 'Модель: ' + (selected?.model || selected?.model_name || 'по умолчанию'), 'Режим: ' + mode, '', ...(conversation.messages || []).map(message => {
+      const who = message.role === 'user' ? 'Пользователь' : 'Агент';
+      const calls = Array.isArray(message.tool_calls) ? message.tool_calls.map(call => '[Инструмент: ' + call.name + ' ' + JSON.stringify(call.arguments || {}) + (call.status ? '; статус: ' + call.status : '') + ']') : [];
+      return who + ': ' + String(message.content || '') + (calls.length ? '\n' + calls.join('\n') : '');
+    })];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = filename; link.style.display = 'none'; document.body.append(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showNotice('Подготовлен TXT-файл: ' + filename, 'success');
+  }
+
   function setChatHeaderStatus(text, kind) {
     const node = document.getElementById('chat-task-status');
     if (!node) return;
     node.textContent = text || '';
     node.classList.remove('warning', 'running', 'ok', 'fail');
     if (kind) node.classList.add(kind);
+    const center = node.closest('.chat-header-center');
+    if (center) center.classList.toggle('is-active', !!text && (kind === 'running' || /генер|думает/i.test(text)));
   }
 
   function buildUI() {
     const root = createElement('section', 'panel chat-layout');
     root.id = 'chat-root';
 
-    const toolbar = createElement('div', 'chat-toolbar');
+    const toolbar = createElement('header', 'chat-toolbar chat-header-zones');
     const modelInfo = createElement('div', 'chat-model-info');
-    const label = createElement('span', 'chat-model-label', 'Текущий агент');
     const modelName = createElement('b', 'chat-model-name', 'Загрузка агентов…');
     modelName.id = 'chat-agent-name';
     const modelAvatar = createElement('div', 'chat-current-agent-avatar', 'AI');
@@ -55,19 +78,22 @@
     const taskStatus = createElement('span', 'chat-task-status', ''); taskStatus.id = 'chat-task-status'; taskStatus.setAttribute('role', 'status');
     const availability = createElement('span', 'chat-model-availability is-unavailable');
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
-    const activityTemplate = document.getElementById('chat-activity-template');
-    const activity = activityTemplate?.content?.firstElementChild?.cloneNode(true);
     const agentIdentity = createElement('div', 'chat-agent-identity');
     agentIdentity.append(availability, modelName);
-    modelInfo.append(label, modelAvatar, agentIdentity, taskStatus);
-    if (activity) modelInfo.append(activity);
+    const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
+    const modelBlock = createElement('div', 'chat-header-model-block'); modelBlock.append(createElement('span', 'chat-header-label', 'Модель'));
+    const headerModelName = createElement('b', 'chat-header-model-name', 'Модель не выбрана'); headerModelName.id = 'chat-header-model-name'; modelBlock.append(headerModelName);
+    const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
+    const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modelBlock, modeBlock); leftZone.append(modelInfo);
+    const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
+    const brain = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); brain.setAttribute('viewBox', '0 0 48 48'); brain.setAttribute('class', 'chat-brain-icon'); brain.setAttribute('aria-hidden', 'true');
+    const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); brainPath.setAttribute('d', 'M23 8c-5-5-13-1-12 5-5 2-6 9-2 12-3 5 0 11 6 11 1 5 7 6 10 2V9M25 8c5-5 13-1 12 5 5 2 6 9 2 12 3 5 0 11-6 11-1 5-7 6-10 2V9M15 15c4 0 6 3 6 6m-12 4c5-2 9 0 10 4m19-14c-4 0-6 3-6 6m12 4c-5-2-9 0-10 4M24 9v28'); brainPath.setAttribute('fill', 'none'); brainPath.setAttribute('stroke', 'currentColor'); brainPath.setAttribute('stroke-width', '2.4'); brainPath.setAttribute('stroke-linecap', 'round'); brainPath.setAttribute('stroke-linejoin', 'round'); brain.append(brainPath); centerZone.append(brain, taskStatus);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modeSelect = document.createElement('select');
     modeSelect.id = 'chat-mode';
     modeSelect.setAttribute('aria-label', 'Режим чата');
-    modeSelect.add(new Option('ПРОСТО ЧАТ', 'chat'));
-    modeSelect.add(new Option('ВНУТРИ ПРОЕКТА', 'project'));
+    modeSelect.className = 'chat-mode-toggle'; modeSelect.add(new Option('ЧАТ', 'chat')); modeSelect.add(new Option('ПРОЕКТ', 'project')); modeBlock.append(modeSelect);
     const projectSelect = document.createElement('select');
     projectSelect.id = 'chat-project-context';
     projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
@@ -77,8 +103,9 @@
     const clearButton = createElement('button', 'btn secondary', 'Очистить чат');
     clearButton.type = 'button';
     clearButton.id = 'chat-clear';
-    controls.append(modeSelect, projectSelect, modelSelect, clearButton);
-    toolbar.append(modelInfo, controls);
+    const saveButton = createElement('button', 'btn secondary', 'Сохранить'); saveButton.type = 'button'; saveButton.id = 'chat-save';
+    controls.classList.add('chat-header-right'); controls.append(projectSelect, modelSelect, clearButton, saveButton);
+    toolbar.append(leftZone, centerZone, controls);
 
     const messages = createElement('div', 'chat-messages');
     messages.id = 'chat-messages';
@@ -111,7 +138,7 @@
     document.getElementById('content').replaceChildren(root);
 
     elements.root = root;
-    elements.modelName = modelName; elements.availability = availability;
+    elements.modelName = modelName; elements.availability = availability; elements.headerModelName = headerModelName; elements.save = saveButton;
     elements.agent = modelSelect;
     elements.mode = modeSelect;
     elements.projectContext = projectSelect;
@@ -448,6 +475,7 @@
     elements.input.disabled = sending || !state.agent;
     elements.agent.disabled = sending || !state.agents.length;
     elements.clear.disabled = sending;
+    if (elements.save) elements.save.disabled = sending;
     if (elements.mode) elements.mode.disabled = sending;
     if (elements.projectContext) elements.projectContext.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
@@ -461,7 +489,7 @@
     state.agents.forEach((agent) => {
       const option = document.createElement('option');
       option.value = agent.id;
-      option.textContent = agent.name + (agent.model ? ' · ' + agent.model : ' · модель по умолчанию');
+      option.textContent = agent.name;
       elements.agent.append(option);
     });
 
@@ -475,6 +503,7 @@
 
     const selected = state.agents.find((agent) => agent.id === state.agent);
     elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+    if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
     updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
     elements.agent.disabled = !state.agents.length;
     elements.send.disabled = !state.agent;
@@ -748,6 +777,7 @@
       state.agent = elements.agent.value;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
+      if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
       updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
     });
@@ -779,6 +809,7 @@
       void syncProjectChatMemory(conversation);
     });
     elements.clear.addEventListener('click', clearChat);
+    elements.save.addEventListener('click', saveCurrentChatAsText);
   }
 
 
