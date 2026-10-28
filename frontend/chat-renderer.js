@@ -119,7 +119,7 @@ export class ChatRenderer {
     const card=[...this.container.querySelectorAll('[data-approval-id]')].find(el=>el.dataset.approvalId===p.approval_id);
     if(card){card.append(this._el('p','',p.decision==='approved'?'Разрешено':'Отклонено'));card.querySelectorAll('button').forEach(button=>button.disabled=true);}
   }
-  _status(text){if(this.status){this.status.textContent=text;const center=this.status.closest('.chat-header-center');if(center)center.classList.toggle('is-active',/генер|думает/i.test(String(text||'')));}}
+  _status(text){if(this.status){this.status.textContent=text;const center=this.status.closest('.chat-header-center');if(center)center.classList.toggle('is-active',/генер|думает|инструмент|возобновляет|продолжает/i.test(String(text||'')));}}
   _scroll(){this.container.scrollTop=this.container.scrollHeight;}
   updateActivity(event) {
     const el = document.getElementById("chat-activity");
