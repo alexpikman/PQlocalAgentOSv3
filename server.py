@@ -47,7 +47,7 @@ _CHAT_ACTIVE_LOCK = threading.Lock()
 _CHAT_ACTIVE = {}
 _CHAT_COMMANDS = {}
 
-def _chat_runtime_for(conversation_id, agent_id, project_id=''):
+def _chat_runtime_for(conversation_id, agent_id, project_id='', mode='chat'):
     from agent_tools import effective_tools, execute_tool
     agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
     if not agent: raise ValueError('Выбранный агент не найден')
@@ -57,12 +57,16 @@ def _chat_runtime_for(conversation_id, agent_id, project_id=''):
     if provider.get('format') != 'ollama': raise ValueError('Потоковый чат первой версии поддерживает провайдера Ollama')
     model = resolve_ollama_model(model)
     project = next((x for x in domain_items('projects') if isinstance(x, dict) and x.get('id') == project_id), None) if project_id else None
+    if mode == 'project' and project is None:
+        raise ValueError('Проект для режима «ВНУТРИ ПРОЕКТА» не найден')
     permissions = permission_settings()
     schemas = effective_tools(agent, permissions)
     system = resolve_agent_system_prompt(agent)
     system += '\n\nПрофиль агента: ' + str(agent.get('name', '')) + '\nНазначение: ' + str(agent.get('description', ''))[:1000]
     if project:
-        system += '\n\nКонтекст проекта: ' + str(project.get('name', '')) + '; описание: ' + str(project.get('description', ''))[:1000] + '; рабочая папка: ' + str(project.get('path', 'не указана'))
+        system += '\n\nРежим: ВНУТРИ ПРОЕКТА. Контекст проекта: ' + str(project.get('name', '')) + '; описание: ' + str(project.get('description', ''))[:1000] + '; рабочая папка: ' + str(project.get('path', 'не указана')) + '. Выполняй проектные действия только в рамках этого проекта и его разрешённых ресурсов.'
+    else:
+        system += '\n\nРежим: ПРОСТО ЧАТ. Это свободный диалог без привязки к проекту. Не открывай, не ищи и не изменяй файлы или ресурсы какого-либо проекта и не запускай проектные команды, если пользователь явно не попросил об этом. Не предполагай рабочую папку проекта.'
     if schemas:
         system += '\n\nДоступные инструменты: ' + ', '.join(x['function']['name'] for x in schemas) + '. Используй только переданные инструменты и не утверждай, что действие выполнено без результата.'
     def execute(name, arguments):
@@ -83,7 +87,7 @@ def _chat_runtime_for(conversation_id, agent_id, project_id=''):
          'allowed_paths': [project.get("path")] if project and project.get("path") else [],
          'approval_required_tools':['write_file','move_file','delete_file','create_directory','delete_directory','run_command','ssh_execute']}, max_steps=12)
     with _CHAT_RUNTIME_LOCK:
-        _CHAT_RUNTIMES[conversation_id] = ((agent_id, model, project_id), runtime)
+        _CHAT_RUNTIMES[conversation_id] = ((agent_id, model, project_id, mode), runtime)
     return runtime, agent
 DEFAULT_SETTINGS = {'appearance': {'theme':'light','accent':'#3b9dff','font':'Inter, Segoe UI, sans-serif','fontSize':14,'radius':12,'sidebarWidth':248,'pagePadding':28}, 'header': {'showBreadcrumbs':True,'showTitle':True,'showDescription':True,'title':'Рабочий стол','description':'Локальная платформа управления AI-системами','font':'Inter, Segoe UI, sans-serif','color':'#f2f1ff','letterSpacing':0,'transform':'none','paddingTop':24,'paddingRight':22,'paddingBottom':24}, 'navigation': {'compact':False,'menu':None}, 'icons': {}}
 DEFAULT_PAGES = [{'id':'system-map','title':'Карта системы','description':'Интерактивная схема ролей, памяти проекта и потоков данных.','icon':'git-branch','content':'Архитектура взаимодействия агентов и инструментов.','system':True},{'id':'diagnostics','title':'Диагностика','description':'Проверка API, файловой системы и локальных AI-сервисов.','icon':'activity','content':'Результаты реальных проверок локального сервера.','system':True},{'id':'models','title':'Модели','description':'Состояние Ollama, доступные модели и проверочный запрос.','icon':'server','content':'Управление доступными локальными моделями.','system':True},{'id':'agents','title':'AI-агенты','description':'Реестр агентов, роли и назначенные модели.','icon':'blocks','content':'Управление агентами платформы.','system':True},{'id':'projects','title':'Проекты','description':'Рабочие пространства и пути к проектам.','icon':'files','content':'Управление проектами.','system':True},{'id':'tasks','title':'Задачи','description':'Создание задач, запуск через локальную модель и результаты.','icon':'activity','content':'Очередь задач и история выполнения.','system':True},{'id':'dashboard','title':'Рабочий стол','description':'Обзор локальной платформы и состояния системы.','icon':'layout-dashboard','content':'Добро пожаловать в PQlocalAgentOSv3. Здесь будет собираться управление локальными AI-системами.','system':True},{'id':'chat','title':'Чат','description':'Общение с локальными моделями Ollama.','icon':'file-text','content':'Диалог с выбранной локальной моделью.','system':True},{'id':'interface-settings','title':'Настройки интерфейса','description':'Управление общим оформлением и шапкой страниц.','icon':'sliders-horizontal','content':'Настройте оформление приложения через панель настроек.','system':True},{'id':'pages','title':'Страницы','description':'Создание и управление страницами приложения.','icon':'files','content':'Создавайте страницы без ручного редактирования файлов.','system':True},{'id':'github','title':'GitHub','description':'Состояние подключения к репозиторию.','icon':'github','content':'Подключите GitHub через переменную окружения GITHUB_TOKEN.','system':True},{'id':'system-log','title':'Журнал системы','description':'История действий и проверок.','icon':'activity','content':'Журнал событий приложения.','system':True},{'id':'menu-builder','title':'Конструктор меню','description':'Структура навигации и привязка пунктов к страницам и модулям.','icon':'list-tree','content':'Настройте меню приложения.','system':True},{'id':'modules','title':'Модули','description':'Установка, каталог и связи между модулями.','icon':'blocks','content':'Управляйте модульной системой.','system':True},{'id':'permissions','title':'Разрешения','description':'Управление доступом AI-агентов к локальным папкам и GitHub.','icon':'shield-check','content':'Настройте права доступа агентов.','system':True},{'id':'system-instructions','title':'Системные инструкции','description':'Базовые инструкции для ролей агентов и план взаимодействия.','icon':'file-text','content':'Управление системными инструкциями.','system':True}]
@@ -3143,6 +3147,15 @@ class Handler(SimpleHTTPRequestHandler):
             command_id = str(data.get('command_id') or '').strip()[:160]
             agent_id = str(data.get('agent_id') or '').strip()[:160]
             project_id = str(data.get('project_id') or '').strip()[:160]
+            mode_value = str(data.get('mode') or ('project' if project_id else 'chat')).strip().lower()
+            if mode_value not in ('chat', 'project'):
+                return self.send_json(400, {'error':'mode должен быть chat или project'})
+            if mode_value == 'project' and not project_id:
+                return self.send_json(400, {'error':'Для режима «ВНУТРИ ПРОЕКТА» обязателен project_id'})
+            if mode_value == 'chat':
+                project_id = ''
+            elif not any(isinstance(item, dict) and str(item.get('id', '')) == project_id for item in domain_items('projects')):
+                return self.send_json(400, {'error':'Указанный project_id не найден'})
             if not isinstance(text_value,str) or not text_value.strip() or len(text_value)>100000:
                 return self.send_json(400, {'error':'Сообщение должно содержать от 1 до 100000 символов'})
             if not command_id or not agent_id: return self.send_json(400, {'error':'Обязательны command_id и agent_id'})
@@ -3159,7 +3172,7 @@ class Handler(SimpleHTTPRequestHandler):
                 task_id = 'task_' + uuid.uuid4().hex
                 accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'task_id':task_id,'status':'queued'}
                 _CHAT_COMMANDS[command_key] = accepted
-            try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id)
+            try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id,mode_value)
             except Exception as exc:
                 with _CHAT_ACTIVE_LOCK: _CHAT_ACTIVE.pop(cid,None); _CHAT_COMMANDS.pop((cid,command_id),None)
                 return self.send_json(400, {'error':str(exc)[:300]})
