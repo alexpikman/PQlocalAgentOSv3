@@ -20,6 +20,22 @@ export class ChatRenderer {
   }
   reset(){this.container.replaceChildren();this.nodes.clear();this.seen.clear();}
   _el(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el;}
+  _normalizeAssistantText(text) {
+    const raw = String(text ?? '');
+    if (!raw.trimStart().startsWith('{')) return { text: raw, toolCall: null };
+    try {
+      const value = JSON.parse(raw.trim());
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return { text: raw, toolCall: null };
+      const type = String(value.type || '').toLowerCase();
+      if (type === 'message' || type === 'assistant_message') return { text: String(value.text ?? value.content ?? ''), toolCall: null };
+      if (type === 'tool_call' || type === 'tool-call' || (typeof value.name === 'string' && ('parameters' in value || 'arguments' in value))) {
+        const args = value.parameters ?? value.arguments ?? {};
+        return { text: '', toolCall: typeof value.name === 'string' && args && typeof args === 'object' ? { name: value.name, arguments: args } : null };
+      }
+      if (typeof value.text === 'string') return { text: value.text, toolCall: null };
+      return { text: 'Получен структурированный ответ без распознанного текста.', toolCall: null };
+    } catch (_) { return { text: raw, toolCall: null }; }
+  }
   applyMany(events){for(const event of events||[])this.apply(event);}
   apply(event){
     if(!event||typeof event!=='object'||!event.event_id||this.seen.has(event.event_id))return;
@@ -51,13 +67,19 @@ export class ChatRenderer {
   }
   _assistantDelta(id,text){
     if(!id)return;let node=this.nodes.get(id);
-    if(!node){this._message('assistant','',{event_id:'assistant-'+id});node=this.container.lastElementChild;node.dataset.messageId=id;this.nodes.set(id,node);}
-    const bubble=node.querySelector('.chat-msg-bubble');bubble.textContent+=text;this._scroll();
+    if(!node){this._message('assistant','',{event_id:'assistant-'+id});node=this.container.lastElementChild;node.dataset.messageId=id;node.dataset.rawAssistantText='';this.nodes.set(id,node);}
+    node.dataset.rawAssistantText=(node.dataset.rawAssistantText||'')+String(text||'');
+    const bubble=node.querySelector('.chat-msg-bubble'),raw=node.dataset.rawAssistantText;
+    if(raw.trimStart().startsWith('{')){bubble.textContent='';return;}
+    bubble.textContent=raw;this._scroll();
   }
   _assistantFinal(id,text){
     if(!id)return;let node=this.nodes.get(id);
     if(!node){this._assistantDelta(id,'');node=this.nodes.get(id);}
-    node.querySelector('.chat-msg-bubble').textContent=text;this._scroll();
+    const normalized=this._normalizeAssistantText(text);
+    node.querySelector('.chat-msg-bubble').textContent=normalized.text;
+    if(normalized.toolCall)this._toolCall('legacy-'+id,normalized.toolCall);
+    this._scroll();
   }
   _toolCall(id,p){
     const row=this.nodes.size?[...this.nodes.values()].at(-1):null;
@@ -70,7 +92,16 @@ export class ChatRenderer {
   }
   _toolResult(id,p){
     const card=[...this.container.querySelectorAll('[data-tool-call-id]')].find(el=>el.dataset.toolCallId===id);
-    if(card)card.append(this._el('pre','chat-tool-result',p.result??p.message??p.error??'Готово'));
+    if(!card)return;
+    let result=p.result??p.message??p.error??'Готово';
+    try {
+      const parsed=typeof result==='string'?JSON.parse(result):result;
+      if(parsed&&typeof parsed==='object'&&parsed.error)result='Ошибка: '+String(parsed.message||parsed.error);
+      else if(parsed&&typeof parsed==='object'&&typeof parsed.content==='string')result=parsed.content;
+      else if(parsed&&typeof parsed==='object'&&typeof parsed.message==='string')result=parsed.message;
+    } catch (_) {}
+    card.append(this._el('pre','chat-tool-result',result));
+    if(p.status==='error'||p.status==='denied'||p.error)card.dataset.status='error';
   }
   _approval(p){
     const card=this._el('section','chat-approval-card');card.dataset.approvalId=p.approval_id||'';
@@ -146,10 +177,10 @@ export class ChatRenderer {
         break;
       }
       case "turn_completed": {
-        const ok = (payload.status || "success") === "success";
-        show(ok ? "completed" : "failed", ok ? "Готово" : "Не завершено", "");
-        // авто-скрытие через 3 сек
-        setTimeout(() => { if (el.dataset.state === "completed") hide(); }, 3000);
+        const status = String(payload.status || "success").toLowerCase();
+        const ok = status === "success" || status === "completed";
+        show(ok ? "completed" : "failed", ok ? "Готово" : "Ошибка", payload.reason || "");
+        if (ok) setTimeout(() => { if (el.dataset.state === "completed") hide(); }, 3000);
         break;
       }
       case "turn_cancelled":
