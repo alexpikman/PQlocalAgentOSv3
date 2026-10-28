@@ -28,21 +28,68 @@ class AgentRuntimeTests(unittest.TestCase):
             self.assertTrue(any(x.get('role')=='tool' and 'Approved project brief' in x.get('content','') for x in final_messages))
 
     def test_team_workflow_passes_manager_plan_to_specialist_and_result_to_qa(self):
-        results=[
-            {'response':'План: изучить требования и реализовать.','tool_calls':0,'model':'model-a'},
-            {'response':'Реализация подготовлена.','tool_calls':2,'model':'model-b'},
-            {'response':'QA: обнаружено одно ограничение.','tool_calls':0,'model':'model-a'}
+        """Проверяет реальный 5-стадийный контракт run_agent_team:
+
+        1. MANAGER → DISPATCHER (delegate с планом)
+        2. DISPATCHER → workers (dispatch с tasks)
+        3. worker (CODER) — исполнение
+        4. DISPATCHER → MANAGER (report со сводкой)
+        5. MANAGER → финал (done + final_answer)
+
+        Mock возвращает валидный JSON на каждой стадии, как этого ждёт
+        parse_orchestrator_decision в server.py.
+        """
+        results = [
+            # Stage 1: MANAGER делегирует Диспетчеру
+            {'response': '{"action":"delegate","target":"DISPATCHER","instruction":"Разбить на подзадачи"}',
+             'tool_calls': 0, 'model': 'model-a'},
+            # Stage 2: DISPATCHER раздаёт задачи специалистам
+            {'response': '{"tasks":[{"role":"CODER","task":"Реализовать компонент"}]}',
+             'tool_calls': 0, 'model': 'model-a'},
+            # Stage 3: CODER исполняет
+            {'response': 'Компонент реализован. Изменён файл component.py.',
+             'tool_calls': 2, 'model': 'model-b'},
+            # Stage 4: DISPATCHER собирает сводку для MANAGER
+            {'response': '{"action":"report","target":"MANAGER","summary":"Компонент реализован, готов к проверке"}',
+             'tool_calls': 0, 'model': 'model-a'},
+            # Stage 5: MANAGER принимает финальное решение
+            {'response': '{"done":true,"final_answer":"Задача выполнена: компонент реализован."}',
+             'tool_calls': 0, 'model': 'model-a'},
         ]
-        task={'title':'Собрать компонент','description':'Реализовать и проверить компонент.'}
-        specialist={'id':'coder1','name':'Разработчик','role':'CODER','model':'model-b','system_prompt':'Пиши качественный код.','permissions':{}}
-        with patch.object(server,'run_agent_task',side_effect=results) as run:
-            result=server.run_agent_team('model-a',task,specialist,{'name':'Demo','description':'Context','path':''})
-        self.assertEqual(run.call_count,3)
-        self.assertEqual(result['response'],'QA: обнаружено одно ограничение.')
-        self.assertEqual(result['tool_calls'],2)
-        self.assertIn('План: изучить требования',run.call_args_list[1].args[1]['description'])
-        self.assertIn('Реализация подготовлена',run.call_args_list[2].args[1]['description'])
-        self.assertEqual([stage['role'] for stage in result['team_result']],['MANAGER','CODER','TESTER'])
+        task = {'title': 'Собрать компонент', 'description': 'Реализовать и проверить компонент.'}
+        specialist = {
+            'id': 'coder1', 'name': 'Разработчик', 'role': 'CODER', 'model': 'model-b',
+            'system_prompt': 'Пиши качественный код.', 'permissions': {},
+        }
+
+        with patch.object(server, 'run_agent_task', side_effect=results) as run:
+            result = server.run_agent_team(
+                'model-a', task, specialist,
+                {'name': 'Demo', 'description': 'Context', 'path': ''},
+            )
+
+        # 5 вызовов: MANAGER, DISPATCHER, CODER, DISPATCHER, MANAGER
+        self.assertEqual(run.call_count, 5)
+
+        # Итоговый ответ — из финального решения MANAGER
+        self.assertEqual(result['response'], 'Задача выполнена: компонент реализован.')
+
+        # tool_calls аккумулируются из всех стадий
+        self.assertEqual(result['tool_calls'], 2)
+
+        # Порядок ролей в team_result
+        roles = [stage['role'] for stage in result['team_result']]
+        self.assertEqual(roles, ['MANAGER', 'DISPATCHER', 'CODER', 'DISPATCHER', 'MANAGER'])
+
+        # Проверка, что план MANAGER дошёл до DISPATCHER
+        dispatcher_call = run.call_args_list[1]
+        dispatcher_desc = dispatcher_call.args[1]['description']
+        self.assertIn('Разбить на подзадачи', dispatcher_desc)
+
+        # Проверка, что сводка DISPATCHER дошла до MANAGER (в 5-й стадии)
+        final_call = run.call_args_list[4]
+        final_desc = final_call.args[1]['description']
+        self.assertIn('Компонент реализован, готов к проверке', final_desc)
 
     def test_agent_loop_does_not_offer_file_tools_without_global_permission(self):
         with tempfile.TemporaryDirectory() as tmp:
