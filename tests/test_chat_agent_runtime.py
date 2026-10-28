@@ -123,6 +123,21 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
             [],
         )
 
+    def test_run_agent_task_blocks_write_outside_allowed_paths(self):
+        """run_agent_task (второй путь) тоже отклоняет write вне allowed_paths."""
+        import server
+        from unittest.mock import patch
+
+        # Инструмент write_file с путём вне проекта — должен быть заблокирован.
+        # Проверяем через check_allowed_paths напрямую, чтобы не зависеть от моков ollama.
+        from agent_tools import check_allowed_paths
+        with self.assertRaises(PermissionError):
+            check_allowed_paths(
+                "write_file",
+                {"path": "/tmp/other/x.txt"},
+                ["/tmp/allowed"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

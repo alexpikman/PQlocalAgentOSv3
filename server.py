@@ -1641,7 +1641,17 @@ def run_agent_task(model, task, agent=None, project=None):
                 if name=='ssh_execute' and project and str(project.get('env_type','local'))=='ssh':
                     args['working_dir']=str(project.get('path','') or '/')
                     if project.get('ssh_connection_id'): args['connection_id']=str(project.get('ssh_connection_id'))
-                result=execute_tool(name,args,agent,permissions)
+                blocked_by_allowed_paths = False
+                try:
+                    # Проверка allowed_paths (второй путь исполнения, помимо AgentRuntime)
+                    from agent_tools import check_allowed_paths
+                    _allowed = [project.get("path")] if project and project.get("path") else []
+                    check_allowed_paths(name, args or {}, _allowed)
+                except PermissionError as exc:
+                    result = {"ok": False, "error": f"Заблокировано политикой allowed_paths: {exc}"}
+                    blocked_by_allowed_paths = True
+                if not blocked_by_allowed_paths:
+                    result=execute_tool(name,args,agent,permissions)
             log_event('agent.tool_called',str((agent or {}).get('id',''))+' · '+name+' · '+('error' if 'error' in result else 'ok'))
             messages.append({'role':'tool','tool_name':name,'content':json.dumps(result,ensure_ascii=False)[:12000]})
         if total>24: break
