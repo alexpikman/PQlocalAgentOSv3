@@ -610,7 +610,15 @@
       const message = [...state.messages].reverse().find(item => item.role === 'assistant');
       if (message) {
         message.tool_calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-        if (!message.tool_calls.some(item => item.id && item.id === event.tool_call_id)) message.tool_calls.push({ id: event.tool_call_id, name: payload.name || 'Инструмент', arguments: payload.arguments || {}, status: 'running' });
+        const toolName = payload.name || 'Инструмент';
+        const existingCall = message.tool_calls.find(item => item.id === event.tool_call_id || (!item.id && item.name === toolName));
+        if (existingCall) {
+          existingCall.id = event.tool_call_id;
+          existingCall.arguments = payload.arguments || existingCall.arguments || {};
+          existingCall.status = 'running';
+        } else {
+          message.tool_calls.push({ id: event.tool_call_id, name: toolName, arguments: payload.arguments || {}, status: 'running' });
+        }
       }
     } else if (event.type === 'tool_result') {
       for (const message of state.messages) {
