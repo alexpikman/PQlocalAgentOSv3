@@ -121,6 +121,7 @@ class AgentRuntime:
                     result={"task_id":task_id,"status":"failed"}; break
                 if not calls:
                     if not self.store.has_recent_verification(conversation_id, task_id):
+                        self._emit(conversation_id,"turn_state",{"state":"failed","reason":"verification_required"},task_id=task_id)
                         self._emit(conversation_id,"error",{"code":"verification_required","message":"Задача не может быть завершена без успешного verification-события. Запустите тесты через run_tests и проверьте результат."},task_id=task_id)
                         result={"task_id":task_id,"status":"failed","reason":"verification_required"}; break
                     self._emit(conversation_id,"turn_completed",{"status":"completed","steps":step+1},task_id=task_id)
