@@ -3014,10 +3014,58 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {'path':file_path,'content':content,'sha':f.get('sha'),'size':f.get('size',0)})
             except Exception as e: return self.send_json(400, {'error':str(e)})
         return super().do_GET()
+    def _handle_run_tests(self):
+        """Запускает unittest discover -s tests -v и возвращает JSON с результатом."""
+        import re as _re
+        import subprocess as _subprocess
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        project_root = _Path(__file__).resolve().parent
+        try:
+            result = _subprocess.run(
+                [_sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            combined = (result.stdout or "") + (result.stderr or "")
+            ran_match = _re.search(r"Ran (\d+) test", combined)
+            total = int(ran_match.group(1)) if ran_match else 0
+            failures = len(_re.findall(r"^FAIL:", combined, _re.MULTILINE))
+            errors = len(_re.findall(r"^ERROR:", combined, _re.MULTILINE))
+            payload = {
+                "ok": result.returncode == 0,
+                "total": total,
+                "failures": failures,
+                "errors": errors,
+                "returncode": result.returncode,
+                "output": combined[-20000:],
+            }
+        except _subprocess.TimeoutExpired:
+            payload = {"ok": False, "error": "timeout", "total": 0, "failures": 0,
+                       "errors": 1, "returncode": -1,
+                       "output": "Тесты выполнялись дольше 5 минут и были прерваны."}
+        except Exception as exc:  # noqa: BLE001
+            payload = {"ok": False, "error": str(exc), "total": 0, "failures": 0,
+                       "errors": 1, "returncode": -1,
+                       "output": f"Ошибка запуска тестов: {exc}"}
+
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         if not self._check_host(): return
         path=urlparse(self.path).path
         if self._must_change_password_blocked(path): return
+        if self.path == "/api/tests/run" or self.path.startswith("/api/tests/run?"):
+            if not self.require_auth(): return
+            return self._handle_run_tests()
         try: data=self.body()
         except Exception as e: return self.send_json(400, {'error':str(e)})
         if path == '/api/auth/login':
