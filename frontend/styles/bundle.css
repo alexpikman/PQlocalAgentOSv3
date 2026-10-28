@@ -1579,3 +1579,29 @@ td{border-color:var(--line)}
 .chat-approval-card{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .chat-approval-card p{flex-basis:100%;margin:0}
 .chat-event-error,.chat-approval-error{margin:8px 0;padding:10px;border:1px solid #d97777;border-radius:8px;color:var(--danger,#a52626);white-space:pre-wrap}
+
+
+/* Chat mode selector and stable agent availability indicator. */
+.chat-model-info .chat-agent-identity{
+  grid-column:2!important;
+  grid-row:2!important;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.chat-agent-identity .chat-model-name{
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.chat-agent-identity .chat-model-availability{
+  flex:0 0 9px;
+  margin:0;
+}
+#chat-project-context[hidden]{display:none!important}
+.chat-toolbar-controls #chat-mode{min-width:160px}
+.chat-toolbar-controls #chat-project-context{min-width:180px;max-width:min(300px,35vw)}
+@media(max-width:720px){
+  .chat-toolbar-controls #chat-mode,
+  .chat-toolbar-controls #chat-project-context{min-width:0;max-width:none;flex:1 1 145px}
+}
