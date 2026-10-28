@@ -414,3 +414,42 @@
 .chat-toolbar .chat-model-label { flex-shrink: 0; white-space: nowrap; }
 .chat-toolbar .chat-task-status:empty { display: none; }
 
+/* Исправление сжатия индикатора активности в шапке чата */
+.chat-toolbar .chat-model-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chat-toolbar .chat-model-info > .chat-activity {
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 220px;
+  max-width: 320px;
+  box-sizing: border-box;
+}
+.chat-toolbar .chat-model-info > .chat-activity .chat-activity-detail {
+  min-width: 0;
+  max-width: 60%;
+}
+@media (max-width: 900px) {
+  .chat-toolbar .chat-model-info > .chat-activity {
+    flex: 1 1 220px;
+    width: auto;
+    min-width: 180px;
+    max-width: 280px;
+  }
+}
+@media (max-width: 720px) {
+  .chat-toolbar {
+    flex-wrap: wrap;
+  }
+  .chat-toolbar .chat-model-info {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .chat-toolbar .chat-model-info > .chat-activity {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+}
