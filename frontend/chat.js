@@ -107,10 +107,10 @@
       });
       modeSwitch.append(option);
     }
-    modeBlock.append(modeSwitch, modeSelect, projectSelect);
     const projectSelect = document.createElement('select');
     projectSelect.id = 'chat-project-context';
     projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
+    modeBlock.append(modeSwitch, modeSelect, projectSelect);
     const modelSelect = document.createElement('select');
     modelSelect.id = 'chat-agent';
     modelSelect.setAttribute('aria-label', 'Выбрать агента');
