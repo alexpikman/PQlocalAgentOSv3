@@ -1,7 +1,7 @@
 name: Chat event runtime CI
 on:
   push:
-    branches: [feature/chat-event-runtime-v1]
+    branches: [main]
   pull_request:
     branches: [main]
 jobs:
@@ -16,3 +16,5 @@ jobs:
         run: python -m compileall -q server.py agent_tools.py chat tests
       - name: Conversation store tests
         run: python -m unittest tests.test_conversation_store -v
+      - name: Server contract tests
+        run: python -m unittest tests.test_server -v
