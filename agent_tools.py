@@ -185,7 +185,7 @@ def _execute_ssh(connection_id: str, command: str, working_dir: str = '') -> dic
     port = int(connection.get('port',22))
     key_path = str(connection.get('key_path','')).strip()
     working_dir = str(working_dir or connection.get('working_dir') or connection.get('path') or '').strip()
-    if working_dir and (len(working_dir) > 1000 or '\\x00' in working_dir):
+    if working_dir and (len(working_dir) > 1000 or '\x00' in working_dir):
         raise ValueError('Некорректный working_dir для SSH.')
     if not host or not username or not (1 <= port <= 65535):
         raise ValueError('У SSH-подключения не заполнены host, username или корректный port.')
@@ -263,7 +263,7 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             if not isinstance(command,str) or not command.strip() or len(command)>1000:
                 return {'error':'Укажите команду тестирования длиной от 1 до 1000 символов.'}
             # No shell: run_tests is intentionally narrower than run_command.
-            if any(char in command for char in (';', '|', '&', '>', '<', '\\n', '\\r', '\\x00')):
+            if any(char in command for char in (';', '|', '&', '>', '<', '\n', '\r', '\x00')):
                 return {'error':'run_tests принимает только одну команду без shell-операторов.'}
             try:
                 argv=shlex.split(command, posix=(os.name!='nt'))
@@ -293,7 +293,7 @@ def execute_tool(name: str, args: dict[str, Any], agent: dict[str, Any], permiss
             except subprocess.TimeoutExpired as exc:
                 stdout=exc.stdout.decode('utf-8','replace') if isinstance(exc.stdout,bytes) else str(exc.stdout or '')
                 stderr=exc.stderr.decode('utf-8','replace') if isinstance(exc.stderr,bytes) else str(exc.stderr or '')
-                return {'cwd':str(cwd),'command':command,'stdout':stdout[-60000:],'stderr':(stderr+'\\nТесты остановлены по тайм-ауту 120 секунд.')[-30000:],'exit_code':124}
+                return {'cwd':str(cwd),'command':command,'stdout':stdout[-60000:],'stderr':(stderr+'\nТесты остановлены по тайм-ауту 120 секунд.')[-30000:],'exit_code':124}
         if name=='run_command':
             command=args.get('command')
             if not isinstance(command,str) or not command.strip() or len(command)>4000: return {'error':'Укажите команду длиной от 1 до 4000 символов.'}
