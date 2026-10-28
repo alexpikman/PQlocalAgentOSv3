@@ -50,6 +50,22 @@ class TestConversationStore(unittest.TestCase):
         self.assertEqual([e["sequence"] for e in restarted.read_all(cid)],[1])
         self.assertTrue(path.read_bytes().endswith(b"\n"))
 
+    def test_verification_gate(self):
+        cid=self.store.create_conversation()
+        task="task_1"
+        self.assertFalse(self.store.has_recent_verification(cid,task))
+        self.store.append_event(cid,"verification",{"checks":[{"name":"tests","status":"passed"}],"verified":True},task_id=task)
+        self.assertTrue(self.store.has_recent_verification(cid,task))
+        self.store.append_event(cid,"turn_completed",{"status":"completed"},task_id=task)
+        self.assertFalse(self.store.has_recent_verification(cid,task))
+
+    def test_verification_is_scoped_to_task_and_false_result_blocks_gate(self):
+        cid=self.store.create_conversation()
+        self.store.append_event(cid,"verification",{"verified":True},task_id="task_a")
+        self.assertFalse(self.store.has_recent_verification(cid,"task_b"))
+        self.store.append_event(cid,"verification",{"verified":False},task_id="task_a")
+        self.assertFalse(self.store.has_recent_verification(cid,"task_a"))
+
     def test_approval_lifecycle(self):
         cid=self.store.create_conversation()
         aid=self.store.create_approval(cid,"task_x","call_x","write_file",{"path":"a"},"Нужно разрешение")
