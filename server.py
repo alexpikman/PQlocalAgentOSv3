@@ -3014,7 +3014,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if cid in _CHAT_ACTIVE: return self.send_json(409, {'error':'В этом диалоге уже выполняется задача'})
                 cancel_event = threading.Event()
                 _CHAT_ACTIVE[cid] = {'cancel_event':cancel_event,'command_id':command_id}
-                accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'status':'queued'}
+                task_id = 'task_' + uuid.uuid4().hex
+                accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'task_id':task_id,'status':'queued'}
                 _CHAT_COMMANDS[command_key] = accepted
             try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id)
             except Exception as exc:
@@ -3022,7 +3023,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {'error':str(exc)[:300]})
             def worker():
                 try:
-                    result = runtime.run_turn(cid,text_value.strip(),cancel_event,command_id)
+                    result = runtime.run_turn(cid,text_value.strip(),cancel_event,command_id,task_id=task_id)
                     with _CHAT_ACTIVE_LOCK: _CHAT_COMMANDS[(cid,command_id)] = {'accepted':True,'conversation_id':cid,'command_id':command_id,**result}
                     while len(_CHAT_COMMANDS) > 2000: _CHAT_COMMANDS.pop(next(iter(_CHAT_COMMANDS)))
                 finally:
