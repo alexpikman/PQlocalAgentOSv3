@@ -8,7 +8,7 @@ import audit_checks
 from chat.conversation_store import ConversationStore
 from chat.chat_events import EventHub
 from chat.provider_adapter import OllamaAdapter
-from chat.agent_runtime import AgentRuntime
+from chat.agent_runtime import AgentRuntime, _redact as _chat_redact
 
 try:
     from llama_cpp import Llama
@@ -2988,14 +2988,15 @@ class Handler(SimpleHTTPRequestHandler):
             cid = str(data.get('conversation_id') or '').strip()
             messages = data.get('messages')
             if not isinstance(messages,list) or len(messages)>200: return self.send_json(400, {'error':'Ожидается список до 200 сообщений'})
+            if sum(len(str(x.get('content','')).encode('utf-8')) for x in messages if isinstance(x,dict)) > 2000000: return self.send_json(413, {'error':'Суммарный размер импортируемой истории превышает 2 МБ'})
             try:
                 if CHAT_STORE.read_all(cid): return self.send_json(409, {'error':'В диалоге уже есть события; импорт запрещён'})
                 for item in messages:
                     if not isinstance(item,dict) or item.get('role') not in ('user','assistant') or not isinstance(item.get('content'),str): continue
                     if item['role']=='user':
-                        CHAT_STORE.append_event(cid,'user_message',{'text':item['content'][:100000],'legacy_import':True})
+                        CHAT_STORE.append_event(cid,'user_message',{'text':_chat_redact(item['content'][:100000]),'legacy_import':True})
                     else:
-                        CHAT_STORE.append_event(cid,'assistant_message',{'content':item['content'][:100000],'legacy_import':True,'tool_calls':[]},message_id='msg_'+uuid.uuid4().hex)
+                        CHAT_STORE.append_event(cid,'assistant_message',{'content':_chat_redact(item['content'][:100000]),'legacy_import':True,'tool_calls':[]},message_id='msg_'+uuid.uuid4().hex)
                 return self.send_json(200, {'ok':True,'imported':len(messages)})
             except Exception as exc: return self.send_json(400, {'error':str(exc)[:240]})
         if path == '/api/chat/send':
