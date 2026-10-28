@@ -606,6 +606,13 @@
     return transport;
   }
 
+  async function restoreEventConversation() {
+    const conversation = activeConversation();
+    if (!conversation?.serverConversationId) return;
+    try { await setupEventTransport(conversation); }
+    catch (error) { showNotice('Не удалось восстановить историю событий: ' + error.message, 'warning'); }
+  }
+
   async function sendMessage() {
     const content = elements.input.value.trim();
     if (!content || state.sending || !state.agent) return;
