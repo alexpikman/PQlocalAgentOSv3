@@ -14,8 +14,10 @@ from chat.provider_adapter import ProviderChunk
 class FakeProvider:
     def __init__(self, responses):
         self.responses = list(responses)
+        self.calls = []
 
     def stream_chat(self, model, messages, tools=None, should_cancel=None):
+        self.calls.append({"model": model, "messages": [dict(message) for message in messages], "tools": tools})
         response = self.responses.pop(0)
         yield from response
 
@@ -175,6 +177,68 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
                                 task_id=task, tool_call_id="c1")
         self.assertFalse(self.store.has_side_effects_in_turn(cid, task))
 
+
+
+    def test_structured_message_json_is_emitted_as_plain_text(self):
+        provider = FakeProvider([
+            [ProviderChunk("text", '{"type":"message","text":"Привет! Как я могу помочь вам сегодня?"}'), ProviderChunk("done")]
+        ])
+        runtime = AgentRuntime(self.store, EventHub(), provider, lambda name, args: {},
+                               {"model": "test-model", "tools": []})
+
+        result = runtime.run_turn(self.cid, "Привет", threading.Event(), "cmd_json_message", "task_json_message")
+
+        events = [event for event in self.store.read_all(self.cid) if event.get("task_id") == "task_json_message"]
+        assistant = next(event for event in events if event["type"] == "assistant_message")
+        self.assertEqual(assistant["payload"]["content"], "Привет! Как я могу помочь вам сегодня?")
+        self.assertNotIn('{"type":"message"', assistant["payload"]["content"])
+        self.assertEqual(result["status"], "completed")
+
+    def test_json_tool_call_is_executed_and_returned_as_tool_result(self):
+        provider = FakeProvider([
+            [ProviderChunk("text", '{"name":"list_functions","parameters":{}}'), ProviderChunk("done")],
+            [ProviderChunk("text", "Я получил список доступных функций."), ProviderChunk("done")],
+        ])
+        runtime = AgentRuntime(
+            self.store, EventHub(), provider,
+            lambda name, args: {"items": ["read_file", "list_files"]},
+            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "list_functions"}}]},
+        )
+
+        result = runtime.run_turn(self.cid, "Покажи функции", threading.Event(), "cmd_json_tool", "task_json_tool")
+
+        events = [event for event in self.store.read_all(self.cid) if event.get("task_id") == "task_json_tool"]
+        tool_call = next(event for event in events if event["type"] == "tool_call")
+        tool_result = next(event for event in events if event["type"] == "tool_result")
+        self.assertEqual(tool_call["payload"]["name"], "list_functions")
+        self.assertEqual(tool_call["payload"]["arguments"], {})
+        self.assertEqual(tool_result["payload"]["status"], "completed")
+        self.assertEqual(result["status"], "completed")
+
+    def test_tool_error_is_returned_to_model_for_recovery(self):
+        provider = FakeProvider([
+            [ProviderChunk("tool_calls", tool_calls=[{
+                "id": "call_read",
+                "function": {"name": "read_file", "arguments": {"path": "missing.txt"}},
+            }]), ProviderChunk("done")],
+            [ProviderChunk("text", "Я не смог прочитать файл: указанный путь неверный."), ProviderChunk("done")],
+        ])
+        runtime = AgentRuntime(
+            self.store, EventHub(), provider,
+            lambda name, args: {"error": "Файл не найден."},
+            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "read_file"}}]},
+        )
+
+        result = runtime.run_turn(self.cid, "Прочитай файл", threading.Event(), "cmd_tool_error", "task_tool_error")
+
+        tool_messages = [message for message in provider.calls[1]["messages"] if message.get("role") == "tool"]
+        self.assertTrue(tool_messages)
+        self.assertIn("Файл не найден", tool_messages[-1]["content"])
+        system_messages = [message for message in provider.calls[1]["messages"] if message.get("role") == "system"]
+        self.assertTrue(any("не обвиняй пользователя" in message["content"] for message in system_messages))
+        events = [event for event in self.store.read_all(self.cid) if event.get("task_id") == "task_tool_error"]
+        self.assertEqual(next(event for event in events if event["type"] == "tool_result")["payload"]["status"], "error")
+        self.assertEqual(result["status"], "completed")
 
 if __name__ == "__main__":
     unittest.main()
