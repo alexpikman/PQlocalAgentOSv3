@@ -42,12 +42,12 @@ class AgentRuntime:
                                  "content":str(p.get("result",p.get("message",p.get("error","Tool execution failed"))) )})
         return messages
 
-    def run_turn(self, conversation_id: str, user_text: str, cancel_event: threading.Event, command_id: str) -> dict:
+    def run_turn(self, conversation_id: str, user_text: str, cancel_event: threading.Event, command_id: str, task_id: str | None = None) -> dict:
         if not isinstance(command_id, str) or not command_id.strip(): raise ValueError("command_id обязателен")
         with self._command_lock:
             if command_id in self._processed_commands: return dict(self._processed_commands[command_id])
             self._processed_commands[command_id] = {"status":"processing"}
-        task_id = "task_" + uuid.uuid4().hex
+        task_id = task_id or ("task_" + uuid.uuid4().hex)
         result: dict[str, Any] = {"task_id":task_id,"status":"failed"}
         try:
             with self._active_lock:
