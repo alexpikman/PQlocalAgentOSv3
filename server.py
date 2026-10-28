@@ -3008,21 +3008,23 @@ class Handler(SimpleHTTPRequestHandler):
             try: CHAT_STORE.get_meta(cid)
             except Exception as exc: return self.send_json(400, {'error':'Диалог не найден: '+str(exc)[:180]})
             with _CHAT_ACTIVE_LOCK:
-                known = _CHAT_COMMANDS.get(command_id)
+                command_key = (cid, command_id)
+                known = _CHAT_COMMANDS.get(command_key)
                 if known: return self.send_json(202, dict(known))
                 if cid in _CHAT_ACTIVE: return self.send_json(409, {'error':'В этом диалоге уже выполняется задача'})
                 cancel_event = threading.Event()
                 _CHAT_ACTIVE[cid] = {'cancel_event':cancel_event,'command_id':command_id}
                 accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'status':'queued'}
-                _CHAT_COMMANDS[command_id] = accepted
+                _CHAT_COMMANDS[command_key] = accepted
             try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id)
             except Exception as exc:
-                with _CHAT_ACTIVE_LOCK: _CHAT_ACTIVE.pop(cid,None); _CHAT_COMMANDS.pop(command_id,None)
+                with _CHAT_ACTIVE_LOCK: _CHAT_ACTIVE.pop(cid,None); _CHAT_COMMANDS.pop((cid,command_id),None)
                 return self.send_json(400, {'error':str(exc)[:300]})
             def worker():
                 try:
                     result = runtime.run_turn(cid,text_value.strip(),cancel_event,command_id)
-                    with _CHAT_ACTIVE_LOCK: _CHAT_COMMANDS[command_id] = {'accepted':True,'conversation_id':cid,'command_id':command_id,**result}
+                    with _CHAT_ACTIVE_LOCK: _CHAT_COMMANDS[(cid,command_id)] = {'accepted':True,'conversation_id':cid,'command_id':command_id,**result}
+                    while len(_CHAT_COMMANDS) > 2000: _CHAT_COMMANDS.pop(next(iter(_CHAT_COMMANDS)))
                 finally:
                     with _CHAT_ACTIVE_LOCK:
                         active = _CHAT_ACTIVE.get(cid)
