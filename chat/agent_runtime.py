@@ -120,12 +120,26 @@ class AgentRuntime:
                     self._emit(conversation_id,"turn_completed",{"status":"failed"},task_id=task_id)
                     result={"task_id":task_id,"status":"failed"}; break
                 if not calls:
-                    if not self.store.has_recent_verification(conversation_id, task_id):
-                        self._emit(conversation_id,"turn_state",{"state":"failed","reason":"verification_required"},task_id=task_id)
-                        self._emit(conversation_id,"error",{"code":"verification_required","message":"Задача не может быть завершена без успешного verification-события. Запустите тесты через run_tests и проверьте результат."},task_id=task_id)
+                    final_text = full_text.strip()
+                    has_side_effects = self.store.has_side_effects_in_turn(conversation_id, task_id)
+                    has_claim = self._text_has_completion_claim(final_text)
+                    requires_verification = has_side_effects or has_claim
+
+                    if requires_verification and not self.store.has_recent_verification(conversation_id, task_id):
+                        reason = (
+                            "verification_required: "
+                            + ("в ходе были изменения системы; " if has_side_effects else "")
+                            + ("в ответе есть заявление о завершении; " if has_claim else "")
+                            + "запусти run_tests или подтверди результат."
+                        )
+                        self._emit(conversation_id, "error",
+                                   {"message": reason, "code": "verification_required"},
+                                   task_id=task_id)
                         result={"task_id":task_id,"status":"failed","reason":"verification_required"}; break
-                    self._emit(conversation_id,"turn_completed",{"status":"completed","steps":step+1},task_id=task_id)
-                    result={"task_id":task_id,"status":"completed"}; break
+
+                    kind = "verified" if requires_verification else "informational"
+                    self._emit(conversation_id,"turn_completed",{"status":"success","kind":kind},task_id=task_id)
+                    result={"task_id":task_id,"status":"success"}; break
                 stop=False
                 for call in calls:
                     fn=call["function"]; name=fn["name"]; args=fn["arguments"]; call_id=call["id"]
@@ -196,3 +210,18 @@ class AgentRuntime:
             with self._active_lock: self._active_tasks.pop(task_id,None)
             with self._command_lock: self._processed_commands[command_id]=dict(result)
         return result
+
+    _CLAIM_RE = None
+
+    @classmethod
+    def _text_has_completion_claim(cls, text: str) -> bool:
+        if not text:
+            return False
+        if cls._CLAIM_RE is None:
+            import re as _re
+            cls._CLAIM_RE = _re.compile(
+                r"\b(готово|исправлено|удалено|добавлено|объединено|проверено|выполнено|сделано)\b"
+                r"|\b(done|fixed|completed|resolved)\b",
+                _re.IGNORECASE,
+            )
+        return bool(cls._CLAIM_RE.search(text))

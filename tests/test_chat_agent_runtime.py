@@ -139,5 +139,42 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
             )
 
 
+
+    def test_informational_turn_completes_without_verification(self):
+        """Обычный ответ без инструментов и без claim — turn_completed, kind=informational."""
+        cid = self.store.create_conversation()
+        task = "task_info"
+        self.store.append_event(cid, "user_message", {"text": "привет"}, task_id=task)
+        self.store.append_event(cid, "assistant_message",
+                                {"content": "Привет! Я ассистент."}, task_id=task)
+        self.assertFalse(self.store.has_side_effects_in_turn(cid, task))
+        self.store.append_event(cid, "turn_completed",
+                                {"status": "success", "kind": "informational"}, task_id=task)
+        events = self.store.read_all(cid)
+        completed = [e for e in events if e["type"] == "turn_completed"]
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["payload"]["kind"], "informational")
+
+    def test_side_effects_require_verification(self):
+        """tool_call write_file без run_tests — has_side_effects_in_turn=True."""
+        cid = self.store.create_conversation()
+        task = "task_tech"
+        self.store.append_event(cid, "tool_call",
+                                {"tool_call_id": "c1", "name": "write_file",
+                                 "arguments": {"path": "x.txt"}},
+                                task_id=task, tool_call_id="c1")
+        self.assertTrue(self.store.has_side_effects_in_turn(cid, task))
+
+    def test_read_only_tools_do_not_require_verification(self):
+        """read_file не является side effect — verification не требуется."""
+        cid = self.store.create_conversation()
+        task = "task_read"
+        self.store.append_event(cid, "tool_call",
+                                {"tool_call_id": "c1", "name": "read_file",
+                                 "arguments": {"path": "README.md"}},
+                                task_id=task, tool_call_id="c1")
+        self.assertFalse(self.store.has_side_effects_in_turn(cid, task))
+
+
 if __name__ == "__main__":
     unittest.main()

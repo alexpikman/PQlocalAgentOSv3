@@ -154,6 +154,31 @@ class ConversationStore:
 
     def read_all(self, conversation_id: str) -> list[dict]: return self.read_after(conversation_id, 0)
 
+    SIDE_EFFECT_TOOLS = frozenset({
+        "write_file", "delete_file", "move_file",
+        "create_directory", "delete_directory",
+        "run_command", "ssh_execute",
+    })
+
+    def has_side_effects_in_turn(self, conversation_id: str, task_id: str) -> bool:
+        """True, если в текущем ходе был хотя бы один tool_call с побочными эффектами.
+
+        Сканирует журнал в обратном порядке до границы хода.
+        Учитывает tool_call, а не tool_result: если агент запросил
+        модифицирующий инструмент, это сигнал, что он намерен менять
+        состояние, и завершать без verification нельзя.
+        """
+        events = self.read_all(conversation_id)
+        for event in reversed(events):
+            if event.get("task_id") != task_id:
+                continue
+            if event["type"] in ("turn_completed", "turn_cancelled"):
+                break
+            if event["type"] == "tool_call":
+                if event["payload"].get("name") in self.SIDE_EFFECT_TOOLS:
+                    return True
+        return False
+
     def has_recent_verification(self, conversation_id: str, task_id: str) -> bool:
         """Return whether the current task has a latest, still-active successful verification."""
         for event in reversed(self.read_all(conversation_id)):
