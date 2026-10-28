@@ -48,6 +48,13 @@
     </div>
   </div>
 
+  <template id="chat-activity-template">
+    <div id="chat-activity" class="chat-activity" aria-live="polite" hidden>
+      <span class="chat-activity-dot" aria-hidden="true"></span>
+      <span class="chat-activity-label" id="chat-activity-label"></span>
+      <span class="chat-activity-detail" id="chat-activity-detail"></span>
+    </div>
+  </template>
   <div class="toast" id="toast" role="status"></div>
   <script src="/auth.js" defer></script>
   <script src="/domain-modal.js" defer></script>

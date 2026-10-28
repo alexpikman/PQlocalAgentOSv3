@@ -47,7 +47,11 @@
     const taskStatus = createElement('span', 'chat-task-status', ''); taskStatus.id = 'chat-task-status'; taskStatus.setAttribute('role', 'status');
     const availability = createElement('span', 'chat-model-availability is-unavailable');
     availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
-    modelInfo.append(label, modelAvatar, modelName, taskStatus, availability);
+    const activityTemplate = document.getElementById('chat-activity-template');
+    const activity = activityTemplate?.content?.firstElementChild?.cloneNode(true);
+    modelInfo.append(label, modelAvatar, modelName, taskStatus);
+    if (activity) modelInfo.append(activity);
+    modelInfo.append(availability);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modelSelect = document.createElement('select');
@@ -585,6 +589,8 @@
     elements.messages.replaceChildren();
     state.messages = [];
     state.renderer = new ChatRenderer(elements.messages);
+    const activityEl = document.getElementById('chat-activity');
+    if (activityEl) { activityEl.hidden = true; activityEl.dataset.state = ''; }
     const transport = new ChatTransport({
       conversationId: conversation.serverConversationId,
       onEvent: event => handleChatEvent(event, false),

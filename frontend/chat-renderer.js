@@ -23,6 +23,7 @@ export class ChatRenderer {
   applyMany(events){for(const event of events||[])this.apply(event);}
   apply(event){
     if(!event||typeof event!=='object'||!event.event_id||this.seen.has(event.event_id))return;
+    this.updateActivity(event);
     this.seen.add(event.event_id);const p=event.payload||{};
     switch(event.type){
       case 'user_message':this._message('user',p.text||'',event);break;
@@ -85,4 +86,80 @@ export class ChatRenderer {
   }
   _status(text){if(this.status)this.status.textContent=text;}
   _scroll(){this.container.scrollTop=this.container.scrollHeight;}
+  updateActivity(event) {
+    const el = document.getElementById("chat-activity");
+    if (!el) return;
+    const label = document.getElementById("chat-activity-label");
+    const detail = document.getElementById("chat-activity-detail");
+    if (!label || !detail) return;
+
+    const type = event.type;
+    const payload = event.payload || {};
+
+    const show = (state, text, detailText) => {
+      el.hidden = false;
+      el.dataset.state = state;
+      label.textContent = text;
+      detail.textContent = detailText || "";
+    };
+    const hide = () => {
+      el.hidden = true;
+      el.dataset.state = "";
+      label.textContent = "";
+      detail.textContent = "";
+    };
+
+    switch (type) {
+      case "turn_state": {
+        const s = payload.state || payload.status || "";
+        if (s === "thinking") show("thinking", "Думает…", "");
+        else if (s === "streaming") show("streaming", "Печатает…", "");
+        else if (s === "tool_running") show("tool", "Выполняет инструмент…", "");
+        else if (s === "waiting_approval") show("approval", "Ждёт подтверждения", "");
+        else if (s === "idle") hide();
+        break;
+      }
+      case "assistant_delta":
+        show("streaming", "Печатает…", "");
+        break;
+      case "tool_call": {
+        const name = payload.name || payload.tool_name || "tool";
+        const args = payload.arguments ? JSON.stringify(payload.arguments).slice(0, 80) : "";
+        show("tool", "Инструмент: " + name, args);
+        break;
+      }
+      case "tool_result": {
+        const status = payload.status || "done";
+        if (status === "denied") show("failed", "Отклонено", "allowed_paths");
+        else show("tool", "Результат получен", "");
+        break;
+      }
+      case "approval_required":
+        show("approval", "Ждёт вашего подтверждения", payload.tool_name || "");
+        break;
+      case "approval_resolved":
+        show("tool", "Подтверждение принято", payload.decision || "");
+        break;
+      case "verification": {
+        const ok = payload.verified;
+        show(ok ? "completed" : "failed", ok ? "Проверено" : "Проверка не пройдена", "");
+        break;
+      }
+      case "turn_completed": {
+        const ok = (payload.status || "success") === "success";
+        show(ok ? "completed" : "failed", ok ? "Готово" : "Не завершено", "");
+        // авто-скрытие через 3 сек
+        setTimeout(() => { if (el.dataset.state === "completed") hide(); }, 3000);
+        break;
+      }
+      case "turn_cancelled":
+        show("failed", "Отменено", "");
+        setTimeout(hide, 3000);
+        break;
+      case "error":
+        show("failed", "Ошибка", payload.message || "");
+        break;
+    }
+  }
+
 }

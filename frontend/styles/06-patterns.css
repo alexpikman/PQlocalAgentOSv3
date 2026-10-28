@@ -238,3 +238,75 @@
 @keyframes page-loading-progress{0%{transform:translateX(-110%)}100%{transform:translateX(360%)}}
 @keyframes page-loading-appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.page-loading,.page-loading-orbit,.page-loading-spark,.page-loading-track span{animation:none}.page-loading-track span{width:70%;margin-left:15%}}
+
+/* Индикатор активности агента в чате */
+.chat-activity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin: 4px 0 8px;
+  border-radius: var(--radius);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+  transition: border-color .25s ease, background .25s ease;
+}
+.chat-activity[hidden] { display: none; }
+
+.chat-activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: chat-activity-pulse 1.6s infinite cubic-bezier(.4, 0, .6, 1);
+  flex-shrink: 0;
+}
+.chat-activity[data-state="tool"] .chat-activity-dot {
+  background: var(--status-running-bg);
+  box-shadow: 0 0 0 0 var(--status-running-bg);
+}
+.chat-activity[data-state="approval"] .chat-activity-dot {
+  background: var(--status-failed-bg);
+  box-shadow: 0 0 0 0 var(--status-failed-bg);
+  animation-duration: 1s;
+}
+.chat-activity[data-state="completed"] .chat-activity-dot {
+  background: var(--status-completed-bg);
+  animation: none;
+}
+.chat-activity[data-state="completed"] {
+  border-color: var(--status-completed-bg);
+  background: color-mix(in srgb, var(--status-completed-bg) 15%, var(--panel2));
+}
+.chat-activity[data-state="failed"] .chat-activity-dot {
+  background: var(--status-failed-bg);
+  animation: none;
+}
+.chat-activity[data-state="failed"] {
+  border-color: var(--status-failed-bg);
+  background: color-mix(in srgb, var(--status-failed-bg) 15%, var(--panel2));
+}
+
+@keyframes chat-activity-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent); opacity: 1; }
+  70%  { box-shadow: 0 0 0 10px transparent; opacity: .8; }
+  100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
+}
+
+.chat-activity-label {
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.chat-activity-detail {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+}
