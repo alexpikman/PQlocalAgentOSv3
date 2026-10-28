@@ -243,6 +243,7 @@
     renderHistory();
     saveWorkspace();
     renderChatWorkspace();
+    void restoreEventConversation();
     elements.input.value = '';
     resizeInput();
   }
@@ -726,6 +727,7 @@
     renderHistory();
     const migratedProjects=[...new Set(state.conversations.map(chat=>chat.projectId).filter(Boolean))];migratedProjects.forEach(projectId=>{const conversation=state.conversations.find(chat=>chat.projectId===projectId);if(conversation)void syncProjectChatMemory(conversation)});
     loadAgents();
+    void restoreEventConversation();
   }
 
   if (window.PQDomainModal?.configure) {
