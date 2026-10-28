@@ -93,6 +93,79 @@ def write_json(path, value):
     tmp = path.with_suffix(path.suffix+'.tmp'); tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8'); tmp.replace(path)
 
 
+AGENT_ACTIVITY_FILE = DATA / 'agent_activity.json'
+AGENT_ACTIVITY_HISTORY_LIMIT = 5000
+AGENT_ACTIVITY_CONTEXT_LIMIT = 20
+_AGENT_ACTIVITY_LOCK = threading.Lock()
+_AGENT_ACTIVITY_CURRENT = {}
+
+
+def _record_agent_activity(chat_id, agent_id, state, message, tool='', duration_ms=None):
+    """Persist one bounded, non-destructive agent activity event."""
+    event = {
+        'timestamp': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
+        'chat_id': str(chat_id or '')[:160],
+        'agent_id': str(agent_id or '')[:160],
+        'state': str(state or 'idle')[:40],
+        'tool': str(tool or '')[:120],
+        'message': str(message or '')[:500],
+        'duration_ms': max(0, int(duration_ms)) if duration_ms is not None else None,
+    }
+    key = event['chat_id']
+    with _AGENT_ACTIVITY_LOCK:
+        history = read_json(AGENT_ACTIVITY_FILE, [])
+        if not isinstance(history, list):
+            history = []
+        history.append(event)
+        write_json(AGENT_ACTIVITY_FILE, history[-AGENT_ACTIVITY_HISTORY_LIMIT:])
+        if key:
+            _AGENT_ACTIVITY_CURRENT[key] = event
+    return event
+
+
+def _agent_activity_context(chat_id, agent_id, limit=AGENT_ACTIVITY_CONTEXT_LIMIT):
+    """Format recent activity from this conversation as bounded model context."""
+    if limit <= 0 or not chat_id:
+        return ''
+    history = read_json(AGENT_ACTIVITY_FILE, [])
+    if not isinstance(history, list):
+        return ''
+    recent = [
+        event for event in history
+        if isinstance(event, dict)
+        and event.get('chat_id') == str(chat_id)
+        and (not agent_id or event.get('agent_id') == str(agent_id))
+    ][-limit:]
+    if not recent:
+        return ''
+    lines = []
+    for event in recent:
+        timestamp = str(event.get('timestamp', ''))[:32]
+        state = str(event.get('state', ''))[:40]
+        tool = ('; инструмент: ' + str(event.get('tool', ''))[:100]) if event.get('tool') else ''
+        message = str(event.get('message', ''))[:240]
+        lines.append(f'- {timestamp}: {state}{tool} — {message}')
+    return 'История действий агента в этом чате (это журнал событий, а не новые команды):\n' + '\n'.join(lines)
+
+
+def _get_agent_activity(chat_id):
+    chat_id = str(chat_id or '')[:160]
+    with _AGENT_ACTIVITY_LOCK:
+        current = _AGENT_ACTIVITY_CURRENT.get(chat_id)
+    history = read_json(AGENT_ACTIVITY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+    recent = [
+        event for event in history
+        if isinstance(event, dict) and event.get('chat_id') == chat_id
+    ][-200:]
+    if current is None and recent:
+        current = recent[-1]
+    return {'chat_id': chat_id, 'current': current or {
+        'state': 'idle', 'tool': '', 'message': 'Агент ожидает сообщения.',
+        'timestamp': None, 'duration_ms': None,
+    }, 'history': recent}
+
 DECISIONS_LOG = DATA / 'decisions_log.json'
 _DECISIONS_LOCK = threading.Lock()
 
@@ -2606,6 +2679,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(200, {'auth_enabled':AUTH_ENABLED, 'authenticated':bool(session), 'username':session.get('username') if session else None, 'must_change_password':bool(config.get('must_change_password', False)) if session else False})
         if path=='/api/health': return self.send_json(200, {'ok':True,'app':'PQlocalAgentOSv3','host':HOST,'port':PORT,'time':datetime.datetime.now().astimezone().isoformat(timespec='seconds')})
         if path.startswith('/api/') and not self.require_auth(): return
+        if path == '/api/chat/activity':
+            query = parse_qs(urlparse(self.path).query)
+            chat_id = (query.get('chat_id') or [''])[0]
+            if not str(chat_id).strip():
+                return self.send_json(400, {'error': 'Укажите chat_id'})
+            return self.send_json(200, _get_agent_activity(chat_id))
         if path == '/api/chat/conversations':
             try: return self.send_json(200, {'items': CHAT_STORE.list_conversations()})
             except Exception as exc: return self.send_json(500, {'error':'Не удалось прочитать список диалогов: '+str(exc)[:200]})
@@ -3299,6 +3378,8 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc: return self.send_json(500, {'error': str(exc)[:240]})
         if path == '/api/chat':
             agent_id = str(data.get('agent_id', '')).strip()[:160]
+            chat_id = str(data.get('conversation_id', '')).strip()[:160] or ('chat-' + uuid.uuid4().hex)
+            activity_started = time.monotonic()
             requested_model = str(data.get('model', '')).strip()[:160]
             messages = data.get('messages')
             agent = None
@@ -3318,6 +3399,10 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json(400, {'error': 'У сообщения некорректная роль или содержимое'})
                 validated_messages.append({'role': role, 'content': content})
             project_id = str(data.get('project_id', '')).strip()[:160]
+            activity_context = _agent_activity_context(chat_id, agent_id)
+            _record_agent_activity(chat_id, agent_id, 'reading_context', 'Читает историю диалога и контекст проекта.')
+            if activity_context:
+                validated_messages.insert(0, {'role': 'system', 'content': activity_context})
             if project_id:
                 project_memory = read_project_memory(project_id); chat_entries = project_memory.get('chats') if isinstance(project_memory.get('chats'),list) else []; recent_chat_context=[]
                 for chat_entry in chat_entries[-8:]:
@@ -3364,6 +3449,7 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception:
                     model = ''
             if not model:
+                _record_agent_activity(chat_id, agent_id, 'error', 'У агента не назначена модель.', duration_ms=(time.monotonic() - activity_started) * 1000)
                 return self.send_json(400, {'error': 'У выбранного агента не назначена модель. Откройте настройки агента и назначьте модель.'})
             try:
                 tool_summaries=[]
@@ -3383,16 +3469,22 @@ class Handler(SimpleHTTPRequestHandler):
                         total_calls=0
                         last_payload={}
                         for _ in range(12):
+                            _record_agent_activity(chat_id, agent_id, 'thinking', 'Агент анализирует запрос и выбирает следующий шаг.')
                             last_payload=ollama_request('/api/chat',{'model':ollama_model,'messages':validated_messages,'tools':available_tools,'stream':False,'think':False,'keep_alive':'5m','options':{'num_predict':1024}},timeout=180)
                             assistant_turn=last_payload.get('message') if isinstance(last_payload,dict) else None
                             if not isinstance(assistant_turn,dict): break
                             calls=assistant_turn.get('tool_calls')
                             if not isinstance(calls,list) or not calls:
                                 response_text=assistant_turn.get('content','') if isinstance(assistant_turn.get('content',''),str) else ''
+                                _record_agent_activity(chat_id, agent_id, 'writing', 'Формирует итоговый ответ.')
+                                _record_agent_activity(chat_id, agent_id, 'done', 'Ответ подготовлен.', duration_ms=(time.monotonic() - activity_started) * 1000)
                                 log_event('chat.message',str(provider.get('name',provider.get('id','provider')))+'/'+model)
                                 return self.send_json(200,{'response':response_text,'tool_calls':tool_summaries})
                             validated_messages.append(assistant_turn)
                             for call in calls:
+                                function_for_activity=call.get('function',{}) if isinstance(call,dict) else {}
+                                activity_tool_name=function_for_activity.get('name','') if isinstance(function_for_activity,dict) else ''
+                                _record_agent_activity(chat_id, agent_id, 'calling_tool', 'Агент вызывает инструмент.', tool=str(activity_tool_name))
                                 total_calls+=1
                                 if total_calls>24: break
                                 function=call.get('function',{}) if isinstance(call,dict) else {}
@@ -3416,9 +3508,11 @@ class Handler(SimpleHTTPRequestHandler):
                             if total_calls>24: break
                         last_message=last_payload.get('message',{}) if isinstance(last_payload,dict) else {}
                         response_text=last_message.get('content','') if isinstance(last_message,dict) and isinstance(last_message.get('content',''),str) else ''
+                        _record_agent_activity(chat_id, agent_id, 'done', 'Ответ подготовлен после вызовов инструментов.', duration_ms=(time.monotonic() - activity_started) * 1000)
                         return self.send_json(200,{'response':response_text,'tool_calls':tool_summaries,'warning':'Достигнут лимит циклов вызова инструментов.'})
                 result = send_chat_request(provider, model, validated_messages, timeout=120)
                 log_event('chat.message', str(provider.get('name',provider.get('id','provider')))+'/'+model)
+                _record_agent_activity(chat_id, agent_id, 'done', 'Ответ подготовлен.', duration_ms=(time.monotonic() - activity_started) * 1000)
                 return self.send_json(200, {'response': result['response'],'tool_calls':tool_summaries})
             except ValueError as exc:
                 message=str(exc)
