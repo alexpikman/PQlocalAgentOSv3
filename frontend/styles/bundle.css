@@ -182,9 +182,9 @@ body:not(.chat-page) .topbar{display:none}
 
 .content{padding:var(--pad);flex:1;min-height:0;max-height:none;max-width:1500px;width:100%;overflow-y:auto;scrollbar-gutter:stable;margin:0 auto;box-sizing:border-box}
 
-.footer{display:flex;justify-content:space-between;padding:16px var(--pad);border-top:1px solid var(--line);font-size:11px;color:var(--muted);letter-spacing:.7px}
 
-.footer i{width:5px;height:5px;margin:0 5px}
+
+
 
 .right-sidebar{width:var(--right-sidebar);position:fixed;inset:0 0 0 auto;background:var(--panel);border-left:1px solid var(--line);padding:23px 14px 15px;display:flex;flex-direction:column;z-index:4;overflow-y:auto;transition:transform .2s ease}
 
@@ -246,17 +246,17 @@ body:not(.chat-page) .topbar{display:none}
 
 
 
-/* Shared shell: fixed status footer and viewport-safe content. */
-.footer{position:fixed;left:var(--left-panel-width, var(--sidebar));right:var(--right-sidebar);bottom:0;z-index:30;display:flex;min-height:42px;align-items:center;margin:0;background:var(--panel);padding:10px var(--pad);box-sizing:border-box}
-.app-shell.left-hidden .footer{left:0}
-.app-shell.right-hidden .footer{right:0}
-.content{padding-bottom:66px}
+
+
+
+
+
 .sidebar{overflow-y:auto}
 .chat-access-caption{padding-top:2px;padding-bottom:12px;color:var(--accent);font-size:10px;letter-spacing:1.1px}
-.main:has(#chat-root){height:100vh;min-height:0;overflow:hidden;padding-bottom:42px;box-sizing:border-box}
+
 .main:has(#chat-root) .content{padding-bottom:12px;max-height:none}
 
-/* Keep page content within the viewport while the status footer stays fixed. */
+
 .main{height:100vh;min-height:0;overflow:hidden}
 .content{flex:1;min-height:0;max-height:none;overflow-y:auto}
 
@@ -266,15 +266,15 @@ body:not(.chat-page) .topbar{display:none}
 /* Collapsible navigation groups; localStorage preserves state across pages. */
 .nav-group{display:block;margin:0 0 8px}.nav-group-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 9px 7px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:9px;font-weight:750;letter-spacing:1.05px;text-align:left;cursor:pointer}.nav-group-toggle:hover{color:var(--text)}.nav-group-chevron{width:13px;height:13px;flex:0 0 13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:transform .16s ease}.nav-group-toggle[aria-expanded="false"] .nav-group-chevron{transform:rotate(-90deg)}.nav-group-items{display:grid;gap:4px}.nav-group-items[hidden]{display:none!important}.nav-group.is-collapsed{margin-bottom:2px}
 
-/* Center footer connection line */
-.footer{align-items:center;justify-content:center;gap:14px;min-height:42px;height:42px;box-sizing:border-box;padding-top:0;padding-bottom:0}
-.footer-product{display:none}
-.footer-statusline{display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;font-size:10px;letter-spacing:.45px}
-.footer-local-first{font-weight:800;color:var(--text);letter-spacing:.8px}
-.footer-separator{color:var(--line-strong,var(--muted));margin:0 2px}
-.footer .connection-dot{display:inline-block;width:7px;height:7px;flex:0 0 7px;border-radius:50%;margin:0;box-shadow:0 0 0 2px color-mix(in srgb,currentColor 12%,transparent)}
-.footer .connection-dot.is-online{background:#22c55e;color:#22c55e}
-.footer .connection-dot.is-offline{background:#ef4444;color:#ef4444}
+
+
+
+
+
+
+
+
+
 
 /* Workspace navigation stays visible and expanded on both desktop and chat pages. */
 .nav-group-fixed .nav-group-label{display:block;cursor:default}
@@ -622,7 +622,7 @@ dialog::backdrop{background:#07070dbd;backdrop-filter:blur(5px)}
 @media(prefers-reduced-motion:reduce){.page-loading,.page-loading-orbit,.page-loading-spark,.page-loading-track span{animation:none}.page-loading-track span{width:70%;margin-left:15%}}
 
 /* Section-specific styling. */
-.status-dot,.local-chip i,.footer i{width:7px;height:7px;border-radius:50%;background:#59d9a4;display:inline-block;box-shadow:0 0 10px #59d9a455}
+.status-dot,.local-chip i{width:7px;height:7px;border-radius:50%;background:#59d9a4;display:inline-block;box-shadow:0 0 10px #59d9a455}
 .slash{color:#555568}
 .grid{display:grid;gap:15px}
 .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:18px}
@@ -1051,12 +1051,12 @@ td{border-color:var(--line)}
 @media(max-width:760px){.domain-row{grid-template-columns:28px 24px minmax(0,1fr)}.domain-row .row-actions{grid-column:3;justify-content:flex-start}.domain-info:after{left:auto;right:-12px;transform:none}}
 
 @media(max-width:720px){
-  .footer{left:0;right:0}
-  .footer{height:42px;min-height:42px;padding:0 10px;box-sizing:border-box}
+
+
 }
 @media(max-width:620px){
-  .footer{height:42px;min-height:42px;align-items:center;flex-direction:row;gap:6px;padding:0 10px}
-  .footer-statusline{flex-wrap:wrap;justify-content:center;white-space:normal;line-height:1.1}
+
+
 }
 
 
@@ -1927,18 +1927,18 @@ td{border-color:var(--line)}
 .chat-header-model-block{display:none!important}
 .chat-model-info::after{display:none!important;content:none!important}
 .chat-header-mode-block .chat-mode-switch{width:108px!important;min-width:108px!important;max-width:108px!important}
-.indicator-bar{
+
   display:flex;align-items:center;justify-content:flex-start;gap:10px;
   width:100%;min-height:24px;box-sizing:border-box;padding:0 2px 2px;
 }
-.indicator-bar .chat-header-indicator{
+
   display:inline-grid;place-items:center;flex:0 0 22px;
   width:22px;height:22px;padding:0;border:0;border-radius:5px;
   background:transparent;color:#aeb5bf;opacity:.48;
 }
-.indicator-bar .chat-header-indicator.is-idle{opacity:.48}
-.indicator-bar .chat-header-indicator.is-active{opacity:1}
-.indicator-bar .chat-header-indicator img{display:block;width:18px;height:18px;object-fit:contain}
+
+
+
 .chat-composer{gap:6px}
 @media(max-width:1250px){
   .chat-header-zones{grid-template-columns:minmax(0,1fr) minmax(0,.65fr)}
