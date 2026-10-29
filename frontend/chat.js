@@ -59,7 +59,7 @@
   }
 
   function buildUI() {
-    const root = createElement('section', 'panel chat-layout');
+    const root = createElement('section', 'panel chat-layout chat-page-layout');
     root.id = 'chat-root';
 
     const toolbar = createElement('header', 'chat-toolbar chat-header-zones');
