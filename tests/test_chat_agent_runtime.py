@@ -79,7 +79,7 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         result = runtime.run_turn(self.cid, "Измени и проверь проект", threading.Event(), "cmd_verified", "task_verified")
 
         events = [event for event in self.store.read_all(self.cid) if event.get("task_id") == "task_verified"]
-        verification = next(event for event in events if event["type"] == "verification")
+        verification = next(event for event in reversed(events) if event["type"] == "verification")
         completion = next(event for event in events if event["type"] == "turn_completed")
         self.assertTrue(verification["payload"]["verified"])
         self.assertLess(verification["sequence"], completion["sequence"])
