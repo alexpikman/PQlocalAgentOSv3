@@ -85,6 +85,7 @@ def _chat_runtime_for(conversation_id, agent_id, project_id='', mode='chat'):
     runtime = AgentRuntime(CHAT_STORE, CHAT_HUB, CHAT_PROVIDER, execute,
         {'model':model,'system_prompt':system,'tools':schemas,
          'allowed_paths': [project.get("path")] if project and project.get("path") else [],
+         'mode': mode,
          'approval_required_tools':['write_file','move_file','delete_file','create_directory','delete_directory','run_command','ssh_execute']}, max_steps=12)
     with _CHAT_RUNTIME_LOCK:
         _CHAT_RUNTIMES[conversation_id] = ((agent_id, model, project_id, mode), runtime)
