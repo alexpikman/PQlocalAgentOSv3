@@ -986,7 +986,16 @@ def save_project_logo(project_id, value, current_logo=''):
 
 def ollama_request(path, payload=None, timeout=8):
     req=urllib.request.Request(OLLAMA_URL+path,data=json.dumps(payload).encode() if payload is not None else None,method='POST' if payload is not None else 'GET',headers={'Content-Type':'application/json'})
-    with urllib.request.urlopen(req,timeout=timeout) as response: return json.loads(response.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as response:
+            # Проверка HTTP статус кода (4xx/5xx)
+            status_code = response.getcode()
+            if status_code >= 400:
+                error_data = json.loads(response.read().decode('utf-8', errors='ignore'))
+                raise ValueError('Ollama API ошибка [%d]: %s' % (status_code, error_data.get('message', 'Неизвестная ошибка Ollama')))
+            return json.loads(response.read().decode('utf-8'))
+    except Exception as exc:
+        raise ValueError('Ollama API ошибка: ' + str(exc)[:500]) from exc
 
 def resolve_ollama_model(model, timeout=4):
     """Resolve a configured Ollama model name against installed tags."""
@@ -1113,7 +1122,7 @@ def provider_for_model(model, preferred_id=''):
     return next((p for p in providers if p.get('id')=='ollama'), {'id':'ollama','name':'Ollama','kind':'local','base_url':OLLAMA_URL,'format':'ollama'})
 
 
-def _cloud_provider_error(exc):
+def _cloud_provider_error(exc, format=None):
     """Translate common provider HTTP failures into actionable Russian messages."""
     code=getattr(exc,'code',None)
     try:
@@ -1127,6 +1136,8 @@ def _cloud_provider_error(exc):
         return 'Ошибка облачного провайдера: неверный API-ключ или нет доступа (HTTP '+str(code)+').'
     if code==429:
         return 'Ошибка облачного провайдера: превышен лимит запросов или недостаточно средств (HTTP 429).'
+    if code==404 and format in ('gguf', 'proprietary'):
+        return 'Ошибка формата модели: неподдерживаемый формат (например, gguf) для этого провайдера.'
     if code==404:
         return 'Ошибка провайдера: модель или endpoint не найдены (HTTP 404).'
     return 'Ошибка провайдера (HTTP '+str(code or '?')+'): '+(detail or str(getattr(exc,'reason','неизвестная ошибка')))[:220]
@@ -1234,12 +1245,14 @@ def send_chat_request(provider, model, messages, timeout=120, max_tokens=2048):
         endpoint=base+'/chat/completions'
     else:
         raise ValueError('Неподдерживаемый формат провайдера: '+fmt)
+    
+    # Send request for all formats (ollama, openai, anthropic, gemini, gguf)
     try:
         req=urllib.request.Request(endpoint,data=json.dumps(body,ensure_ascii=False).encode('utf-8'),headers=headers,method='POST')
         with urllib.request.urlopen(req,timeout=timeout) as response:
             raw=json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as exc:
-        raise ValueError(_cloud_provider_error(exc)) from exc
+        raise ValueError(_cloud_provider_error(exc, fmt)) from exc
     except (TimeoutError, urllib.error.URLError, ConnectionError, OSError) as exc:
         raise ValueError('Провайдер недоступен: '+str(exc)[:180]) from exc
     if fmt=='anthropic':
@@ -1514,7 +1527,11 @@ def execute_module_graph(data):
                 model = resolve_ollama_model(model)
             except ValueError as exc:
                 raise ValueError('Модуль «' + str(module.get('name',module_id)) + '»: ' + str(exc)) from exc
-            result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':min(max(int(runtime.get('max_tokens',1024)),64),4096)}},timeout=300)
+            try:
+                result=ollama_request('/api/generate',{'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':min(max(int(runtime.get('max_tokens',1024)),64),4096)}},timeout=300)
+                output=result.get('response','')
+            except Exception as exc:
+                raise ValueError('Ошибка взаимодействия с Ollama: ' + str(exc)[:500]) from exc
             output=result.get('response','')
         else: output=incoming_value
         values[module_id]=output

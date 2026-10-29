@@ -62,6 +62,9 @@
     const root = createElement('section', 'panel chat-layout chat-page-layout');
     root.id = 'chat-root';
 
+    // Check currentMode state - default to 'chat' if not set
+    const currentMode = state.currentMode || 'chat';
+
     const toolbar = createElement('header', 'chat-toolbar chat-header-zones');
     const modelInfo = createElement('div', 'chat-model-info');
     const modelName = createElement('b', 'chat-model-name', 'Загрузка агентов…');
@@ -194,7 +197,11 @@
     if (firstUser && (!conversation.title || conversation.title === 'Новый чат')) {
       conversation.title = firstUser.content.trim().replace(/\s+/g, ' ').split(' ').slice(0,3).join(' ').slice(0,48) || 'Новый чат';
     }
-    saveWorkspace();renderChatWorkspace();syncProjectChatMemory(conversation);
+    saveWorkspace();
+    // Derive mode from conversation context (has projectId and mode set)
+    const getModeFromContext = () => conversation?.mode || (conversation?.projectId ? 'project' : 'chat');
+    renderChatWorkspace(getModeFromContext());
+    syncProjectChatMemory(conversation);
   }
 
   function makeId(prefix) {
@@ -246,6 +253,7 @@
     const modal=document.getElementById('chat-project-modal');if(!modal||modal.dataset.bound==='true')return;modal.dataset.bound='true';
     modal.querySelectorAll('[data-chat-project-close]').forEach(b=>b.onclick=()=>{modal.hidden=true});
     document.getElementById('chat-project-submit').onclick=async()=>{
+    renderChatWorkspace();saveWorkspace();
       const select=document.getElementById('chat-project-select'),nameInput=document.getElementById('chat-project-name'),pathInput=document.getElementById('chat-project-path'),descInput=document.getElementById('chat-project-description'),status=document.getElementById('chat-project-status'),submit=document.getElementById('chat-project-submit'),name=nameInput.value.trim();
       status.hidden=true;status.textContent='';submit.disabled=true;
       try{let project;if(name){project=await chatApi('/projects',{method:'POST',body:JSON.stringify({name:name.slice(0,120),path:pathInput.value.trim(),description:descInput.value.trim()})});state.systemProjects=[project,...(state.systemProjects||[]).filter(p=>p.id!==project.id)]}else if(select.value){project=(state.systemProjects||[]).find(p=>p.id===select.value);if(!project)throw new Error('Выбранный проект больше не найден. Откройте список заново.')}else throw new Error('Выберите проект или введите название');
@@ -273,7 +281,9 @@
     state.messages = [];
     renderHistory();
     saveWorkspace();
-    renderChatWorkspace();
+    // Derive mode from conversation context (has projectId and mode set)
+    const getModeFromContext = () => conversation?.mode || (conversation?.projectId ? 'project' : 'chat');
+    renderChatWorkspace(getModeFromContext());
     syncProjectChatMemory(conversation);
     elements.input.value = '';
     resizeInput();
@@ -298,7 +308,14 @@
     }
     renderHistory();
     saveWorkspace();
-    renderChatWorkspace();
+    // Derive mode from state context - use project mode if there's an active project, else chat mode
+    const getModeFromState = () => {
+      if (state.activeProjectId) {
+        return state.conversations.find(c => c.projectId === state.activeProjectId)?.mode || 'chat';
+      }
+      return 'chat';
+    };
+    renderChatWorkspace(getModeFromState());
     void restoreEventConversation();
     elements.input.value = '';
     resizeInput();
@@ -326,7 +343,14 @@
       else createConversation(state.activeProjectId);
     }
     saveWorkspace();
-    renderChatWorkspace();
+    // Derive mode based on active project context or default to chat
+    const getModeFromState = () => {
+      if (state.activeProjectId) {
+        return state.conversations.find(c => c.projectId === state.activeProjectId)?.mode || 'chat';
+      }
+      return 'chat';
+    };
+    renderChatWorkspace(getModeFromState());
   }
 
   function syncModeSwitch() {
@@ -350,7 +374,25 @@
     syncModeSwitch();
   }
 
-  function renderChatWorkspace() {
+  /**
+   * Helper function to determine the current mode based on active context
+   */
+  function getCurrentMode() {
+    // If there's an active project, use project mode
+    if (state.activeProjectId) {
+      // Check if any conversation has this projectId as a 'project' mode
+      return state.conversations.find(c => c.projectId === state.activeProjectId && c.mode === 'project')?.mode || 'chat';
+    }
+    // Default to chat mode when no project is active
+    return 'chat';
+  }
+
+  /**
+   * Determines current mode based on active context:
+   * - If state.activeProjectId exists, use project mode (derived from conversations with matching projectId)
+   * - Otherwise default to chat mode
+   */
+  function renderChatWorkspace(currentMode = getCurrentMode()) {
     if (!elements.projectsList || !elements.historyList) return;
     syncChatModeControls();
     elements.projectsList.replaceChildren();
@@ -391,7 +433,7 @@
       row.append(label, add, remove);
       elements.projectsList.append(row);
       if (project.expanded) {
-        const nested = createElement('div', 'sidebar-chat-project-chats');
+        const nested = createElement('div', currentMode === 'project' ? 'sidebar-chat-project-chats chat-list-vertical' : 'sidebar-chat-project-chats');
         state.conversations.filter(chat => chat.projectId === project.id).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')).forEach(chat => nested.append(makeConversationRow(chat)));
         if (!nested.childElementCount) nested.append(createElement('div', 'sidebar-chat-empty', 'Пока нет чатов'));
         elements.projectsList.append(nested);
