@@ -1764,16 +1764,6 @@ td{border-color:var(--line)}
 .chat-header-agent-block .chat-agent-identity,.chat-header-agent-block .chat-model-name,.chat-header-model-name{min-width:0!important;max-width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;overflow-wrap:normal!important;flex-shrink:0!important}
 .chat-header-mode-block .chat-mode-switch{width:108px!important;min-width:108px!important;max-width:108px!important;flex:0 0 30px!important}
 .chat-header-mode-block #chat-project-context{width:112px!important;min-width:112px!important;max-width:112px!important;flex:0 0 112px!important}
-.chat-header-indicators{display:flex;align-items:center;gap:9px;min-height:20px;padding-left:2px;flex:0 0 auto;width:100%;box-sizing:border-box}
-.chat-header-indicator{display:inline-grid;place-items:center;width:20px;height:20px;flex:0 0 20px;border-radius:6px;color:#aeb5bf;opacity:.48;font-size:15px;font-weight:800;line-height:1;transition:color .22s,opacity .22s,background .22s,filter .22s}
-.chat-header-indicator.is-idle{color:#8d96a3;opacity:.42}
-.chat-header-indicator.indicator-error.is-error{color:#e53935;opacity:1;animation:chat-indicator-error-pulse 1s ease-in-out infinite}
-.chat-header-indicator.indicator-files.is-read{color:#d5a31d;opacity:1}
-.chat-header-indicator.indicator-files.is-write{color:#2589e8;opacity:1}
-.chat-header-indicator.indicator-files.is-delete,.chat-header-indicator.indicator-files.is-error{color:#e53935;opacity:1}
-.chat-header-indicator.indicator-approval.is-active{color:#6f5818;opacity:1;background:#e6bb35;border-radius:50%;box-shadow:0 0 0 3px #e6bb3526}
-.chat-header-indicator.indicator-remote.is-remote{color:#38a7ff;opacity:1;background:linear-gradient(135deg,#42a5ff22,#9ceaff40);filter:drop-shadow(0 0 4px #56baff70)}
-@keyframes chat-indicator-error-pulse{0%,100%{opacity:.55;filter:drop-shadow(0 0 0 transparent)}50%{opacity:1;filter:drop-shadow(0 0 5px currentColor)}}
 .chat-header-center{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;min-width:0!important;width:100%!important;gap:4px!important}
 .chat-header-right{display:flex!important;flex:0 1 auto!important;flex-basis:100%!important;width:100%!important;min-width:0!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;flex-wrap:nowrap!important}
 .chat-header-right #chat-agent{width:clamp(110px,32%,180px)!important;min-width:110px!important;max-width:180px!important;flex:0 1 180px!important;white-space:nowrap!important}
@@ -1803,7 +1793,6 @@ td{border-color:var(--line)}
  .chat-header-model-block{grid-column:3!important;grid-row:1!important}
  .chat-header-mode-block{grid-column:2/4!important;grid-row:2!important;display:flex!important;flex-direction:row!important;align-items:center!important;gap:8px!important;min-width:0!important;width:100%!important;flex-basis:auto!important}
  .chat-header-mode-block #chat-project-context{width:min(180px,40vw)!important;min-width:0!important;max-width:180px!important;flex:0 1 auto!important}
- .chat-header-indicators{padding-left:0}
  .chat-header-right{flex-wrap:wrap!important;justify-content:stretch!important}
  .chat-header-right #chat-agent{width:100%!important;max-width:none!important;flex:1 1 100%!important}
  .chat-header-right #chat-clear,.chat-header-right #chat-save{flex:1 1 auto!important}
@@ -1854,17 +1843,7 @@ td{border-color:var(--line)}
   max-width:108px!important;
 }
 .chat-header-center{align-items:flex-start;min-height:32px;padding-top:3px}
-.chat-indicator-panel{
-  display:flex;
-  align-items:center;
-  justify-content:flex-start;
-  gap:10px;
-  min-height:22px;
-  padding:0 2px 1px;
-  width:100%;
-  box-sizing:border-box;
-}
-.chat-indicator-panel .chat-header-indicator{
+
   display:inline-grid;
   place-items:center;
   width:22px;
@@ -1879,11 +1858,9 @@ td{border-color:var(--line)}
   font-size:15px;
   line-height:1;
 }
-.chat-indicator-panel .chat-header-indicator.is-idle{
   color:#aeb5bf;
   opacity:.48;
 }
-.chat-indicator-panel .chat-header-indicator svg{
   display:block;
   width:18px;
   height:18px;
