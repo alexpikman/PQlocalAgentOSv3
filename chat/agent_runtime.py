@@ -183,6 +183,29 @@ class AgentRuntime:
                 stop=False
                 for call in calls:
                     fn=call["function"]; name=fn["name"]; args=fn["arguments"]; call_id=call["id"]
+                    # Не выполняем распространённый выдуманный путь по умолчанию,
+                    # если пользователь не просил читать именно этот файл.
+                    if name == "read_file":
+                        requested_path = str(args.get("path") or "").replace("\\\\", "/").rstrip("/")
+                        latest_user_text = next(
+                            (str(item.get("content") or "") for item in reversed(messages)
+                             if item.get("role") == "user"),
+                            "",
+                        )
+                        if requested_path.casefold() == "/home/user/info.txt" and not re.search(
+                            r"(?:/home/user/info\\.txt|\\binfo\\.txt\\b)", latest_user_text, re.I
+                        ):
+                            skipped_result = json.dumps({
+                                "error": "unrequested_default_path",
+                                "message": "Чтение не выполнено: путь /home/user/info.txt не указан пользователем и не подтверждён контекстом задачи.",
+                            }, ensure_ascii=False)
+                            self._emit(
+                                conversation_id, "tool_result",
+                                {"status": "denied", "result": skipped_result},
+                                task_id=task_id, tool_call_id=call_id,
+                            )
+                            messages.append({"role": "tool", "tool_call_id": call_id, "content": skipped_result})
+                            continue
                     # Проверка allowed_paths (если агент ограничен проектом)
                     try:
                         from agent_tools import check_allowed_paths
