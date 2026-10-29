@@ -193,7 +193,8 @@ class AgentRuntime:
                             "",
                         )
                         if requested_path.casefold() == "/home/user/info.txt" and not re.search(
-                            r"(?:/home/user/info\.txt|\binfo\.txt\b)", latest_user_text, re.I
+                            r"(?:прочитай|прочти|открой|прочитать|прочтение|проверь\\s+файл|покажи\\s+содержимое|read|open|inspect).{0,100}(?:/home/user/info\\.txt|\\binfo\\.txt\\b)",
+                            latest_user_text, re.I,
                         ):
                             skipped_result = json.dumps({
                                 "error": "unrequested_default_path",
