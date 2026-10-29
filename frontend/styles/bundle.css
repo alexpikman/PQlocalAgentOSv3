@@ -1779,6 +1779,7 @@ td{border-color:var(--line)}
 .chat-header-right #chat-agent{width:clamp(110px,32%,180px)!important;min-width:110px!important;max-width:180px!important;flex:0 1 180px!important;white-space:nowrap!important}
 .chat-header-right #chat-clear,.chat-header-right #chat-save{width:auto!important;flex:0 0 auto!important;white-space:nowrap!important}
 .chat-msg-actions{display:flex;align-items:center;gap:7px;margin-top:8px}
+.chat-msg.user .chat-msg-actions{justify-content:flex-end}
 .chat-msg-action{display:inline-grid;place-items:center;min-width:27px;height:27px;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);font-size:17px;line-height:1;cursor:pointer}
 .chat-msg-action:hover,.chat-msg-action:focus-visible{color:var(--text);background:var(--panel2);outline:2px solid color-mix(in srgb,var(--accent) 25%,transparent);outline-offset:1px}
 .chat-msg-result-status{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;font-size:13px;color:#9aa3af;background:#9aa3af18}
