@@ -809,8 +809,6 @@
       const transport = await setupEventTransport(conversation);
       const commandId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cmd-' + Date.now() + '-' + Math.random().toString(16).slice(2));
       contentCommandId = commandId;
-      state.renderer?.startTurn(Date.now());
-      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'pending' } }));
       const mode = conversation?.mode || (conversation?.projectId ? 'project' : 'chat');
       if (mode === 'project' && !conversation?.projectId) {
         setSending(false);
@@ -818,6 +816,8 @@
         elements.input.value = content; resizeInput();
         return;
       }
+      state.renderer?.startTurn(Date.now());
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'pending' } }));
       await transport.sendMessage(content, commandId, state.agent, mode === 'project' ? conversation.projectId : '', mode);
       window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'success' } }));
     } catch (error) {
