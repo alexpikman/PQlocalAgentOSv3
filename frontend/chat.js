@@ -106,10 +106,7 @@
       });
       modeSwitch.append(option);
     }
-    const projectSelect = document.createElement('select');
-    projectSelect.id = 'chat-project-context';
-    projectSelect.setAttribute('aria-label', 'Проект для контекста чата');
-    modeBlock.append(modeSwitch, modeSelect, projectSelect);
+    modeBlock.append(modeSwitch, modeSelect);
     const modelSelect = document.createElement('select');
     modelSelect.id = 'chat-agent';
     modelSelect.setAttribute('aria-label', 'Выбрать агента');
@@ -149,7 +146,6 @@
     elements.modelName = modelName; elements.save = saveButton;
     elements.agent = modelSelect;
     elements.mode = modeSelect;
-    elements.projectContext = projectSelect;
     elements.messages = messages;
     elements.form = form;
     elements.input = input;
@@ -345,16 +341,11 @@
 
   function syncChatModeControls() {
     const conversation = activeConversation();
-    if (!elements.mode || !elements.projectContext) return;
+    if (!elements.mode) return;
     if (conversation && conversation.mode !== 'chat' && conversation.mode !== 'project') conversation.mode = conversation.projectId ? 'project' : 'chat';
     const mode = conversation?.mode || 'chat';
     elements.mode.value = mode;
     syncModeSwitch();
-    elements.projectContext.replaceChildren(new Option('Выберите проект…', ''));
-    state.projects.forEach(project => elements.projectContext.add(new Option(project.name || 'Без названия', project.id)));
-    elements.projectContext.value = conversation?.projectId || '';
-    elements.projectContext.hidden = mode !== 'project';
-    elements.projectContext.disabled = state.sending;
     elements.mode.disabled = state.sending;
     syncModeSwitch();
   }
@@ -497,7 +488,6 @@
     elements.clear.disabled = sending;
     if (elements.save) elements.save.disabled = sending;
     if (elements.mode) { elements.mode.disabled = sending; syncModeSwitch(); }
-    if (elements.projectContext) elements.projectContext.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
     if (sending) scrollToBottom();
   }
@@ -854,21 +844,8 @@
       renderChatWorkspace();
       if (conversation.projectId) void syncProjectChatMemory(conversation);
       if (conversation.mode === 'project' && !conversation.projectId) {
-        showNotice('Выберите проект в появившемся списке, чтобы передать его контекст агенту.', 'warning');
-        elements.projectContext.focus();
+        showNotice('Режим «ПРОЕКТ» выбран, но проект не привязан. Выберите проект в списке слева, затем начните новый чат в этом проекте.', 'warning');
       }
-    });
-    elements.projectContext.addEventListener('change', () => {
-      const conversation = activeConversation();
-      if (!conversation) return;
-      const projectId = elements.projectContext.value;
-      if (!projectId) return;
-      conversation.projectId = projectId;
-      conversation.mode = 'project';
-      state.activeProjectId = projectId;
-      saveWorkspace();
-      renderChatWorkspace();
-      void syncProjectChatMemory(conversation);
     });
     elements.clear.addEventListener('click', clearChat);
     elements.save.addEventListener('click', saveCurrentChatAsText);
