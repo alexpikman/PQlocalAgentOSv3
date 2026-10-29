@@ -642,12 +642,13 @@
   document.addEventListener('pq-chat-retry', async (event) => {
     const conversation = activeConversation();
     const lastUser = [...(state.messages || [])].reverse().find(message => message.role === 'user');
-    if (!conversation || !lastUser || state.sending) return;
+    const retryText = String(event.detail?.text || lastUser?.content || '');
+    if (!conversation || !retryText || state.sending) return;
     try {
       setSending(true);
       const transport = state.transport;
       if (!transport) throw new Error('Транспорт чата не подключён');
-      await transport.sendMessage(lastUser.content, makeId('retry'), state.agent, conversation.projectId || '', conversation.mode || 'chat');
+      await transport.sendMessage(retryText, makeId('retry'), state.agent, conversation.projectId || '', conversation.mode || 'chat');
     } catch (error) {
       setSending(false);
       showNotice(error.message || 'Не удалось повторить запрос.', 'warning');
