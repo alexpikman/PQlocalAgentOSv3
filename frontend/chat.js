@@ -754,7 +754,15 @@
     ]);
     elements.messages.replaceChildren();
     state.messages = [];
-    state.renderer = new ChatRenderer(elements.messages);
+    state.renderer = new ChatRenderer(elements.messages, () => {
+        const conversation = activeConversation();
+        const agentId = conversation?.agentId || state.agent;
+        const selected = state.agents.find(agent => agent.id === agentId);
+        return {
+          agentName: selected?.name || 'Агент',
+          modelName: selected?.model || selected?.model_name || 'Модель по умолчанию'
+        };
+      });
     const activityEl = document.getElementById('chat-activity');
     if (activityEl) { activityEl.hidden = true; activityEl.dataset.state = ''; }
     const transport = new ChatTransport({
@@ -795,10 +803,14 @@
     clearNotice();
     setSending(true);
     elements.input.value = ''; resizeInput();
+    let contentCommandId = '';
     try {
       const conversation = activeConversation();
       const transport = await setupEventTransport(conversation);
       const commandId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cmd-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+      contentCommandId = commandId;
+      state.renderer?.startTurn(Date.now());
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'pending' } }));
       const mode = conversation?.mode || (conversation?.projectId ? 'project' : 'chat');
       if (mode === 'project' && !conversation?.projectId) {
         setSending(false);
@@ -807,8 +819,13 @@
         return;
       }
       await transport.sendMessage(content, commandId, state.agent, mode === 'project' ? conversation.projectId : '', mode);
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'success' } }));
     } catch (error) {
       setSending(false);
+      if(contentCommandId){
+        window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId: contentCommandId, status: 'error' } }));
+        state.renderer?.showLocalUserMessage(content, contentCommandId, 'error');
+      }
       showNotice(error.message || 'Не удалось отправить сообщение.', 'warning');
       elements.input.value = content; resizeInput();
     } finally {
