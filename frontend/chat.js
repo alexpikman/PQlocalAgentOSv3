@@ -85,24 +85,29 @@
     const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
     const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modeBlock); leftZone.append(modelInfo);
-    const indicators = createElement('div', 'chat-indicator-panel');
+    const indicators = createElement('div', 'indicator-bar');
     indicators.setAttribute('aria-label', 'Индикаторы состояния');
     const indicatorSpecs = [
-      ['error', 'M12 3 22 21H2L12 3Z|M12 9v5|M12 17.5v.1', 'Ошибка агента'],
-      ['files', 'M5 3h11l4 4v14H5Z|M9 3v6h7V3|M9 21v-7h7v7', 'Работа с файлами'],
-      ['approval', 'M9 9a3 3 0 1 1 5.4 1.8c-1.2 1.4-2.4 1.7-2.4 3.7|M12 18v.1', 'Ожидание подтверждения'],
-      ['remote', 'M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20|M2 12h20|M12 2c3 3 3 17 0 20|M12 2c-3 3-3 17 0 20|M4.5 6.5h15|M4.5 17.5h15', 'Удалённое подключение SSH/GitHub']
+      ['error', 'error', 'Ошибка агента'],
+      ['files', 'file', 'Работа с файлами'],
+      ['approval', 'question', 'Ожидание подтверждения'],
+      ['remote', 'planet', 'Удалённое подключение SSH/GitHub']
     ];
-    for (const [kind, paths, title] of indicatorSpecs) {
+    for (const [kind, iconName, title] of indicatorSpecs) {
       const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind);
-      indicator.dataset.chatIndicator = kind; indicator.title = title; indicator.setAttribute('aria-label', title); indicator.setAttribute('role', 'status');
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '18'); svg.setAttribute('height', '18'); svg.setAttribute('aria-hidden', 'true');
-      for (const d of paths.split('|')) {
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.7'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); svg.append(path);
-      }
-      indicator.append(svg); indicators.append(indicator);
+      indicator.dataset.chatIndicator = kind;
+      indicator.dataset.indicatorIcon = iconName;
+      indicator.title = title;
+      indicator.setAttribute('aria-label', title);
+      indicator.setAttribute('role', 'status');
+      const image = document.createElement('img');
+      image.src = '/assets/indicators/inactive/' + iconName + '_inactive.svg';
+      image.alt = '';
+      image.width = 18;
+      image.height = 18;
+      image.setAttribute('aria-hidden', 'true');
+      indicator.append(image);
+      indicators.append(indicator);
     }
     const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
     centerZone.append(taskStatus);
@@ -549,7 +554,6 @@
 
     const selected = state.agents.find((agent) => agent.id === state.agent);
     elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-    if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
     updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
     elements.agent.disabled = !state.agents.length;
     elements.send.disabled = !state.agent;
@@ -670,8 +674,47 @@
     }
   });
 
+  function setIndicatorState(kind, active) {
+    const indicator = document.querySelector('[data-chat-indicator="' + kind + '"]');
+    if (!indicator) return;
+    indicator.classList.toggle('is-active', !!active);
+    indicator.classList.toggle('is-idle', !active);
+    const image = indicator.querySelector('img');
+    if (image) {
+      const iconName = image.dataset.indicatorIcon || indicator.dataset.indicatorIcon || kind;
+      image.src = '/assets/indicators/' + (active ? 'active/' : 'inactive/') + iconName + (active ? '_active.svg' : '_inactive.svg');
+    }
+  }
+
+  function updateIndicatorsForEvent(event) {
+    const payload = event.payload || {};
+    const type = event.type;
+    if (type === 'user_message') {
+      setIndicatorState('error', false);
+      setIndicatorState('approval', false);
+      setIndicatorState('files', false);
+      setIndicatorState('remote', false);
+    } else if (type === 'tool_call') {
+      const name = String(payload.name || '').toLowerCase();
+      if (['list_files', 'read_file', 'search_files', 'write_file', 'move_file', 'delete_file', 'create_directory', 'delete_directory'].includes(name)) setIndicatorState('files', true);
+      if (name.startsWith('github_') || name === 'ssh_execute') setIndicatorState('remote', true);
+    } else if (type === 'tool_result') {
+      setIndicatorState('files', false);
+      setIndicatorState('remote', false);
+    } else if (type === 'approval_required') {
+      setIndicatorState('approval', true);
+    } else if (type === 'error') {
+      setIndicatorState('error', true);
+    } else if (type === 'turn_completed' || type === 'turn_cancelled') {
+      setIndicatorState('files', false);
+      setIndicatorState('remote', false);
+      setIndicatorState('approval', false);
+    }
+  }
+
   function handleChatEvent(event, replay = false) {
     const payload = event.payload || {};
+    updateIndicatorsForEvent(event);
     if (state.renderer) state.renderer.apply(event);
     if (event.type === 'user_message') {
       const commandId = payload.command_id || '';
