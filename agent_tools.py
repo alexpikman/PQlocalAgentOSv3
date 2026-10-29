@@ -40,6 +40,19 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {'type':'function','function':{'name':'ssh_execute','description':'Execute a command on a remote server via SSH in the specified project working directory.','parameters':{'type':'object','properties':{'connection_id':{'type':'string'},'command':{'type':'string'},'working_dir':{'type':'string'}},'required':['connection_id','command']}}},
 ]
 
+def requires_tool_approval(tool_name: str, approval_tools: set[str] | list[str] | tuple[str, ...], allowed_paths: list[str] | None) -> bool:
+    """Require confirmation for configured tools, except routine file I/O already confined to allowed_paths.
+
+    The runtime calls this only after normalize_tool_paths() and check_allowed_paths()
+    succeeded. Delete operations always remain confirmation-gated.
+    """
+    if tool_name not in set(approval_tools or ()):
+        return False
+    if tool_name in {"list_files", "read_file", "write_file"} and allowed_paths:
+        return False
+    return True
+
+
 PERMISSION_FOR_TOOL = {
     'list_files':('file_loading',), 'read_file':('file_loading',),
     'search_files':('file_loading',), 'write_file':('file_saving',),
