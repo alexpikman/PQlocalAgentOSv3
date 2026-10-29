@@ -37,7 +37,7 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         ])
         runtime = AgentRuntime(
             self.store, EventHub(), provider, lambda name, args: {},
-            {"model": "test-model", "tools": []},
+            {"model": "test-model", "tools": [], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Сделай задачу", threading.Event(), "cmd_no_verification", "task_no_verification")
@@ -61,7 +61,7 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
             self.store, EventHub(),
             provider,
             lambda name, args: {"command": args["command"], "stdout": "Ran 3 tests", "stderr": "", "exit_code": 0},
-            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}]},
+            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Измени и проверь проект", threading.Event(), "cmd_verified", "task_verified")
@@ -84,7 +84,7 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         runtime = AgentRuntime(
             self.store, EventHub(), provider,
             lambda name, args: {"stdout": "FAIL", "stderr": "AssertionError", "exit_code": 1},
-            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}]},
+            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Проверь проект", threading.Event(), "cmd_failed_tests", "task_failed_tests")
