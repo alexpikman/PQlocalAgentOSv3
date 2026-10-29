@@ -109,23 +109,28 @@ export class ChatRenderer {
       el.classList.remove('is-idle','is-active','is-error','is-read','is-write','is-delete','is-remote');
       el.classList.add(state);if(title)el.title=title;
     };
-    if(event.type==='error')set('error','is-error','Ошибка агента');
-    if(event.type==='turn_completed'&&(payload.status==='completed'||payload.status==='success'))set('error','is-idle','Ошибок в текущем ходе нет');
+    const resetIndicators=()=>{
+      set('error','is-idle','Нет активной ошибки');
+      set('files','is-idle','Нет активной операции с файлами');
+      set('approval','is-idle','Нет ожидающего подтверждения');
+      set('remote','is-idle','Нет активного удалённого подключения');
+    };
     if(event.type==='tool_call'){
-      const name=String(payload.name||payload.tool_name||'');
-      if(/read_file|list_files|search_files|github_read_file|github_list_files/i.test(name))set('files','is-read','Чтение/поиск файлов');
-      else if(/write_file|create_directory/i.test(name))set('files','is-write','Запись/создание файлов');
-      else if(/delete_file|delete_directory|move_file/i.test(name))set('files','is-delete','Удаление/перемещение файлов');
-      if(/ssh_|github_/i.test(name))set('remote','is-remote','Удалённый инструмент SSH/GitHub');
-    }
-    if(event.type==='tool_result'){
-      if(payload.status==='error'||payload.status==='denied'||payload.error)set('files','is-error','Ошибка файлового инструмента');
-      else set('files','is-idle','Операция с файлами завершена');
-    }
-    if(event.type==='approval_required')set('approval','is-active','Ожидается подтверждение пользователя');
-    if(event.type==='approval_resolved')set('approval','is-idle','Подтверждение обработано');
-    if(event.type==='turn_completed'&&(payload.status==='completed'||payload.status==='success')){
-      set('files','is-idle','Нет активной операции с файлами');set('approval','is-idle','Нет ожидающих подтверждений');set('remote','is-idle','Нет активной удалённой операции');
+      const name=String(payload.name||payload.tool_name||'').toLowerCase();
+      if(name==='read_file'||/^(list_files|search_files|github_read_file|github_list_files)$/.test(name)){
+        set('files','is-read','Чтение файла');
+      }else if(name==='write_file'||name==='create_directory'){
+        set('files','is-write','Запись или создание файла/папки');
+      }else if(name==='delete'||name==='delete_file'||name==='delete_directory'||name==='move_file'){
+        set('files','is-delete','Удаление или перемещение');
+      }
+      if(/^(ssh_|github_)/i.test(name))set('remote','is-remote','Удалённый инструмент SSH/GitHub');
+    }else if(event.type==='approval_required'){
+      set('approval','is-active','Ожидается подтверждение пользователя');
+    }else if(event.type==='approval_resolved'){
+      set('approval','is-idle','Подтверждение обработано');
+    }else if(event.type==='error'||event.type==='turn_completed'||event.type==='turn_cancelled'){
+      resetIndicators();
     }
   }
   _finishTurn(event){
