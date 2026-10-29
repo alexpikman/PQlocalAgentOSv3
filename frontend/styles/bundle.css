@@ -1771,7 +1771,7 @@ td{border-color:var(--line)}
 .chat-header-indicator.indicator-files.is-read{color:#d5a31d;opacity:1}
 .chat-header-indicator.indicator-files.is-write{color:#2589e8;opacity:1}
 .chat-header-indicator.indicator-files.is-delete,.chat-header-indicator.indicator-files.is-error{color:#e53935;opacity:1}
-.chat-header-indicator.indicator-approval.is-active{color:#d8aa24;opacity:1;background:#d8aa241b;border-radius:50%}
+.chat-header-indicator.indicator-approval.is-active{color:#6f5818;opacity:1;background:#e6bb35;border-radius:50%;box-shadow:0 0 0 3px #e6bb3526}
 .chat-header-indicator.indicator-remote.is-remote{color:#38a7ff;opacity:1;background:linear-gradient(135deg,#42a5ff22,#9ceaff40);filter:drop-shadow(0 0 4px #56baff70)}
 @keyframes chat-indicator-error-pulse{0%,100%{opacity:.55;filter:drop-shadow(0 0 0 transparent)}50%{opacity:1;filter:drop-shadow(0 0 5px currentColor)}}
 .chat-header-center{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;min-width:0!important;width:100%!important;gap:4px!important}
