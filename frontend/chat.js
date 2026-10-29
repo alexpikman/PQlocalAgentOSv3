@@ -35,7 +35,7 @@
     const mode = (conversation.mode || (conversation.projectId ? 'project' : 'chat')) === 'project' ? 'проект' : 'чат';
     const started = new Date(conversation.createdAt || Date.now());
     const date = [started.getFullYear(), String(started.getMonth() + 1).padStart(2, '0'), String(started.getDate()).padStart(2, '0')].join('-') + '_' + String(started.getHours()).padStart(2, '0') + '-' + String(started.getMinutes()).padStart(2, '0');
-    const filename = date + '_' + agent + '_' + model + '_' + mode + '.txt';
+    const filename = date.slice(0, 10) + '-' + agent + '-' + model + '-' + mode + '.txt';
     const lines = ['Чат PQlocalAgentOS', 'Начало: ' + started.toLocaleString(), 'Агент: ' + (selected?.name || state.agent || 'не выбран'), 'Модель: ' + (selected?.model || selected?.model_name || 'по умолчанию'), 'Режим: ' + mode, '', ...(conversation.messages || []).map(message => {
       const who = message.role === 'user' ? 'Пользователь' : 'Агент';
       const calls = Array.isArray(message.tool_calls) ? message.tool_calls.map(call => '[Инструмент: ' + call.name + ' ' + JSON.stringify(call.arguments || {}) + (call.status ? '; статус: ' + call.status : '') + ']') : [];
