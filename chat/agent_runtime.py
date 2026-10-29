@@ -165,7 +165,7 @@ class AgentRuntime:
                     has_claim = self._text_has_completion_claim(final_text)
                     project_mode = str((self.agent_config or {}).get("mode") or "chat").lower() == "project"
                     # Верификация нужна только внутри проекта после действий с побочными эффектами.
-                    requires_verification = project_mode and has_side_effects
+                    requires_verification = project_mode and (has_side_effects or has_claim)
 
                     if requires_verification and not self.store.has_recent_verification(conversation_id, task_id):
                         reason = (
