@@ -109,13 +109,21 @@ export class ChatRenderer {
     const modelName=String(context.modelName||'Модель по умолчанию');
     meta.append(this._el('span','chat-msg-name',isUser?'Вы':(agentName+' | '+modelName)));
     const time=this._el('time','chat-msg-time',event.created_at?new Date(event.created_at).toLocaleTimeString():'');
-    meta.append(time);const bubble=this._el('div','chat-msg-bubble',text);content.append(meta,bubble);
-    const actions=this._el('div','chat-msg-actions');
-    const retry=this._el('button','chat-msg-action','↻');retry.type='button';retry.dataset.chatMessageAction='retry';retry.title=isUser?'Повторить отправку сообщения':'Повторить запрос';retry.setAttribute('aria-label',retry.title);
-    const copy=this._el('button','chat-msg-action','⧉');copy.type='button';copy.dataset.chatMessageAction='copy';copy.title='Скопировать текст';copy.setAttribute('aria-label','Скопировать текст');
-    const status=this._el('span','chat-msg-result-status is-pending','✓');status.title=isUser?'Отправка сообщения':'Ответ ещё не завершён';status.setAttribute('aria-label',status.title);
-    actions.append(retry,copy,status);content.append(actions);
+    meta.append(time);
+    if(!isUser){
+      const spinner=this._el('span','chat-msg-spinner');
+      spinner.setAttribute('role','status');
+      spinner.setAttribute('aria-label','Генерируется ответ');
+      time.replaceChildren(spinner);
+      time.setAttribute('aria-label','Ответ генерируется');
+    }
+    const bubble=this._el('div','chat-msg-bubble',text);content.append(meta,bubble);
     if(isUser){
+      const actions=this._el('div','chat-msg-actions');
+      const retry=this._el('button','chat-msg-action','↻');retry.type='button';retry.dataset.chatMessageAction='retry';retry.title='Повторить отправку сообщения';retry.setAttribute('aria-label',retry.title);
+      const copy=this._el('button','chat-msg-action','⧉');copy.type='button';copy.dataset.chatMessageAction='copy';copy.title='Скопировать текст';copy.setAttribute('aria-label','Скопировать текст');
+      const status=this._el('span','chat-msg-result-status is-pending','✓');status.title='Отправка сообщения';status.setAttribute('aria-label',status.title);
+      actions.append(retry,copy,status);content.append(actions);
       const knownStatus=this.userSendStatuses.get(String(payload.command_id||''));
       this._applyUserStatus(row,knownStatus||'pending');
     }else{
@@ -185,7 +193,9 @@ export class ChatRenderer {
       const status=row.querySelector('.chat-msg-result-status');
       if(status){status.classList.remove('is-pending');status.classList.add(this.lastTurnStatus==='completed'?'is-success':'is-error');status.title=this.lastTurnStatus==='completed'?'Ответ завершён':'Ход завершился с ошибкой';}
       const meta=row.querySelector('.chat-msg-name');
-      if(meta)meta.textContent=String(row.dataset.agentName||'Агент')+' | '+String(row.dataset.modelName||'Модель по умолчанию')+' | '+seconds.toFixed(1)+' с';
+      if(meta)meta.textContent=String(row.dataset.agentName||'Агент')+' | '+String(row.dataset.modelName||'Модель по умолчанию');
+      const time=row.querySelector('.chat-msg-time');
+      if(time){time.textContent=seconds.toFixed(1)+' с';time.setAttribute('aria-label','Время выполнения: '+seconds.toFixed(1)+' секунды');}
     }
     this.turnStartedAt=null;
   }
@@ -227,7 +237,7 @@ export class ChatRenderer {
     const card=[...this.container.querySelectorAll('[data-approval-id]')].find(el=>el.dataset.approvalId===p.approval_id);
     if(card){card.append(this._el('p','',p.decision==='approved'?'Разрешено':'Отклонено'));card.querySelectorAll('button').forEach(button=>button.disabled=true);}
   }
-  _status(text){if(this.status){this.status.textContent=text;const center=this.status.closest('.chat-header-center');if(center)center.classList.toggle('is-active',/генер|думает|инструмент|возобновляет|продолжает/i.test(String(text||'')));}}
+  _status(text){if(this.status){this.status.textContent=text;const brainStatus=this.status.closest('.chat-brain-status');if(brainStatus)brainStatus.classList.toggle('is-active',/генер|думает|инструмент|возобновляет|продолжает/i.test(String(text||'')));}}
   _scroll(){this.container.scrollTop=this.container.scrollHeight;}
   updateActivity(event) {
     const el = document.getElementById("chat-activity");
@@ -256,14 +266,14 @@ export class ChatRenderer {
       case "turn_state": {
         const s = payload.state || payload.status || "";
         if (s === "thinking") show("thinking", "Думает…", "");
-        else if (s === "streaming") show("streaming", "Печатает…", "");
+        else if (s === "streaming") show("streaming", "Генерирует ответ…", "");
         else if (s === "tool_running") show("tool", "Выполняет инструмент…", "");
         else if (s === "waiting_approval") show("approval", "Ждёт подтверждения", "");
         else if (s === "idle") hide();
         break;
       }
       case "assistant_delta":
-        show("streaming", "Печатает…", "");
+        show("streaming", "Генерирует ответ…", "");
         break;
       case "tool_call": {
         const name = payload.name || payload.tool_name || "tool";
