@@ -78,6 +78,60 @@ def effective_tools(agent: dict[str, Any], permission_config: dict[str, Any]) ->
     return allowed
 
 
+def normalize_tool_paths(tool_name: str, arguments: dict, allowed_paths: list[str] | None) -> dict:
+    """Normalize filesystem tool paths into absolute paths within the project root."""
+    result = dict(arguments or {})
+    if not allowed_paths:
+        return result
+    filesystem_keys = {
+        "list_files": ("path",), "read_file": ("path",), "search_files": ("path",),
+        "write_file": ("path",), "delete_file": ("path",), "create_directory": ("path",),
+        "delete_directory": ("path",), "move_file": ("source", "destination"),
+    }
+    keys = filesystem_keys.get(tool_name)
+    if not keys:
+        return result
+    from pathlib import Path as _Path
+    roots = [_Path(root).expanduser().resolve() for root in allowed_paths if str(root or "").strip()]
+    if not roots:
+        return result
+
+    def inside(path: _Path, root: _Path) -> bool:
+        try:
+            path.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    for key in keys:
+        raw = result.get(key)
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        value = raw.strip()
+        candidate = _Path(value).expanduser()
+        posix_rooted = value.startswith("/") and not re.match(r"^[A-Za-z]:[\\/]", value) and not value.startswith("\\\\")
+        if candidate.is_absolute():
+            try:
+                resolved = candidate.resolve(strict=False)
+            except (OSError, RuntimeError):
+                resolved = candidate
+            if any(inside(resolved, root) for root in roots):
+                result[key] = str(resolved)
+                continue
+            if not posix_rooted:
+                raise PermissionError(f"Путь выходит за разрешённый корень проекта: {value}")
+            value = value.lstrip("/")
+        elif posix_rooted:
+            # На Windows Path('/chat/file.txt') может считаться root-relative,
+            # поэтому удаляем ведущий slash до соединения с корнем проекта.
+            value = value.lstrip("/")
+        target = (roots[0] / value).resolve(strict=False)
+        if not any(inside(target, root) for root in roots):
+            raise PermissionError(f"Путь выходит за разрешённый корень проекта: {raw}")
+        result[key] = str(target)
+    return result
+
+
 def check_allowed_paths(tool_name: str, arguments: dict, allowed_paths: list[str] | None) -> None:
     """Проверяет, что путь в аргументах write-инструмента лежит внутри allowed_paths.
 
