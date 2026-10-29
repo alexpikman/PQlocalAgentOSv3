@@ -111,5 +111,43 @@ class ApprovalResumeTests(unittest.TestCase):
                                 for event in store.read_all(conversation_id)))
 
 
+    def test_unrequested_default_info_file_read_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = ConversationStore(root / "conversations")
+            conversation_id = store.create_conversation("default path guard")
+            provider = FakeProvider([
+                [ProviderChunk("tool_calls", tool_calls=[{
+                    "id": "call_read_default",
+                    "function": {"name": "read_file", "arguments": {"path": "/home/user/info.txt"}},
+                }]), ProviderChunk("done")],
+                [ProviderChunk("text", "Чем могу помочь?"), ProviderChunk("done")],
+            ])
+            calls = []
+            def execute(name, arguments):
+                calls.append((name, arguments))
+                return {"error": "Файл не найден."}
+            runtime = AgentRuntime(
+                store, EventHub(), provider, execute,
+                {"model": "test-model", "system_prompt": "Не читай файлы без запроса.",
+                 "tools": [{"type": "function", "function": {"name": "read_file"}}]},
+            )
+            result = runtime.run_turn(
+                conversation_id, "Привет, как дела?", threading.Event(), "default-path-command"
+            )
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(calls, [])
+            events = store.read_all(conversation_id)
+            self.assertFalse(any(
+                event["type"] == "tool_call" and event.get("payload", {}).get("name") == "read_file"
+                for event in events
+            ))
+            self.assertTrue(any(
+                event["type"] == "tool_result"
+                and "unrequested_default_path" in str(event.get("payload", {}).get("result", ""))
+                for event in events
+            ))
+
+
 if __name__ == "__main__":
     unittest.main()
