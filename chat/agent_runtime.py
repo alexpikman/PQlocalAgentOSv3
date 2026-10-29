@@ -232,7 +232,8 @@ class AgentRuntime:
                                          "content": denied_result})
                         continue  # переходим к следующему tool_call, не выполняем этот
                     self._emit(conversation_id,"tool_call",{"name":name,"arguments":_redact(args)},task_id=task_id,tool_call_id=call_id)
-                    if name in approval_tools:
+                    from agent_tools import requires_tool_approval
+                    if requires_tool_approval(name, approval_tools, allowed):
                         aid=self.store.create_approval(conversation_id,task_id,call_id,name,_redact(args),f"Агент запрашивает разрешение на инструмент «{name}».")
                         self._emit(conversation_id,"approval_required",{"approval_id":aid,"tool_name":name,"tool_call_id":call_id,"description":f"Разрешить инструмент «{name}»?"},task_id=task_id,tool_call_id=call_id)
                         self._emit(conversation_id,"turn_state",{"state":"waiting_approval"},task_id=task_id)
