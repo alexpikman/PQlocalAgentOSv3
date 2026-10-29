@@ -33,11 +33,15 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
 
     def test_runtime_blocks_completion_without_verification(self):
         provider = FakeProvider([
-            [ProviderChunk("text", "Готово."), ProviderChunk("done")]
+            [ProviderChunk("tool_calls", tool_calls=[{
+                "id": "call_write",
+                "function": {"name": "write_file", "arguments": {"path": "/tmp/project/result.txt", "content": "x"}},
+            }]), ProviderChunk("done")],
+            [ProviderChunk("text", "Готово."), ProviderChunk("done")],
         ])
         runtime = AgentRuntime(
-            self.store, EventHub(), provider, lambda name, args: {},
-            {"model": "test-model", "tools": [], "mode": "project"},
+            self.store, EventHub(), provider, lambda name, args: {"ok": True},
+            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "write_file"}}], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Сделай задачу", threading.Event(), "cmd_no_verification", "task_no_verification")
@@ -52,6 +56,10 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
     def test_run_tests_success_records_verification_before_completion(self):
         provider = FakeProvider([
             [ProviderChunk("tool_calls", tool_calls=[{
+                "id": "call_write_before_tests",
+                "function": {"name": "write_file", "arguments": {"path": "/tmp/project/result.txt", "content": "x"}},
+            }]), ProviderChunk("done")],
+            [ProviderChunk("tool_calls", tool_calls=[{
                 "id": "call_tests",
                 "function": {"name": "run_tests", "arguments": {"command": "python -m unittest discover -v"}},
             }]), ProviderChunk("done")],
@@ -60,8 +68,12 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         runtime = AgentRuntime(
             self.store, EventHub(),
             provider,
-            lambda name, args: {"command": args["command"], "stdout": "Ran 3 tests", "stderr": "", "exit_code": 0},
-            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}], "mode": "project"},
+            lambda name, args: ({"command": args["command"], "stdout": "Ran 3 tests", "stderr": "", "exit_code": 0}
+                                if name == "run_tests" else {"ok": True}),
+            {"model": "test-model", "tools": [
+                {"type": "function", "function": {"name": "write_file"}},
+                {"type": "function", "function": {"name": "run_tests"}},
+            ], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Измени и проверь проект", threading.Event(), "cmd_verified", "task_verified")
@@ -76,6 +88,10 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
     def test_failed_tests_do_not_authorize_completion(self):
         provider = FakeProvider([
             [ProviderChunk("tool_calls", tool_calls=[{
+                "id": "call_write_before_tests",
+                "function": {"name": "write_file", "arguments": {"path": "/tmp/project/result.txt", "content": "x"}},
+            }]), ProviderChunk("done")],
+            [ProviderChunk("tool_calls", tool_calls=[{
                 "id": "call_tests_failed",
                 "function": {"name": "run_tests", "arguments": {}},
             }]), ProviderChunk("done")],
@@ -83,8 +99,12 @@ class TestAgentRuntimeVerificationGate(unittest.TestCase):
         ])
         runtime = AgentRuntime(
             self.store, EventHub(), provider,
-            lambda name, args: {"stdout": "FAIL", "stderr": "AssertionError", "exit_code": 1},
-            {"model": "test-model", "tools": [{"type": "function", "function": {"name": "run_tests"}}], "mode": "project"},
+            lambda name, args: ({"stdout": "FAIL", "stderr": "AssertionError", "exit_code": 1}
+                                if name == "run_tests" else {"ok": True}),
+            {"model": "test-model", "tools": [
+                {"type": "function", "function": {"name": "write_file"}},
+                {"type": "function", "function": {"name": "run_tests"}},
+            ], "mode": "project"},
         )
 
         result = runtime.run_turn(self.cid, "Проверь проект", threading.Event(), "cmd_failed_tests", "task_failed_tests")
