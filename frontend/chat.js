@@ -96,6 +96,17 @@
     for (const [kind, glyph, title] of indicatorSpecs) {
       const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind, glyph);
       indicator.dataset.chatIndicator = kind; indicator.title = title; indicator.setAttribute('aria-label', title); indicator.setAttribute('role', 'status');
+      if (kind === 'remote') {
+        indicator.textContent = '';
+        const globe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        globe.setAttribute('viewBox', '0 0 24 24'); globe.setAttribute('aria-hidden', 'true');
+        globe.setAttribute('width', '17'); globe.setAttribute('height', '17');
+        for (const d of ['M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20','M2 12h20','M12 2c3 3 3 17 0 20','M12 2c-3 3-3 17 0 20','M4.5 6.5h15','M4.5 17.5h15']) {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.4'); globe.append(path);
+        }
+        indicator.append(globe);
+      }
       indicators.append(indicator);
     }
     leftZone.append(indicators);
