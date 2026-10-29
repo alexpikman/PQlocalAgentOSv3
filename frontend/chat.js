@@ -655,13 +655,19 @@
     const lastUser = [...(state.messages || [])].reverse().find(message => message.role === 'user');
     const retryText = String(event.detail?.text || lastUser?.content || '');
     if (!conversation || !retryText || state.sending) return;
+    const commandId = makeId('retry');
     try {
       setSending(true);
       const transport = state.transport;
       if (!transport) throw new Error('Транспорт чата не подключён');
-      await transport.sendMessage(retryText, makeId('retry'), state.agent, conversation.projectId || '', conversation.mode || 'chat');
+      state.renderer?.startTurn(Date.now());
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'pending' } }));
+      await transport.sendMessage(retryText, commandId, state.agent, conversation.projectId || '', conversation.mode || 'chat');
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'success' } }));
     } catch (error) {
       setSending(false);
+      window.dispatchEvent(new CustomEvent('pq-chat-user-send-status', { detail: { commandId, status: 'error' } }));
+      state.renderer?.showLocalUserMessage(retryText, commandId, 'error');
       showNotice(error.message || 'Не удалось повторить запрос.', 'warning');
     }
   });
