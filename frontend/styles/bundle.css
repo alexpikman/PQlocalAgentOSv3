@@ -1844,27 +1844,7 @@ td{border-color:var(--line)}
 }
 .chat-header-center{align-items:flex-start;min-height:32px;padding-top:3px}
 
-  display:inline-grid;
-  place-items:center;
-  width:22px;
-  height:22px;
-  flex:0 0 22px;
-  padding:0;
-  border:0;
-  border-radius:5px;
-  background:transparent;
-  color:#aeb5bf;
-  opacity:.48;
-  font-size:15px;
-  line-height:1;
-}
-  color:#aeb5bf;
-  opacity:.48;
-}
-  display:block;
-  width:18px;
-  height:18px;
-}
+
 .chat-composer{gap:6px}
 @media(max-width:1250px){
   .chat-header-zones{grid-template-columns:minmax(0,1fr) minmax(0,.65fr)}
