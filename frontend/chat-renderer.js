@@ -13,7 +13,7 @@ export class ChatRenderer {
       if(action.dataset.chatMessageAction==='copy'){
         try{await navigator.clipboard.writeText(row.querySelector('.chat-msg-bubble')?.textContent||'');action.title='Скопировано';}
         catch(_){action.title='Не удалось скопировать';}
-      } else if(action.dataset.chatMessageAction==='retry') window.dispatchEvent(new CustomEvent('pq-chat-retry'));
+      } else if(action.dataset.chatMessageAction==='retry') { const prior=row.previousElementSibling; const userRow=prior?.classList.contains('user')?prior:null; window.dispatchEvent(new CustomEvent('pq-chat-retry',{detail:{text:userRow?.querySelector('.chat-msg-bubble')?.textContent||''}})); }
     });
     container?.addEventListener('click',async event=>{
       const button=event.target.closest('[data-approval-decision]'); if(!button)return;
