@@ -1928,14 +1928,7 @@ td{border-color:var(--line)}
 .chat-model-info::after{display:none!important;content:none!important}
 .chat-header-mode-block .chat-mode-switch{width:108px!important;min-width:108px!important;max-width:108px!important}
 
-  display:flex;align-items:center;justify-content:flex-start;gap:10px;
-  width:100%;min-height:24px;box-sizing:border-box;padding:0 2px 2px;
-}
 
-  display:inline-grid;place-items:center;flex:0 0 22px;
-  width:22px;height:22px;padding:0;border:0;border-radius:5px;
-  background:transparent;color:#aeb5bf;opacity:.48;
-}
 
 
 
