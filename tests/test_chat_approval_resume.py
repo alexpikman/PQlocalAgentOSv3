@@ -7,6 +7,7 @@ from chat.agent_runtime import AgentRuntime
 from chat.chat_events import EventHub
 from chat.conversation_store import ConversationStore
 from chat.provider_adapter import ProviderChunk
+from agent_tools import normalize_tool_paths
 
 
 class FakeProvider:
@@ -110,6 +111,35 @@ class ApprovalResumeTests(unittest.TestCase):
             self.assertTrue(any(event["type"] == "approval_resolved" and event["payload"]["decision"] == "rejected"
                                 for event in store.read_all(conversation_id)))
 
+
+    def test_chat_mode_does_not_require_verification_for_completion_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ConversationStore(Path(tmp) / "conversations")
+            conversation_id = store.create_conversation("chat verification gate")
+            provider = FakeProvider([[ProviderChunk("text", "Готово, я помог с вопросом."), ProviderChunk("done")]])
+            runtime = AgentRuntime(
+                store, EventHub(), provider, lambda *_: {"ok": True},
+                {"model": "test-model", "system_prompt": "Ты тестовый агент.", "mode": "chat"},
+            )
+            result = runtime.run_turn(conversation_id, "Ответь на вопрос", threading.Event(), "chat-no-verification")
+            self.assertEqual(result["status"], "completed")
+            self.assertFalse(any(
+                event["type"] == "error" and event.get("payload", {}).get("code") == "verification_required"
+                for event in store.read_all(conversation_id)
+            ))
+
+    def test_project_relative_paths_are_resolved_inside_allowed_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for raw in ("chat/username.txt", "./chat/username.txt", "/chat/username.txt"):
+                normalized = normalize_tool_paths("write_file", {"path": raw}, [str(root)])
+                self.assertEqual(Path(normalized["path"]), root / "chat" / "username.txt")
+
+    def test_project_path_traversal_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with self.assertRaises(PermissionError):
+                normalize_tool_paths("write_file", {"path": "../outside.txt"}, [str(root)])
 
     def test_unrequested_default_info_file_read_is_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
