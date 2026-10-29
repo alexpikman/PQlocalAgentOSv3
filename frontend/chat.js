@@ -87,30 +87,6 @@
     const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
     const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(brainStatus, agentBlock, modeBlock); leftZone.append(modelInfo);
-    const indicators = createElement('div', 'indicator-bar');
-    indicators.setAttribute('aria-label', 'Индикаторы состояния');
-    const indicatorSpecs = [
-      ['error', 'error', 'Ошибка агента'],
-      ['files', 'file', 'Работа с файлами'],
-      ['approval', 'question', 'Ожидание подтверждения'],
-      ['remote', 'planet', 'Удалённое подключение SSH/GitHub']
-    ];
-    for (const [kind, iconName, title] of indicatorSpecs) {
-      const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind);
-      indicator.dataset.chatIndicator = kind;
-      indicator.dataset.indicatorIcon = iconName;
-      indicator.title = title;
-      indicator.setAttribute('aria-label', title);
-      indicator.setAttribute('role', 'status');
-      const image = document.createElement('img');
-      image.src = '/assets/indicators/inactive/' + iconName + '_inactive.svg';
-      image.alt = '';
-      image.width = 18;
-      image.height = 18;
-      image.setAttribute('aria-hidden', 'true');
-      indicator.append(image);
-      indicators.append(indicator);
-    }
     const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-hidden', 'true');
 
     const controls = createElement('div', 'chat-toolbar-controls');
@@ -141,7 +117,7 @@
     clearButton.type = 'button';
     clearButton.id = 'chat-clear';
     const saveButton = createElement('button', 'btn secondary', 'Сохранить'); saveButton.type = 'button'; saveButton.id = 'chat-save';
-    controls.classList.add('chat-header-right'); controls.append(modelSelect, clearButton, saveButton);
+    controls.classList.add('chat-header-right'); controls.append(modelSelect, saveButton, clearButton);
     toolbar.append(leftZone, centerZone, controls);
 
     const messages = createElement('div', 'chat-messages');
@@ -151,7 +127,6 @@
     messages.setAttribute('aria-label', 'История сообщений');
 
     const composer = createElement('div', 'chat-composer');
-    composer.append(indicators);
     const form = document.createElement('form');
     form.id = 'chat-form';
     form.className = 'chat-input-row';
@@ -171,7 +146,6 @@
     document.getElementById('content').replaceChildren(root);
 
     elements.root = root;
-    elements.headerIndicators = indicators;
     elements.modelName = modelName; elements.save = saveButton;
     elements.agent = modelSelect;
     elements.mode = modeSelect;
