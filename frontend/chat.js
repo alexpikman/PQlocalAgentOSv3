@@ -570,6 +570,10 @@
   function updateCurrentAgentAvatar(agent) {
     const avatar = document.getElementById('chat-current-agent-avatar');
     if (!avatar) return;
+    if (avatar.classList.contains('chat-brain-left')) {
+      avatar.title = agent ? (agent.name || 'Текущий агент') : 'Агент не выбран';
+      return;
+    }
     avatar.replaceChildren();
     let config = null;
     try { config = typeof agent?.avatar === 'string' ? JSON.parse(agent.avatar) : agent?.avatar; } catch (_) {}
