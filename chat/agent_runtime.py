@@ -163,7 +163,9 @@ class AgentRuntime:
                     final_text = full_text.strip()
                     has_side_effects = self.store.has_side_effects_in_turn(conversation_id, task_id)
                     has_claim = self._text_has_completion_claim(final_text)
-                    requires_verification = has_side_effects or has_claim
+                    project_mode = str((self.agent_config or {}).get("mode") or "chat").lower() == "project"
+                    # Верификация нужна только внутри проекта после действий с побочными эффектами.
+                    requires_verification = project_mode and has_side_effects
 
                     if requires_verification and not self.store.has_recent_verification(conversation_id, task_id):
                         reason = (
@@ -207,10 +209,12 @@ class AgentRuntime:
                             )
                             messages.append({"role": "tool", "tool_call_id": call_id, "content": skipped_result})
                             continue
-                    # Проверка allowed_paths (если агент ограничен проектом)
+                    # Нормализуем пути до проверки прав и передачи инструмента.
                     try:
-                        from agent_tools import check_allowed_paths
+                        from agent_tools import check_allowed_paths, normalize_tool_paths
                         allowed = (self.agent_config or {}).get("allowed_paths") or []
+                        args = normalize_tool_paths(name, args or {}, allowed)
+                        fn["arguments"] = args
                         check_allowed_paths(name, args or {}, allowed)
                     except PermissionError as exc:
                         denied_result = f"Заблокировано политикой allowed_paths: {exc}"
@@ -304,8 +308,9 @@ class AgentRuntime:
         verification = {"verified": True, "reason": "approval_rejected_no_change"}
         if decision == "approved":
             try:
-                from agent_tools import check_allowed_paths
+                from agent_tools import check_allowed_paths, normalize_tool_paths
                 allowed = (self.agent_config or {}).get("allowed_paths") or []
+                arguments = normalize_tool_paths(tool_name, arguments, allowed)
                 check_allowed_paths(tool_name, arguments, allowed)
                 raw_result = self.tool_executor(tool_name, arguments)
                 serialized = json.dumps(_redact(raw_result), ensure_ascii=False, default=str)
