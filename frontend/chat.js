@@ -66,7 +66,10 @@
     const modelInfo = createElement('div', 'chat-model-info');
     const modelName = createElement('b', 'chat-model-name', 'Загрузка агентов…');
     modelName.id = 'chat-agent-name';
-    const modelAvatar = createElement('div', 'chat-current-agent-avatar', 'AI');
+    const modelAvatar = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    modelAvatar.setAttribute('viewBox', '0 0 48 48'); modelAvatar.setAttribute('class', 'chat-current-agent-avatar chat-brain-left'); modelAvatar.setAttribute('role', 'img'); modelAvatar.setAttribute('aria-label', 'Иконка мозга');
+    const modelBrainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    modelBrainPath.setAttribute('d', 'M23 8c-5-5-13-1-12 5-5 2-6 9-2 12-3 5 0 11 6 11 1 5 7 6 10 2V9M25 8c5-5 13-1 12 5 5 2 6 9 2 12 3 5 0 11-6 11-1 5-7 6-10 2V9M15 15c4 0 6 3 6 6m-12 4c5-2 9 0 10 4m19-14c-4 0-6 3-6 6m12 4c-5-2-9 0-10 4M24 9v28'); modelBrainPath.setAttribute('fill', 'none'); modelBrainPath.setAttribute('stroke', 'currentColor'); modelBrainPath.setAttribute('stroke-width', '2.4'); modelBrainPath.setAttribute('stroke-linecap', 'round'); modelBrainPath.setAttribute('stroke-linejoin', 'round'); modelAvatar.append(modelBrainPath);
     modelAvatar.id = 'chat-current-agent-avatar';
     modelAvatar.setAttribute('aria-hidden', 'true');
     modelAvatar.style.cursor = 'pointer';
@@ -76,43 +79,33 @@
       window.location.href = '/?edit_agent=' + encodeURIComponent(state.agent) + '&return_to_chat=1';
     });
     const taskStatus = createElement('span', 'chat-task-status', ''); taskStatus.id = 'chat-task-status'; taskStatus.setAttribute('role', 'status');
-    const availability = createElement('span', 'chat-model-availability is-unavailable');
-    availability.id = 'chat-model-availability';availability.title = 'Доступность модели не проверена';availability.setAttribute('role','status');availability.setAttribute('aria-label','Доступность модели не проверена');
     const agentIdentity = createElement('div', 'chat-agent-identity');
     const agentStatusDot = createElement('span', 'chat-agent-status-dot'); agentStatusDot.setAttribute('aria-hidden', 'true');
     agentIdentity.append(agentStatusDot, modelName);
     const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
-    const modelBlock = createElement('div', 'chat-header-model-block'); modelBlock.append(createElement('span', 'chat-header-label', 'Модель'));
-    const headerModelName = createElement('b', 'chat-header-model-name', 'Модель не выбрана'); headerModelName.id = 'chat-header-model-name'; modelBlock.append(headerModelName, availability);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
-    const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modelBlock, modeBlock); leftZone.append(modelInfo);
-    const indicators = createElement('div', 'chat-header-indicators');
+    const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modeBlock); leftZone.append(modelInfo);
+    const indicators = createElement('div', 'chat-indicator-panel');
+    indicators.setAttribute('aria-label', 'Индикаторы состояния');
     const indicatorSpecs = [
-      ['error', '⚠', 'Ошибка агента'],
-      ['files', '▣', 'Работа с файлами'],
-      ['approval', '?', 'Ожидание подтверждения'],
-      ['remote', '◎', 'Удалённое подключение SSH/GitHub']
+      ['error', 'M12 3 22 21H2L12 3Z|M12 9v5|M12 17.5v.1', 'Ошибка агента'],
+      ['files', 'M5 3h11l4 4v18H5Z|M9 3v6h7V3|M9 21v-7h7v7', 'Работа с файлами'],
+      ['approval', 'M9 9a3 3 0 1 1 5.4 1.8c-1.2 1.4-2.4 1.7-2.4 3.7|M12 18v.1', 'Ожидание подтверждения'],
+      ['remote', 'M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20|M2 12h20|M12 2c3 3 3 17 0 20|M12 2c-3 3-3 17 0 20|M4.5 6.5h15|M4.5 17.5h15', 'Удалённое подключение SSH/GitHub']
     ];
-    for (const [kind, glyph, title] of indicatorSpecs) {
-      const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind, glyph);
+    for (const [kind, paths, title] of indicatorSpecs) {
+      const indicator = createElement('span', 'chat-header-indicator is-idle indicator-' + kind);
       indicator.dataset.chatIndicator = kind; indicator.title = title; indicator.setAttribute('aria-label', title); indicator.setAttribute('role', 'status');
-      if (kind === 'remote') {
-        indicator.textContent = '';
-        const globe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        globe.setAttribute('viewBox', '0 0 24 24'); globe.setAttribute('aria-hidden', 'true');
-        globe.setAttribute('width', '17'); globe.setAttribute('height', '17');
-        for (const d of ['M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20','M2 12h20','M12 2c3 3 3 17 0 20','M12 2c-3 3-3 17 0 20','M4.5 6.5h15','M4.5 17.5h15']) {
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.4'); globe.append(path);
-        }
-        indicator.append(globe);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '18'); svg.setAttribute('height', '18'); svg.setAttribute('aria-hidden', 'true');
+      for (const d of paths.split('|')) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.7'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round'); svg.append(path);
       }
-      indicators.append(indicator);
+      indicator.append(svg); indicators.append(indicator);
     }
-    leftZone.append(indicators);
     const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
-    const brain = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); brain.setAttribute('viewBox', '0 0 48 48'); brain.setAttribute('class', 'chat-brain-icon'); brain.setAttribute('aria-hidden', 'true');
-    const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); brainPath.setAttribute('d', 'M23 8c-5-5-13-1-12 5-5 2-6 9-2 12-3 5 0 11 6 11 1 5 7 6 10 2V9M25 8c5-5 13-1 12 5 5 2 6 9 2 12 3 5 0 11-6 11-1 5-7 6-10 2V9M15 15c4 0 6 3 6 6m-12 4c5-2 9 0 10 4m19-14c-4 0-6 3-6 6m12 4c-5-2-9 0-10 4M24 9v28'); brainPath.setAttribute('fill', 'none'); brainPath.setAttribute('stroke', 'currentColor'); brainPath.setAttribute('stroke-width', '2.4'); brainPath.setAttribute('stroke-linecap', 'round'); brainPath.setAttribute('stroke-linejoin', 'round'); brain.append(brainPath); centerZone.append(brain, taskStatus);
+    centerZone.append(taskStatus);
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modeSelect = document.createElement('select');
@@ -152,6 +145,7 @@
     messages.setAttribute('aria-label', 'История сообщений');
 
     const composer = createElement('div', 'chat-composer');
+    composer.append(indicators);
     const typing = createElement('div', 'chat-typing');
     typing.id = 'chat-typing';
     typing.hidden = true;
@@ -177,7 +171,7 @@
 
     elements.root = root;
     elements.headerIndicators = indicators;
-    elements.modelName = modelName; elements.availability = availability; elements.headerModelName = headerModelName; elements.save = saveButton;
+    elements.modelName = modelName; elements.save = saveButton;
     elements.agent = modelSelect;
     elements.mode = modeSelect;
     elements.projectContext = projectSelect;
@@ -330,7 +324,7 @@
       elements.agent.value = state.agent;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-      if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
+
     }
     renderHistory();
     saveWorkspace();
@@ -868,7 +862,7 @@
       state.agent = elements.agent.value;
       const selected = state.agents.find((agent) => agent.id === state.agent);
       elements.modelName.textContent = selected ? selected.name : 'Агент не выбран';
-      if (elements.headerModelName) elements.headerModelName.textContent = selected ? (selected.model || selected.model_name || 'Модель по умолчанию') : 'Модель не выбрана';
+
       updateCurrentAgentAvatar(selected);void updateModelAvailability(selected);
       elements.send.disabled = state.sending || !state.agent; elements.input.disabled = state.sending || !state.agent; persistActiveConversation();
     });
