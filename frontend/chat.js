@@ -54,8 +54,8 @@
     node.textContent = text || '';
     node.classList.remove('warning', 'running', 'ok', 'fail');
     if (kind) node.classList.add(kind);
-    const center = node.closest('.chat-header-center');
-    if (center) center.classList.toggle('is-active', !!text && (kind === 'running' || /генер|думает/i.test(text)));
+    const brainStatus = node.closest('.chat-brain-status');
+    if (brainStatus) brainStatus.classList.toggle('is-active', !!text && (kind === 'running' || /генер|думает|инструмент|возобновляет|продолжает/i.test(text)));
   }
 
   function buildUI() {
@@ -79,12 +79,14 @@
       window.location.href = '/?edit_agent=' + encodeURIComponent(state.agent) + '&return_to_chat=1';
     });
     const taskStatus = createElement('span', 'chat-task-status', ''); taskStatus.id = 'chat-task-status'; taskStatus.setAttribute('role', 'status');
+    const brainStatus = createElement('div', 'chat-brain-status');
+    brainStatus.append(modelAvatar, taskStatus);
     const agentIdentity = createElement('div', 'chat-agent-identity');
     const agentStatusDot = createElement('span', 'chat-agent-status-dot'); agentStatusDot.setAttribute('aria-hidden', 'true');
     agentIdentity.append(agentStatusDot, modelName);
     const agentBlock = createElement('div', 'chat-header-agent-block'); agentBlock.append(createElement('span', 'chat-header-label', 'Текущий агент'), agentIdentity);
     const modeBlock = createElement('div', 'chat-header-mode-block'); modeBlock.append(createElement('span', 'chat-header-label', 'Режим'));
-    const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(modelAvatar, agentBlock, modeBlock); leftZone.append(modelInfo);
+    const leftZone = createElement('div', 'chat-header-left'); modelInfo.append(brainStatus, agentBlock, modeBlock); leftZone.append(modelInfo);
     const indicators = createElement('div', 'indicator-bar');
     indicators.setAttribute('aria-label', 'Индикаторы состояния');
     const indicatorSpecs = [
@@ -109,8 +111,7 @@
       indicator.append(image);
       indicators.append(indicator);
     }
-    const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-live', 'polite');
-    centerZone.append(taskStatus);
+    const centerZone = createElement('div', 'chat-header-center'); centerZone.setAttribute('aria-hidden', 'true');
 
     const controls = createElement('div', 'chat-toolbar-controls');
     const modeSelect = document.createElement('select');
@@ -151,11 +152,6 @@
 
     const composer = createElement('div', 'chat-composer');
     composer.append(indicators);
-    const typing = createElement('div', 'chat-typing');
-    typing.id = 'chat-typing';
-    typing.hidden = true;
-    typing.append(createElement('span'), createElement('span'), createElement('span'), createElement('b', '', 'Печатает…'));
-
     const form = document.createElement('form');
     form.id = 'chat-form';
     form.className = 'chat-input-row';
@@ -169,7 +165,7 @@
     send.type = 'submit';
     send.id = 'chat-send';
     form.append(input, send);
-    composer.append(typing, form);
+    composer.append(form);
 
     root.append(toolbar, messages, composer);
     document.getElementById('content').replaceChildren(root);
@@ -185,7 +181,6 @@
     elements.input = input;
     elements.send = send;
     elements.clear = clearButton;
-    elements.typing = typing;
     buildChatWorkspace();
   }
 
@@ -530,7 +525,6 @@
     if (elements.mode) { elements.mode.disabled = sending; syncModeSwitch(); }
     if (elements.projectContext) elements.projectContext.disabled = sending;
     elements.send.textContent = sending ? 'Ожидайте…' : 'Отправить';
-    elements.typing.hidden = !sending;
     if (sending) scrollToBottom();
   }
 
