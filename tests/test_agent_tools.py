@@ -7,10 +7,12 @@ from agent_tools import effective_tools, execute_tool, requires_tool_approval
 class AgentToolPermissionTests(unittest.TestCase):
     def test_allowed_file_io_skips_confirmation_but_delete_does_not(self):
         allowed = ["/home/user"]
-        approval_tools = {"write_file", "delete_file", "list_files", "read_file"}
+        approval_tools = {"write_file", "delete_file", "list_files", "read_file", "move_file", "create_directory"}
         self.assertFalse(requires_tool_approval("write_file", approval_tools, allowed))
         self.assertFalse(requires_tool_approval("read_file", approval_tools, allowed))
         self.assertFalse(requires_tool_approval("list_files", approval_tools, allowed))
+        self.assertFalse(requires_tool_approval("move_file", approval_tools, allowed))
+        self.assertFalse(requires_tool_approval("create_directory", approval_tools, allowed))
         self.assertTrue(requires_tool_approval("delete_file", approval_tools, allowed))
         self.assertTrue(requires_tool_approval("write_file", approval_tools, []))
         self.assertFalse(requires_tool_approval("write_file", set(), allowed))
