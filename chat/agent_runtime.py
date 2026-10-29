@@ -217,13 +217,29 @@ class AgentRuntime:
                         fn["arguments"] = args
                         check_allowed_paths(name, args or {}, allowed)
                     except PermissionError as exc:
+                        path_tools = {
+                            "list_files", "read_file", "search_files", "write_file",
+                            "move_file", "delete_file", "create_directory", "delete_directory",
+                        }
+                        if allowed and name in path_tools:
+                            # Вне allowed_paths нельзя выполнять действие автоматически.
+                            # Запрашиваем явное разрешение; execute_tool всё равно проверит
+                            # глобальные разрешённые корни при подтверждении.
+                            approval_args = dict(args or {})
+                            approval_args["_approval_scope_override"] = True
+                            aid = self.store.create_approval(
+                                conversation_id, task_id, call_id, name, _redact(approval_args),
+                                f"Путь инструмента «{name}» выходит за allowed_paths. Разрешить действие?"
+                            )
+                            self._emit(conversation_id, "approval_required", {
+                                "approval_id": aid, "tool_name": name, "tool_call_id": call_id,
+                                "description": f"Путь выходит за allowed_paths. Разрешить инструмент «{name}»?"
+                            }, task_id=task_id, tool_call_id=call_id)
+                            self._emit(conversation_id, "turn_state", {"state": "waiting_approval"}, task_id=task_id)
+                            result = {"task_id": task_id, "status": "waiting_approval", "approval_id": aid}
+                            stop = True
+                            break
                         denied_result = f"Заблокировано политикой allowed_paths: {exc}"
-                        self.store.append_event(
-                            conversation_id, "tool_result",
-                            {"tool_call_id": call_id, "status": "denied",
-                             "result": denied_result},
-                            task_id=task_id, tool_call_id=call_id,
-                        )
                         self._emit(conversation_id, "tool_result",
                                    {"tool_call_id": call_id, "status": "denied",
                                     "result": denied_result},
@@ -311,8 +327,10 @@ class AgentRuntime:
             try:
                 from agent_tools import check_allowed_paths, normalize_tool_paths
                 allowed = (self.agent_config or {}).get("allowed_paths") or []
-                arguments = normalize_tool_paths(tool_name, arguments, allowed)
-                check_allowed_paths(tool_name, arguments, allowed)
+                scope_override = bool(arguments.pop("_approval_scope_override", False))
+                if not scope_override:
+                    arguments = normalize_tool_paths(tool_name, arguments, allowed)
+                    check_allowed_paths(tool_name, arguments, allowed)
                 raw_result = self.tool_executor(tool_name, arguments)
                 serialized = json.dumps(_redact(raw_result), ensure_ascii=False, default=str)
                 if len(serialized) > 12000:
