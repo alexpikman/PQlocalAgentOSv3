@@ -2,9 +2,19 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_tools import effective_tools, execute_tool
+from agent_tools import effective_tools, execute_tool, requires_tool_approval
 
 class AgentToolPermissionTests(unittest.TestCase):
+    def test_allowed_file_io_skips_confirmation_but_delete_does_not(self):
+        allowed = ["/home/user"]
+        approval_tools = {"write_file", "delete_file", "list_files", "read_file"}
+        self.assertFalse(requires_tool_approval("write_file", approval_tools, allowed))
+        self.assertFalse(requires_tool_approval("read_file", approval_tools, allowed))
+        self.assertFalse(requires_tool_approval("list_files", approval_tools, allowed))
+        self.assertTrue(requires_tool_approval("delete_file", approval_tools, allowed))
+        self.assertTrue(requires_tool_approval("write_file", approval_tools, []))
+        self.assertFalse(requires_tool_approval("write_file", set(), allowed))
+
     def test_local_file_tools_require_both_global_and_agent_permissions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
