@@ -642,47 +642,8 @@
     }
   });
 
-  function setIndicatorState(kind, active) {
-    const indicator = document.querySelector('[data-chat-indicator="' + kind + '"]');
-    if (!indicator) return;
-    indicator.classList.toggle('is-active', !!active);
-    indicator.classList.toggle('is-idle', !active);
-    const image = indicator.querySelector('img');
-    if (image) {
-      const iconName = image.dataset.indicatorIcon || indicator.dataset.indicatorIcon || kind;
-      image.src = '/assets/indicators/' + (active ? 'active/' : 'inactive/') + iconName + (active ? '_active.svg' : '_inactive.svg');
-    }
-  }
-
-  function updateIndicatorsForEvent(event) {
-    const payload = event.payload || {};
-    const type = event.type;
-    if (type === 'user_message') {
-      setIndicatorState('error', false);
-      setIndicatorState('approval', false);
-      setIndicatorState('files', false);
-      setIndicatorState('remote', false);
-    } else if (type === 'tool_call') {
-      const name = String(payload.name || '').toLowerCase();
-      if (['list_files', 'read_file', 'search_files', 'write_file', 'move_file', 'delete_file', 'create_directory', 'delete_directory'].includes(name)) setIndicatorState('files', true);
-      if (name.startsWith('github_') || name === 'ssh_execute') setIndicatorState('remote', true);
-    } else if (type === 'tool_result') {
-      setIndicatorState('files', false);
-      setIndicatorState('remote', false);
-    } else if (type === 'approval_required') {
-      setIndicatorState('approval', true);
-    } else if (type === 'error') {
-      setIndicatorState('error', true);
-    } else if (type === 'turn_completed' || type === 'turn_cancelled') {
-      setIndicatorState('files', false);
-      setIndicatorState('remote', false);
-      setIndicatorState('approval', false);
-    }
-  }
-
   function handleChatEvent(event, replay = false) {
     const payload = event.payload || {};
-    updateIndicatorsForEvent(event);
     if (state.renderer) state.renderer.apply(event);
     if (event.type === 'user_message') {
       const commandId = payload.command_id || '';
