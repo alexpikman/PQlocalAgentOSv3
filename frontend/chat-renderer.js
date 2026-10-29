@@ -1,19 +1,25 @@
 /* Рендерер событий чата. Не вставляет данные модели через innerHTML. */
 export class ChatRenderer {
-  constructor(container) {
+  constructor(container, getContext) {
     this.container=container; this.nodes=new Map(); this.seen=new Set();
     this.status=document.getElementById('chat-task-status');
-    const agentSelect=document.getElementById('chat-agent');
-    this.agentName=agentSelect?.selectedOptions?.[0]?.textContent||document.getElementById('chat-agent-name')?.textContent||'Агент';
-    this.modelName=document.getElementById('chat-header-model-name')?.textContent||'Модель';
-    this.turnStartedAt=null; this.lastTurnStatus='completed';
+    this.getContext=typeof getContext==='function'?getContext:()=>({});
+    this.turnStartedAt=null; this.lastTurnStatus='completed'; this.userSendStatuses=new Map();
     container?.addEventListener('click',async event=>{
       const action=event.target.closest('[data-chat-message-action]'); if(!action)return;
       const row=action.closest('.chat-msg'); if(!row)return;
       if(action.dataset.chatMessageAction==='copy'){
         try{await navigator.clipboard.writeText(row.querySelector('.chat-msg-bubble')?.textContent||'');action.title='Скопировано';}
         catch(_){action.title='Не удалось скопировать';}
-      } else if(action.dataset.chatMessageAction==='retry') { let userRow=row.previousElementSibling; while(userRow&&!userRow.classList.contains('user'))userRow=userRow.previousElementSibling; window.dispatchEvent(new CustomEvent('pq-chat-retry',{detail:{text:userRow?.querySelector('.chat-msg-bubble')?.textContent||''}})); }
+      } else if(action.dataset.chatMessageAction==='retry') {
+        let userRow=row.classList.contains('user')?row:row.previousElementSibling;
+        while(userRow&&!userRow.classList.contains('user'))userRow=userRow.previousElementSibling;
+        window.dispatchEvent(new CustomEvent('pq-chat-retry',{detail:{text:userRow?.querySelector('.chat-msg-bubble')?.textContent||''}}));
+      }
+    });
+    window.addEventListener('pq-chat-user-send-status',event=>{
+      const detail=event.detail||{};
+      this.setUserMessageStatus(detail.commandId,detail.status);
     });
     container?.addEventListener('click',async event=>{
       const button=event.target.closest('[data-approval-decision]'); if(!button)return;
@@ -31,6 +37,28 @@ export class ChatRenderer {
     });
   }
   reset(){this.container.replaceChildren();this.nodes.clear();this.seen.clear();}
+  startTurn(timestamp=Date.now()){this.turnStartedAt=Number(timestamp)||Date.now();}
+  setUserMessageStatus(commandId,status){
+    if(!commandId||!status)return;
+    this.userSendStatuses.set(String(commandId),status);
+    const row=[...this.container.querySelectorAll('.chat-msg.user')].find(item=>item.dataset.commandId===String(commandId));
+    if(row)this._applyUserStatus(row,status);
+  }
+  _applyUserStatus(row,status){
+    row.dataset.sendStatus=status;
+    const badge=row.querySelector('.chat-msg-result-status');if(!badge)return;
+    badge.classList.remove('is-pending','is-success','is-error');
+    badge.classList.add(status==='success'?'is-success':status==='error'?'is-error':'is-pending');
+    badge.title=status==='success'?'Сообщение отправлено':status==='error'?'Ошибка отправки сообщения':'Отправка сообщения';
+    badge.setAttribute('aria-label',badge.title);
+  }
+  showLocalUserMessage(text,commandId,status='error'){
+    if(commandId&&[...this.container.querySelectorAll('.chat-msg.user')].some(row=>row.dataset.commandId===String(commandId)))return;
+    const event={event_id:'local-'+String(commandId||Date.now()),created_at:new Date().toISOString(),payload:{text,command_id:commandId}};
+    this._message('user',text,event);
+    const row=this.container.lastElementChild;
+    if(row)this._applyUserStatus(row,status);
+  }
   _el(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=String(text);return el;}
   _normalizeAssistantText(text) {
     const raw = String(text ?? '');
@@ -59,7 +87,7 @@ export class ChatRenderer {
       case 'assistant_delta':this._assistantDelta(event.message_id,p.text||'');break;
       case 'assistant_message':this._assistantFinal(event.message_id,p.content||'');break;
       case 'thinking':this._status('Думает…');break;
-      case 'turn_state':if(p.state==='thinking'&&!this.turnStartedAt)this.turnStartedAt=Date.now();this._status(({thinking:'Генерирует ответ…',streaming:'Генерирует ответ…',tool_running:'Выполняет инструмент…',waiting_approval:'Ожидает подтверждения',idle:''})[p.state]||p.state||'');break;
+      case 'turn_state':if(p.state==='thinking'&&!this.turnStartedAt)this.turnStartedAt=event.created_at?new Date(event.created_at).getTime():Date.now();this._status(({thinking:'Генерирует ответ…',streaming:'Генерирует ответ…',tool_running:'Выполняет инструмент…',waiting_approval:'Ожидает подтверждения',idle:''})[p.state]||p.state||'');break;
       case 'tool_call':this._status('Выполняет инструмент: '+(p.name||p.tool_name||'инструмент'));this._toolCall(event.tool_call_id,p);break;
       case 'tool_result':this._status(p.status==='error'?'Ошибка инструмента':'Получен результат инструмента');this._toolResult(event.tool_call_id,p);break;
       case 'approval_required':this._status('Ожидает подтверждения');this._approval(p);break;
@@ -70,18 +98,30 @@ export class ChatRenderer {
     }
   }
   _message(role,text,event){
-    const row=this._el('article','chat-msg '+(role==='user'?'user':'bot'));row.dataset.eventId=event.event_id;
-    row.append(this._el('div','chat-msg-avatar',role==='user'?'Вы':'AI'));
+    const isUser=role==='user';
+    const row=this._el('article','chat-msg '+(isUser?'user':'bot'));row.dataset.eventId=event.event_id;
+    const payload=event.payload||{};
+    if(payload.command_id)row.dataset.commandId=String(payload.command_id);
+    row.append(this._el('div','chat-msg-avatar',isUser?'Вы':'AI'));
     const content=this._el('div','chat-msg-content'),meta=this._el('div','chat-msg-meta');
-    meta.append(this._el('span','chat-msg-name',role==='user'?'Вы':(this.agentName+' | '+this.modelName)));
+    const context=this.getContext()||{};
+    const agentName=String(context.agentName||'Агент');
+    const modelName=String(context.modelName||'Модель по умолчанию');
+    meta.append(this._el('span','chat-msg-name',isUser?'Вы':(agentName+' | '+modelName)));
     const time=this._el('time','chat-msg-time',event.created_at?new Date(event.created_at).toLocaleTimeString():'');
     meta.append(time);const bubble=this._el('div','chat-msg-bubble',text);content.append(meta,bubble);
-    if(role!=='user'){
-      const actions=this._el('div','chat-msg-actions');
-      const retry=this._el('button','chat-msg-action','↻');retry.type='button';retry.dataset.chatMessageAction='retry';retry.title='Повторить последний запрос';retry.setAttribute('aria-label','Повторить последний запрос');
-      const copy=this._el('button','chat-msg-action','⧉');copy.type='button';copy.dataset.chatMessageAction='copy';copy.title='Скопировать текст';copy.setAttribute('aria-label','Скопировать текст');
-      const status=this._el('span','chat-msg-result-status is-pending','✓');status.title='Ответ ещё не завершён';status.setAttribute('aria-label','Статус ответа');
-      actions.append(retry,copy,status);content.append(actions);row.dataset.turnStatus='pending';
+    const actions=this._el('div','chat-msg-actions');
+    const retry=this._el('button','chat-msg-action','↻');retry.type='button';retry.dataset.chatMessageAction='retry';retry.title=isUser?'Повторить отправку сообщения':'Повторить запрос';retry.setAttribute('aria-label',retry.title);
+    const copy=this._el('button','chat-msg-action','⧉');copy.type='button';copy.dataset.chatMessageAction='copy';copy.title='Скопировать текст';copy.setAttribute('aria-label','Скопировать текст');
+    const status=this._el('span','chat-msg-result-status is-pending','✓');status.title=isUser?'Отправка сообщения':'Ответ ещё не завершён';status.setAttribute('aria-label',status.title);
+    actions.append(retry,copy,status);content.append(actions);
+    if(isUser){
+      const knownStatus=this.userSendStatuses.get(String(payload.command_id||''));
+      this._applyUserStatus(row,knownStatus||'pending');
+    }else{
+      row.dataset.turnStatus='pending';
+      row.dataset.agentName=agentName;
+      row.dataset.modelName=modelName;
     }
     row.dataset.createdAt=event.created_at||new Date().toISOString();row.append(content);
     this.container.append(row);this._scroll();
@@ -134,14 +174,18 @@ export class ChatRenderer {
     }
   }
   _finishTurn(event){
-    const seconds=this.turnStartedAt?Math.max(0,(Date.now()-this.turnStartedAt)/1000):0;
-    const row=[...this.container.querySelectorAll('.chat-msg.bot')].at(-1);
+    const completedAt=event?.created_at?new Date(event.created_at).getTime():Date.now();
+    const startAt=this.turnStartedAt;
+    const seconds=startAt?Math.max(0,(completedAt-startAt)/1000):0;
+    const rows=[...this.container.querySelectorAll('.chat-msg.bot')];
+    const row=rows.reverse().find(item=>item.dataset.turnStatus==='pending')||rows[0];
     if(row){
       row.dataset.turnStatus=this.lastTurnStatus;
+      row.dataset.durationSeconds=seconds.toFixed(1);
       const status=row.querySelector('.chat-msg-result-status');
       if(status){status.classList.remove('is-pending');status.classList.add(this.lastTurnStatus==='completed'?'is-success':'is-error');status.title=this.lastTurnStatus==='completed'?'Ответ завершён':'Ход завершился с ошибкой';}
       const meta=row.querySelector('.chat-msg-name');
-      if(meta&&!meta.textContent.includes('·'))meta.textContent+=' · '+seconds.toFixed(1)+' с';
+      if(meta)meta.textContent=String(row.dataset.agentName||'Агент')+' | '+String(row.dataset.modelName||'Модель по умолчанию')+' | '+seconds.toFixed(1)+' с';
     }
     this.turnStartedAt=null;
   }
