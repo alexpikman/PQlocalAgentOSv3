@@ -48,7 +48,10 @@ def requires_tool_approval(tool_name: str, approval_tools: set[str] | list[str] 
     """
     if tool_name not in set(approval_tools or ()):
         return False
-    if tool_name in {"list_files", "read_file", "write_file"} and allowed_paths:
+    if tool_name in {
+        "list_files", "read_file", "search_files", "write_file",
+        "move_file", "create_directory",
+    } and allowed_paths:
         return False
     return True
 
