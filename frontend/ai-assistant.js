@@ -8,7 +8,7 @@ import { ChatRenderer } from '/chat-renderer.js';
   const state = {
     agents: [], agentId: '', models: [], selectedModel: '', conversationId: '',
     transport: null, renderer: null, busy: false, events: [], files: [],
-    role: 'general', requestStartedAt: 0, generatedTokens: 0, lastStats: null
+    role: 'general', requestStartedAt: 0, generatedTokens: 0, lastStats: null, currentCommandId: ''
   };
 
   const roles = {
@@ -178,6 +178,9 @@ import { ChatRenderer } from '/chat-renderer.js';
     } else if (event.type === 'turn_completed' || event.type === 'turn_cancelled') {
       state.busy = false;
       $('#send-button').disabled = false;
+      $('#send-button').innerHTML = '<span>↑</span>';
+      $('#send-button').setAttribute('aria-label', 'Отправить');
+      state.currentCommandId = '';
       $('#chat-activity').hidden = true;
       const success = event.type === 'turn_completed' && ['completed', 'success'].includes(String(payload.status || 'completed'));
       setCore(success ? 'success' : 'error', success ? 'Задача завершена' : 'Выполнение остановлено', success ? 'Операции завершены' : (payload.reason || 'Проверьте журнал действий'));
@@ -262,10 +265,13 @@ import { ChatRenderer } from '/chat-renderer.js';
     }
     const messageText = text + attachmentContext;
     const commandId = crypto.randomUUID ? crypto.randomUUID() : 'cmd-' + Date.now();
+    state.currentCommandId = commandId;
     state.files = [];
     $('#attachment-strip').replaceChildren();
     $('#attachment-strip').hidden = true;
     state.busy = true;
+    $('#send-button').innerHTML = '<span>■</span>';
+    $('#send-button').setAttribute('aria-label', 'Остановить генерацию');
     state.requestStartedAt = performance.now();
     state.generatedTokens = 0;
     $('#send-button').disabled = true;
@@ -297,10 +303,30 @@ import { ChatRenderer } from '/chat-renderer.js';
     } catch (error) {
       state.busy = false;
       $('#send-button').disabled = false;
+      $('#send-button').innerHTML = '<span>↑</span>';
+      $('#send-button').setAttribute('aria-label', 'Отправить');
+      state.currentCommandId = '';
       $('#chat-activity').hidden = true;
-      state.renderer.showLocalUserMessage(text, commandId, 'error');
+      state.renderer.showLocalUserMessage(messageText, commandId, 'error');
       setCore('error', 'Не удалось отправить запрос', error.message);
       toast(error.message);
+    }
+  }
+
+  async function cancelTask() {
+    if (!state.busy || !state.conversationId) return;
+    $('#send-button').disabled = true;
+    $('#chat-activity-label').textContent = 'Останавливает выполнение…';
+    setCore('tool', 'Останавливает задачу', 'Отправлен запрос на отмену');
+    try {
+      await fetch('/api/chat/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: state.conversationId, command_id: state.currentCommandId })
+      });
+    } catch (error) {
+      toast('Не удалось отправить запрос остановки: ' + error.message);
+      $('#send-button').disabled = false;
     }
   }
 
@@ -408,7 +434,7 @@ import { ChatRenderer } from '/chat-renderer.js';
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
     });
-    $('#send-button').addEventListener('click', sendMessage);
+    $('#send-button').addEventListener('click', () => state.busy ? cancelTask() : sendMessage());
     $('#new-chat').addEventListener('click', newConversation);
     $('#refresh-history').addEventListener('click', () => loadHistoryList().catch((error) => toast(error.message)));
     $('#clear-view').addEventListener('click', () => { state.renderer.reset(); toast('Экран очищен. История диалога сохранена.'); });
