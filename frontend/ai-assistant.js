@@ -223,6 +223,10 @@ import { ChatRenderer } from '/chat-renderer.js';
   }
 
   async function newConversation() {
+    if (state.busy) {
+      toast('Сначала завершите или остановите текущую задачу.');
+      return;
+    }
     try {
       state.transport?.close();
       const data = await api('/chat/conversations', { method: 'POST', body: JSON.stringify({ title: 'Новый диалог' }) });
