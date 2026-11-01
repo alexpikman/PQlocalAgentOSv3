@@ -439,7 +439,7 @@ import { ChatRenderer } from '/chat-renderer.js';
     $('#refresh-history').addEventListener('click', () => loadHistoryList().catch((error) => toast(error.message)));
     $('#clear-view').addEventListener('click', () => { state.renderer.reset(); toast('Экран очищен. История диалога сохранена.'); });
     $('#role-select').addEventListener('change', (event) => updateRole(event.target.value));
-    $('#open-settings').addEventListener('click', () => { window.location.href = '/?page=interface-settings'; });
+    $('#open-settings').addEventListener('click', () => { window.location.href = '/?page=models'; });
     document.querySelectorAll('[data-prompt]').forEach((button) => button.addEventListener('click', () => { input.value = button.dataset.prompt; input.focus(); }));
     $('#attach-file').addEventListener('click', () => $('#file-input').click());
     const showAttachments = () => {
