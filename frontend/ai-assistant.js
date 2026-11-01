@@ -66,6 +66,7 @@ import { ChatRenderer } from '/chat-renderer.js';
   function updateRole(role) {
     const next = roles[role] ? role : 'general';
     state.role = next;
+    try { localStorage.setItem('pq-ai-assistant.role', next); } catch (_) {}
     const item = roles[next];
     $('#persona-symbol').classList.add('is-changing');
     $('#role-select').value = next;
@@ -160,7 +161,7 @@ import { ChatRenderer } from '/chat-renderer.js';
       state.generatedTokens += Math.max(1, Math.ceil(payload.text.length / 4));
       const elapsed = Math.max(0.2, (performance.now() - state.requestStartedAt) / 1000);
       $('#runtime-tokens').textContent = '~' + state.generatedTokens.toLocaleString('ru-RU');
-      $('#runtime-speed').textContent = (state.generatedTokens / elapsed).toFixed(1) + ' tok/s';
+      $('#runtime-speed').textContent = '~' + (state.generatedTokens / elapsed).toFixed(1) + ' tok/s';
     }
     if (event.type === 'thinking' || (event.type === 'turn_state' && payload.state === 'thinking')) setCore('thinking', 'Анализирует задачу', 'Изучает запрос и контекст');
     else if (event.type === 'assistant_delta' || (event.type === 'turn_state' && payload.state === 'streaming')) setCore('streaming', 'Формирует ответ', 'Генерация текста моделью');
@@ -193,6 +194,7 @@ import { ChatRenderer } from '/chat-renderer.js';
     $('#activity-count').textContent = '0 EVENTS';
     $('#chat-activity').hidden = true;
     const history = await state.transport.loadHistory(0);
+    (history.events || []).forEach(addTimelineEvent);
     state.renderer.applyMany(history.events || []);
     const lastSequence = (history.events || []).reduce((max, event) => Math.max(max, Number(event.sequence) || 0), 0);
     state.transport.connect({ lastSequence, epoch: history.meta?.epoch ?? null });
@@ -240,11 +242,29 @@ import { ChatRenderer } from '/chat-renderer.js';
   async function sendMessage() {
     const input = $('#message-input');
     const text = input.value.trim();
-    if (!text || state.busy) return;
+    if ((!text && !state.files.length) || state.busy) return;
     if (!state.agentId) { toast('В системе нет агента с назначенной моделью. Сначала настройте AI-агента в PQlocalAgentOS.'); return; }
     if (!state.conversationId) await newConversation();
     if (!state.conversationId || !state.transport) return;
+    let attachmentContext = '';
+    if (state.files.length) {
+      const chunks = [];
+      let totalChars = 0;
+      for (const file of state.files) {
+        const content = await file.text();
+        const remaining = Math.max(0, 160000 - totalChars);
+        const excerpt = content.slice(0, Math.min(remaining, 50000));
+        totalChars += excerpt.length;
+        chunks.push('\\n\\n--- FILE: ' + file.name + ' ---\\n' + excerpt + (excerpt.length < content.length ? '\\n[Файл обрезан по лимиту размера]' : ''));
+        if (totalChars >= 160000) break;
+      }
+      attachmentContext = '\\n\\nПРИКРЕПЛЁННЫЕ ТЕКСТОВЫЕ ФАЙЛЫ:' + chunks.join('');
+    }
+    const messageText = text + attachmentContext;
     const commandId = crypto.randomUUID ? crypto.randomUUID() : 'cmd-' + Date.now();
+    state.files = [];
+    $('#attachment-strip').replaceChildren();
+    $('#attachment-strip').hidden = true;
     state.busy = true;
     state.requestStartedAt = performance.now();
     state.generatedTokens = 0;
@@ -262,7 +282,7 @@ import { ChatRenderer } from '/chat-renderer.js';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversation_id: state.conversationId,
-          text,
+          text: messageText,
           command_id: commandId,
           agent_id: state.agentId,
           project_id: '',
@@ -363,7 +383,9 @@ import { ChatRenderer } from '/chat-renderer.js';
       if (!state.models.length) select.add(new Option('Нет загруженных моделей', ''));
       state.models.forEach((model) => select.add(new Option(model.name, model.name)));
       if (state.selectedModel && !state.models.some((item) => item.name === state.selectedModel)) select.add(new Option(state.selectedModel + ' · назначена агенту', state.selectedModel));
-      select.value = state.selectedModel || state.models[0]?.name || '';
+      let rememberedModel = '';
+      try { rememberedModel = localStorage.getItem('pq-ai-assistant.model') || ''; } catch (_) {}
+      select.value = rememberedModel && state.models.some((item) => item.name === rememberedModel) ? rememberedModel : (state.selectedModel || state.models[0]?.name || '');
       state.selectedModel = select.value;
     }
     $('#runtime-model').textContent = state.selectedModel || 'Не назначена';
@@ -371,6 +393,7 @@ import { ChatRenderer } from '/chat-renderer.js';
     if (!agent) toast('Не найден AI-агент с назначенной моделью. Создайте или настройте одного агента в основном интерфейсе.');
     select.addEventListener('change', () => {
       state.selectedModel = select.value;
+      try { localStorage.setItem('pq-ai-assistant.model', state.selectedModel); } catch (_) {}
       $('#runtime-model').textContent = state.selectedModel || 'Не назначена';
       $('#composer-model-label').textContent = state.selectedModel ? 'Ollama · ' + state.selectedModel : 'Ollama · модель не выбрана';
     });
@@ -390,21 +413,41 @@ import { ChatRenderer } from '/chat-renderer.js';
     $('#refresh-history').addEventListener('click', () => loadHistoryList().catch((error) => toast(error.message)));
     $('#clear-view').addEventListener('click', () => { state.renderer.reset(); toast('Экран очищен. История диалога сохранена.'); });
     $('#role-select').addEventListener('change', (event) => updateRole(event.target.value));
-    $('#open-settings').addEventListener('click', () => toast('Настройки подключения и разрешений доступны в основном интерфейсе PQlocalAgentOS.'));
+    $('#open-settings').addEventListener('click', () => { window.location.href = '/?page=interface-settings'; });
     document.querySelectorAll('[data-prompt]').forEach((button) => button.addEventListener('click', () => { input.value = button.dataset.prompt; input.focus(); }));
     $('#attach-file').addEventListener('click', () => $('#file-input').click());
-    $('#file-input').addEventListener('change', (event) => {
-      state.files = [...event.target.files];
+    const showAttachments = () => {
       const strip = $('#attachment-strip');
       strip.replaceChildren();
-      state.files.forEach((file) => {
-        const chip = document.createElement('span');
+      state.files.forEach((file, index) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
         chip.className = 'attachment-chip';
-        chip.textContent = file.name + ' · ' + formatBytes(file.size);
+        chip.textContent = file.name + ' · ' + formatBytes(file.size) + ' ×';
+        chip.title = 'Убрать вложение';
+        chip.addEventListener('click', () => { state.files.splice(index, 1); showAttachments(); });
         strip.append(chip);
       });
       strip.hidden = state.files.length === 0;
-      if (state.files.length) toast('Вложения пока отображаются в интерфейсе; передача файлов в runtime будет подключена отдельным этапом.');
+    };
+    const acceptFiles = (files) => {
+      const allowed = [...files].filter((file) => /^(text\/|application\/(json|xml|javascript|yaml|x-yaml))/.test(file.type) || /\.(txt|md|py|js|mjs|cjs|ts|tsx|jsx|html|css|json|xml|ya?ml|toml|ini|cfg|sql|sh|bat|ps1|log|csv)$/i.test(file.name));
+      const rejected = [...files].length - allowed.length;
+      state.files = [...state.files, ...allowed].slice(0, 8);
+      showAttachments();
+      if (rejected) toast('Прикреплены только текстовые файлы. Бинарные файлы и изображения пока не поддерживаются.');
+    };
+    $('#file-input').addEventListener('change', (event) => {
+      acceptFiles(event.target.files);
+      event.target.value = '';
+    });
+    const composer = $('.composer');
+    composer.addEventListener('dragover', (event) => { event.preventDefault(); composer.classList.add('is-dragging'); });
+    composer.addEventListener('dragleave', (event) => { if (!composer.contains(event.relatedTarget)) composer.classList.remove('is-dragging'); });
+    composer.addEventListener('drop', (event) => {
+      event.preventDefault();
+      composer.classList.remove('is-dragging');
+      if (event.dataTransfer?.files?.length) acceptFiles(event.dataTransfer.files);
     });
   }
 
@@ -414,7 +457,9 @@ import { ChatRenderer } from '/chat-renderer.js';
       modelName: state.selectedModel || 'Ollama'
     }));
     setupComposer();
-    updateRole('general');
+    let savedRole = 'general';
+    try { savedRole = localStorage.getItem('pq-ai-assistant.role') || 'general'; } catch (_) {}
+    updateRole(savedRole);
     try {
       await loadResources();
       await loadHistoryList();
