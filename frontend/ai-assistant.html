@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090d14">
+  <title>AI Assistant · PQlocalAgentOS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/ai-assistant.css">
+</head>
+<body class="ai-assistant-page">
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <div class="assistant-shell">
+    <aside class="left-rail">
+      <a class="brand" href="/" aria-label="PQ localAgent OS"><span class="brand-mark">PQ</span><span><b>ARCTIC</b><small>AI WORKSPACE</small></span></a>
+      <button class="new-chat" id="new-chat" type="button"><span>＋</span> Новый диалог</button>
+      <nav class="assistant-nav" aria-label="Навигация">
+        <div class="nav-section"><span class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</span>
+          <a class="nav-link" href="/" data-nav="workspace"><i>⌂</i>Рабочий стол</a>
+          <a class="nav-link active" href="#chat" data-nav="chat"><i>◌</i>Чат</a>
+          <a class="nav-link" href="/?page=terminal" data-nav="terminal"><i>⌘</i>Терминал</a>
+          <a class="nav-link" href="/?page=system-map" data-nav="map"><i>⌗</i>Карта системы</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">ПРОЦЕССЫ</span>
+          <a class="nav-link" href="/?page=projects"><i>▧</i>Проекты</a>
+          <a class="nav-link" href="/?page=tasks"><i>◷</i>Задачи</a>
+          <a class="nav-link" href="/?page=memory"><i>◇</i>Память</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">AI-РЕСУРСЫ</span>
+          <a class="nav-link" href="/?page=models"><i>◈</i>Модели</a>
+          <a class="nav-link" href="/?page=agents"><i>◎</i>AI-агенты</a>
+          <a class="nav-link" href="/?page=agent-roles"><i>✳</i>Роли ассистента</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">ДОСТУП</span>
+          <a class="nav-link" href="/?page=github"><i>⌘</i>GitHub</a>
+          <a class="nav-link" href="/?page=ssh"><i>⇄</i>SSH</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">НАСТРОЙКИ</span>
+          <a class="nav-link" href="/?page=permissions"><i>⬡</i>Разрешения</a>
+          <a class="nav-link" href="/?page=system-instructions"><i>≡</i>Системные инструкции</a>
+          <a class="nav-link" href="/?page=recommendations"><i>⌁</i>Рекомендации</a>
+          <a class="nav-link" href="/?page=interface-settings"><i>⚙</i>Настройки интерфейса</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">СИСТЕМНЫЕ ТЕСТЫ</span>
+          <a class="nav-link" href="/tests.html"><i>◇</i>Общий тест</a>
+        </div>
+        <div class="nav-section"><span class="nav-caption">ИСТОРИЯ</span>
+          <a class="nav-link" href="/?page=system-log"><i>≋</i>Журнал системы</a>
+        </div>
+      </nav>
+      <div class="history-block">
+        <div class="history-heading"><span>ИСТОРИЯ ДИАЛОГОВ</span><button id="refresh-history" type="button" title="Обновить">↻</button></div>
+        <div class="history-list" id="history-list"><div class="history-empty">Загрузка диалогов…</div></div>
+      </div>
+      <div class="left-footer"><span class="online-indicator"></span><div><b>Локальная система</b><small id="connection-label">Проверка подключения</small></div><span class="footer-menu">···</span></div>
+    </aside>
+
+    <main class="chat-workspace">
+      <header class="workspace-topbar">
+        <div class="breadcrumbs"><span>WORKSPACE</span><i>/</i><b>AI ASSISTANT</b></div>
+        <div class="topbar-actions"><span class="secure-label"><i></i> LOCAL FIRST</span><button class="icon-button" id="open-settings" title="Настройки" aria-label="Настройки">⚙</button></div>
+      </header>
+      <section class="chat-heading">
+        <div class="heading-copy"><div class="eyebrow"><span class="eyebrow-line"></span> PERSONAL AI SYSTEM</div><h1>Рабочее пространство</h1><p>Один ассистент. Любая профессиональная роль. Полный контроль над действиями.</p></div>
+        <div class="heading-controls">
+          <label class="select-wrap"><span>МОДЕЛЬ</span><select id="model-select" aria-label="Модель"><option value="">Загрузка моделей…</option></select></label>
+          <label class="select-wrap role-select-wrap"><span>АКТИВНАЯ РОЛЬ</span><select id="role-select" aria-label="Роль ассистента">
+            <option value="general">Generalist</option><option value="architect">Architect</option><option value="developer">Developer</option><option value="analyst">Analyst</option><option value="designer">Designer</option><option value="devops">DevOps</option><option value="writer">Writer</option><option value="researcher">Researcher</option>
+          </select></label>
+        </div>
+      </section>
+
+      <div class="chat-stage">
+        <div class="chat-column">
+          <div class="chat-context-bar">
+            <div class="active-persona"><span class="persona-symbol" id="persona-symbol">✳</span><div><b id="persona-name">GENERALIST</b><small id="persona-description">Универсальный помощник</small></div><span class="persona-live">ACTIVE</span></div>
+            <div class="context-tools"><span class="context-status" id="chat-status"><i></i> ГОТОВ К РАБОТЕ</span><button class="subtle-button" id="clear-view" type="button">Очистить экран</button></div>
+          </div>
+          <div class="chat-messages" id="chat-messages" aria-live="polite">
+            <div class="welcome-state" id="welcome-state">
+              <div class="welcome-core"><div class="core-orbit orbit-one"></div><div class="core-orbit orbit-two"></div><div class="core-orbit orbit-three"></div><div class="core-center">AI</div><span class="core-spark spark-one"></span><span class="core-spark spark-two"></span></div>
+              <div class="welcome-kicker">SYSTEM ONLINE · LOCAL INTELLIGENCE</div>
+              <h2>Чем займёмся?</h2><p>Опишите задачу. Я изучу контекст, предложу план и покажу каждое действие.</p>
+              <div class="prompt-suggestions"><button type="button" data-prompt="Проанализируй структуру моего проекта и предложи улучшения.">⌗ <span>Анализ проекта</span></button><button type="button" data-prompt="Помоги спроектировать архитектуру нового модуля.">◇ <span>Спроектировать модуль</span></button><button type="button" data-prompt="Найди потенциальные ошибки и слабые места в коде.">⌁ <span>Проверить код</span></button></div>
+            </div>
+          </div>
+          <div class="chat-activity" id="chat-activity" hidden><span class="activity-pulse"></span><b id="chat-activity-label">Думает…</b><span id="chat-activity-detail"></span><span class="activity-dots"><i></i><i></i><i></i></span></div>
+          <div class="composer-wrap">
+            <div class="attachment-strip" id="attachment-strip" hidden></div>
+            <div class="composer">
+              <button class="composer-tool" id="attach-file" type="button" title="Прикрепить файл">＋</button>
+              <input id="file-input" type="file" multiple hidden>
+              <textarea id="message-input" rows="1" placeholder="Напишите сообщение…  (Enter — отправить, Shift + Enter — новая строка)" aria-label="Сообщение"></textarea>
+              <div class="composer-actions"><span class="composer-hint">AI CAN MAKE MISTAKES</span><button class="send-button" id="send-button" type="button" aria-label="Отправить"><span>↑</span></button></div>
+            </div>
+            <div class="composer-foot"><span><i class="lock-icon">▣</i> Данные остаются в локальной системе</span><span id="composer-model-label">Ollama · ожидание модели</span></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="right-rail">
+      <div class="monitor-header"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Состояние системы</h2></div><span class="live-pill"><i></i> LIVE</span></div>
+      <section class="core-panel">
+        <div class="core-panel-top"><span>NEURAL CORE</span><span class="core-state" id="core-state">STANDBY</span></div>
+        <div class="neural-core" id="neural-core" data-state="idle"><div class="neural-ring ring-a"></div><div class="neural-ring ring-b"></div><div class="neural-ring ring-c"></div><div class="neural-grid"></div><div class="neural-center"><span id="core-glyph">AI</span></div><div class="neural-node node-a"></div><div class="neural-node node-b"></div><div class="neural-node node-c"></div></div>
+        <div class="core-caption"><b id="core-caption-title">Ассистент ожидает</b><span id="core-caption-detail">Все системы в режиме ожидания</span></div>
+        <div class="core-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </section>
+      <section class="metrics-section"><div class="section-heading"><b>РЕСУРСЫ</b><span>HOST SYSTEM</span></div>
+        <div class="metric-card"><div class="metric-top"><span class="metric-icon">⌁</span><span>CPU <small>PROCESSOR</small></span><b id="cpu-value">—</b></div><div class="metric-track"><i id="cpu-bar"></i></div><div class="metric-foot"><span id="cpu-detail">Ожидание данных</span><span id="cpu-extra">—</span></div></div>
+        <div class="metric-card"><div class="metric-top"><span class="metric-icon">▤</span><span>RAM <small>MEMORY</small></span><b id="ram-value">—</b></div><div class="metric-track"><i id="ram-bar"></i></div><div class="metric-foot"><span id="ram-detail">Ожидание данных</span><span id="ram-extra">—</span></div></div>
+        <div class="metric-card"><div class="metric-top"><span class="metric-icon">◈</span><span>GPU <small>GRAPHICS</small></span><b id="gpu-value">—</b></div><div class="metric-track"><i id="gpu-bar"></i></div><div class="metric-foot"><span id="gpu-detail">Ожидание данных</span><span id="gpu-extra">—</span></div></div>
+        <div class="metric-card"><div class="metric-top"><span class="metric-icon">▣</span><span>VRAM <small>VIDEO MEMORY</small></span><b id="vram-value">—</b></div><div class="metric-track"><i id="vram-bar"></i></div><div class="metric-foot"><span id="vram-detail">Ожидание данных</span><span id="vram-extra">—</span></div></div>
+      </section>
+      <section class="runtime-section"><div class="section-heading"><b>AI RUNTIME</b><span>MODEL ACTIVITY</span></div>
+        <div class="runtime-row"><span>Модель</span><b id="runtime-model">—</b></div><div class="runtime-row"><span>Скорость</span><b id="runtime-speed">— tok/s</b></div><div class="runtime-row"><span>Токены</span><b id="runtime-tokens">—</b></div><div class="runtime-row"><span>Контекст</span><b id="runtime-context">—</b></div><div class="runtime-row"><span>Ollama</span><b class="runtime-connection" id="ollama-state">Проверка…</b></div>
+      </section>
+      <section class="activity-section"><div class="section-heading"><b>ACTIVITY TIMELINE</b><span id="activity-count">0 EVENTS</span></div><div class="timeline-list" id="timeline-list"><div class="timeline-empty">Действия ассистента появятся здесь.</div></div></section>
+      <div class="right-footer"><span>AI ASSISTANT</span><span>BUILD 01 <i></i></span></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/auth.js" defer></script>
+  <script type="module" src="/ai-assistant.js"></script>
+</body>
+</html>

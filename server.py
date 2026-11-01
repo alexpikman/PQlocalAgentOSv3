@@ -47,12 +47,13 @@ _CHAT_ACTIVE_LOCK = threading.Lock()
 _CHAT_ACTIVE = {}
 _CHAT_COMMANDS = {}
 
-def _chat_runtime_for(conversation_id, agent_id, project_id='', mode='chat'):
+def _chat_runtime_for(conversation_id, agent_id, project_id='', mode='chat', persona='general', model_override=''):
     from agent_tools import effective_tools, execute_tool
     agent = next((x for x in domain_items('agents') if isinstance(x, dict) and x.get('id') == agent_id), None)
     if not agent: raise ValueError('Выбранный агент не найден')
-    model = str(agent.get('model') or '').strip()
+    model = str(model_override or agent.get('model') or '').strip()
     if not model: raise ValueError('У выбранного агента не назначена модель')
+    if len(model) > 200: raise ValueError('Некорректное имя модели')
     provider = provider_for_model(model, str(agent.get('provider_id') or '').strip())
     if provider.get('format') != 'ollama': raise ValueError('Потоковый чат первой версии поддерживает провайдера Ollama')
     model = resolve_ollama_model(model)
@@ -62,6 +63,20 @@ def _chat_runtime_for(conversation_id, agent_id, project_id='', mode='chat'):
     permissions = permission_settings()
     schemas = effective_tools(agent, permissions)
     system = resolve_agent_system_prompt(agent)
+    persona_prompts = {
+        'general': 'Работай как универсальный профессиональный ассистент. Выбирай подходящую дисциплину под задачу.',
+        'architect': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: СИСТЕМНЫЙ АРХИТЕКТОР. Проектируй архитектуру, границы модулей, контракты, потоки данных, отказоустойчивость и миграции. Сначала выясняй ограничения, затем предлагай проверяемое решение. Не меняй код без понимания архитектурных последствий.',
+        'developer': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: ВЕДУЩИЙ РАЗРАБОТЧИК. Изучай существующий код, соблюдай стиль проекта, делай минимальные согласованные изменения и проверяй результат. Не выдумывай API и не утверждай об успехе без проверки.',
+        'analyst': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: СИСТЕМНЫЙ АНАЛИТИК. Разделяй факты, гипотезы и выводы. Проверяй источники данных, ищи противоречия, оценивай риски и формулируй проверяемые рекомендации.',
+        'designer': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: UI/UX ДИЗАЙНЕР. Уделяй внимание визуальной иерархии, сетке, типографике, доступности, адаптивности и согласованности дизайн-системы. Не добавляй случайные стили и дублирующие правила.',
+        'devops': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: DEVOPS-ИНЖЕНЕР. Учитывай безопасность, воспроизводимость, наблюдаемость, права доступа, резервирование и откат. Перед потенциально опасными операциями объясняй последствия и требуй подтверждение.',
+        'writer': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: ТЕХНИЧЕСКИЙ РЕДАКТОР. Пиши ясно, точно и структурно, сохраняй смысл, терминологию и тон документа. Не добавляй неподтверждённые факты.',
+        'researcher': 'ТВОЯ ТЕКУЩАЯ РОЛЬ: ИССЛЕДОВАТЕЛЬ. Формулируй вопросы, проверяй гипотезы, отделяй первичные данные от интерпретаций, указывай ограничения и степень уверенности.'
+    }
+    persona = str(persona or 'general').strip().lower()
+    if persona not in persona_prompts:
+        raise ValueError('Неизвестная роль ассистента')
+    system += '\n\nАктивная профессиональная роль ассистента: ' + persona + '. ' + persona_prompts[persona]
     system += '\n\nПрофиль агента: ' + str(agent.get('name', '')) + '\nНазначение: ' + str(agent.get('description', ''))[:1000]
     if project:
         system += '\n\nРежим: ВНУТРИ ПРОЕКТА. Контекст проекта: ' + str(project.get('name', '')) + '; описание: ' + str(project.get('description', ''))[:1000] + '; рабочая папка: ' + str(project.get('path', 'не указана')) + '. Выполняй проектные действия только в рамках этого проекта и его разрешённых ресурсов.'
@@ -3164,6 +3179,8 @@ class Handler(SimpleHTTPRequestHandler):
             cid = str(data.get('conversation_id') or '').strip(); text_value = data.get('text')
             command_id = str(data.get('command_id') or '').strip()[:160]
             agent_id = str(data.get('agent_id') or '').strip()[:160]
+            persona = str(data.get('persona') or 'general').strip().lower()[:40]
+            model_override = str(data.get('model') or '').strip()[:200]
             project_id = str(data.get('project_id') or '').strip()[:160]
             mode_value = str(data.get('mode') or ('project' if project_id else 'chat')).strip().lower()
             if mode_value not in ('chat', 'project'):
@@ -3190,7 +3207,7 @@ class Handler(SimpleHTTPRequestHandler):
                 task_id = 'task_' + uuid.uuid4().hex
                 accepted = {'accepted':True,'conversation_id':cid,'command_id':command_id,'task_id':task_id,'status':'queued'}
                 _CHAT_COMMANDS[command_key] = accepted
-            try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id,mode_value)
+            try: runtime, _agent = _chat_runtime_for(cid,agent_id,project_id,mode_value,persona,model_override)
             except Exception as exc:
                 with _CHAT_ACTIVE_LOCK: _CHAT_ACTIVE.pop(cid,None); _CHAT_COMMANDS.pop((cid,command_id),None)
                 return self.send_json(400, {'error':str(exc)[:300]})
