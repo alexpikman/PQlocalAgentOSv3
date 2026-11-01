@@ -180,7 +180,6 @@ import { ChatRenderer } from '/chat-renderer.js';
   }
 
   async function setupConversation(id) {
-    state.transport?.close();
     state.conversationId = id;
     state.renderer.reset();
     $('#welcome-state')?.remove();
