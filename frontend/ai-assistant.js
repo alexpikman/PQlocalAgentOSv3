@@ -156,6 +156,12 @@ import { ChatRenderer } from '/chat-renderer.js';
     addTimelineEvent(event);
     state.renderer.apply(event);
     const payload = event.payload || {};
+    if (event.type === 'assistant_delta' && typeof payload.text === 'string') {
+      state.generatedTokens += Math.max(1, Math.ceil(payload.text.length / 4));
+      const elapsed = Math.max(0.2, (performance.now() - state.requestStartedAt) / 1000);
+      $('#runtime-tokens').textContent = '~' + state.generatedTokens.toLocaleString('ru-RU');
+      $('#runtime-speed').textContent = (state.generatedTokens / elapsed).toFixed(1) + ' tok/s';
+    }
     if (event.type === 'thinking' || (event.type === 'turn_state' && payload.state === 'thinking')) setCore('thinking', 'Анализирует задачу', 'Изучает запрос и контекст');
     else if (event.type === 'assistant_delta' || (event.type === 'turn_state' && payload.state === 'streaming')) setCore('streaming', 'Формирует ответ', 'Генерация текста моделью');
     else if (event.type === 'tool_call') {
@@ -313,17 +319,14 @@ import { ChatRenderer } from '/chat-renderer.js';
     try {
       const data = await api('/system/stats');
       state.lastStats = data;
-      const cpu = findNumber(data, [/cpu.*percent|percent.*cpu/i]);
-      const ram = findNumber(data, [/memory.*percent|ram.*percent|percent.*memory/i]);
-      const gpu = findNumber(data, [/gpu.*util|util.*gpu|gpu.*percent/i]);
-      const vramUsed = findNumber(data, [/vram.*used|memory.*used/i]);
-      const vramTotal = findNumber(data, [/vram.*total|memory.*total/i]);
-      const ramUsed = findNumber(data, [/memory.*used|ram.*used/i]);
-      const ramTotal = findNumber(data, [/memory.*total|ram.*total/i]);
-      setMetric('cpu', cpu?.value, cpu ? cpu.key : 'CPU telemetry');
-      setMetric('ram', ram?.value, ramUsed && ramTotal ? formatBytes(ramUsed.value) + ' / ' + formatBytes(ramTotal.value) : 'ОЗУ', ramUsed && ramTotal ? Math.round(ramUsed.value / ramTotal.value * 100) + '%' : '');
-      setMetric('gpu', gpu?.value, gpu ? gpu.key : 'GPU telemetry');
-      setMetric('vram', vramUsed && vramTotal ? vramUsed.value / vramTotal.value * 100 : null, vramUsed && vramTotal ? formatBytes(vramUsed.value) + ' / ' + formatBytes(vramTotal.value) : 'Видеопамять');
+      const cpu = data.cpu || {};
+      const ram = data.ram || {};
+      const gpu = data.gpu || {};
+      setMetric('cpu', cpu.percent, cpu.name || 'CPU utilization', cpu.logicalCores ? cpu.logicalCores + ' threads' : '');
+      setMetric('ram', ram.percent, Number.isFinite(ram.used) && Number.isFinite(ram.total) ? ram.used.toFixed(1) + ' / ' + ram.total.toFixed(1) + ' GB' : 'ОЗУ');
+      setMetric('gpu', gpu.percent, gpu.name || (gpu.pending ? 'Сбор данных GPU…' : 'GPU utilization'), Number.isFinite(gpu.temperatureC) ? gpu.temperatureC + ' °C' : '');
+      setMetric('vram', Number.isFinite(gpu.vramUsed) && Number.isFinite(gpu.vramTotal) && gpu.vramTotal > 0 ? gpu.vramUsed / gpu.vramTotal * 100 : null,
+        Number.isFinite(gpu.vramUsed) && Number.isFinite(gpu.vramTotal) ? gpu.vramUsed.toFixed(0) + ' / ' + gpu.vramTotal.toFixed(0) + ' MB' : 'Видеопамять');
     } catch (_) {
       $('#cpu-detail').textContent = 'Телеметрия недоступна';
       $('#ram-detail').textContent = 'Телеметрия недоступна';
@@ -338,12 +341,14 @@ import { ChatRenderer } from '/chat-renderer.js';
       api('/models').catch(() => ({ models: [], connected: false, error: 'Ollama недоступна' }))
     ]);
     state.agents = agentsResult.items || [];
-    const agent = state.agents.find((item) => item && item.enabled !== false && (item.model || item.model_name)) || state.agents.find((item) => item && (item.model || item.model_name));
+    state.models = modelsResult.models || [];
+    const ollamaNames = new Set(state.models.map((item) => String(item.name || '')));
+    const agent = state.agents.find((item) => item && item.enabled !== false && ollamaNames.has(String(item.model || item.model_name || '')))
+      || state.agents.find((item) => item && ollamaNames.has(String(item.model || item.model_name || '')));
     if (agent) {
       state.agentId = agent.id;
       state.selectedModel = String(agent.model || agent.model_name || '');
     }
-    state.models = modelsResult.models || [];
     const select = $('#model-select');
     select.replaceChildren();
     if (!modelsResult.connected) {
