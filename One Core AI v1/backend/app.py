@@ -281,13 +281,14 @@ class Handler(BaseHTTPRequestHandler):
        if name=="task_mark_done":
         result=complete_task(str(args.get("task_id","")))
         emit({"type":"tool_result","tool":name,"title":"Задача отмечена выполненной"})
-       elif name=="browser_open":url=str(args.get("url",""))
-       elif name=="browser_search":url="https://html.duckduckgo.com/html/?q="+quote_plus(str(args.get("query","")))
+       elif name in ("browser_open","browser_search"):
+        if name=="browser_open":url=str(args.get("url",""))
+        else:url="https://html.duckduckgo.com/html/?q="+quote_plus(str(args.get("query","")))
+        if not c["tools"].get("browser"):raise PermissionError("Виртуальный браузер выключен.")
+        BROWSER.navigate(url);page_text=BROWSER.text()
+        result={"url":BROWSER.status()["url"],"title":BROWSER.status()["title"],"page_text":page_text[:10000]}
+        emit({"type":"tool_result","tool":name,"url":result["url"],"title":result["title"]})
        else:raise ValueError("Инструмент не разрешён.")
-       if not c["tools"].get("browser"):raise PermissionError("Виртуальный браузер выключен.")
-       BROWSER.navigate(url);page_text=BROWSER.text()
-       result={"url":BROWSER.status()["url"],"title":BROWSER.status()["title"],"page_text":page_text[:10000]}
-       emit({"type":"tool_result","tool":name,"url":result["url"],"title":result["title"]})
       except Exception as exc:result={"error":str(exc)}
       full.append({"role":"tool","content":json.dumps(result,ensure_ascii=False),"tool_name":name})
     audit("ai.chat",details={"provider":c["provider"],"model":model,"browser_tools_enabled":bool(available)})
