@@ -170,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
     if not item:return self.json({"error":"Задача не найдена."},404)
     item["status"]=status;item["updated_at"]=datetime.now(timezone.utc).isoformat();write(TASKS,items)
     TEMP.mkdir(parents=True,exist_ok=True)
-    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps({"event":"status","id":task_id,"title":item["title"],"status":status,"created_at":item["updated_at"]},ensure_ascii=False)+"\\n")
+    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps({"event":"status","id":task_id,"title":item["title"],"status":status,"created_at":item["updated_at"]},ensure_ascii=False)+"\n")
     audit("task.status",details={"id":task_id,"status":status})
     return self.json({"ok":True,"task":item})
    if path=="/api/tasks":
