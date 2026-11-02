@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64,json,mimetypes,os,re,shutil,subprocess,threading,time,urllib.request,uuid
+import base64,json,mimetypes,os,queue,re,shutil,subprocess,threading,time,urllib.request,uuid
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -26,20 +26,21 @@ def plugins():
  PLUGINS.mkdir(parents=True,exist_ok=True); return [read(p,{}) for p in sorted(PLUGINS.glob("*.json"))]
 def project_context(root):
  try:
-  root=root.expanduser().resolve(); excluded={".git","node_modules",".venv","venv","__pycache__",".idea",".vscode","dist","build","logs","cache"}; blocked=(".env","secret","token","credential","password","id_rsa","id_ed25519",".pem",".key"); allowed={".py",".js",".mjs",".cjs",".html",".css",".json",".md",".txt",".yml",".yaml",".toml",".ini",".bat",".ps1",".sh",".sql"}; lines=[]; total=0
+  root=root.expanduser().resolve();excluded={".git","node_modules",".venv","venv","__pycache__",".idea",".vscode","dist","build","logs","cache"};blocked=(".env","secret","token","credential","password","id_rsa","id_ed25519",".pem",".key","settings","auth","vault","private");allowed={".py",".js",".mjs",".cjs",".html",".css",".json",".md",".txt",".yml",".yaml",".toml",".ini",".bat",".ps1",".sh",".sql"};lines=[];total=0
   if not root.is_dir():return "Рабочая папка недоступна."
-  for p in root.rglob("*"):
-   rel=p.relative_to(root)
-   if any(part in excluded or part.startswith(".") for part in rel.parts):continue
-   if p.is_dir():continue
-   if p.suffix.lower() not in allowed or any(x in p.name.lower() for x in blocked):continue
-   try:
-    if p.stat().st_size>30000:continue
-    content=p.read_text(encoding="utf-8")
-   except (OSError,UnicodeDecodeError):continue
-   chunk="\n--- FILE: "+str(rel)+" ---\n"+content[:12000]
-   if total+len(chunk)>70000:break
-   lines.append(chunk);total+=len(chunk)
+  for current,dirs,names in os.walk(root):
+   dirs[:]=[d for d in dirs if d not in excluded and not d.startswith(".")]
+   for name in names:
+    path=Path(current)/name;rel=path.relative_to(root)
+    if path.suffix.lower() not in allowed or any(x in name.lower() for x in blocked):continue
+    try:
+     if path.stat().st_size>30000:continue
+     content=path.read_text(encoding="utf-8")
+    except (OSError,UnicodeDecodeError):continue
+    chunk="\n--- FILE: "+str(rel)+" ---\n"+content[:12000]
+    if total+len(chunk)>70000:return "Корень: "+str(root)+"\nФайловый контекст ограничен 25 текстовыми файлами / 70k символов.\n"+"".join(lines)
+    lines.append(chunk);total+=len(chunk)
+    if len(lines)>=25:break
    if len(lines)>=25:break
   return "Корень: "+str(root)+"\nФайловый контекст ограничен 25 текстовыми файлами / 70k символов.\n"+"".join(lines) if lines else "В выбранной папке нет подходящих текстовых файлов."
  except Exception as e:return "Не удалось прочитать контекст проекта: "+str(e)
@@ -51,20 +52,41 @@ def logs():
    except json.JSONDecodeError:pass
  return list(reversed(out))
 class Browser:
- def __init__(self):self.pw=None;self.browser=None;self.page=None;self.lock=threading.RLock()
- def navigate(self,url):
-  if not re.match(r"^https?://",url,re.I):raise ValueError("Разрешены только http:// и https://")
-  from playwright.sync_api import sync_playwright
-  with self.lock:
-   if not self.browser:self.pw=sync_playwright().start();self.browser=self.pw.chromium.launch(headless=True);self.page=self.browser.new_page(viewport={"width":1440,"height":900})
-   self.page.goto(url,wait_until="domcontentloaded",timeout=45000);return self.status()
- def status(self):
-  with self.lock:return {"running":bool(self.page),"url":self.page.url if self.page else None,"title":self.page.title() if self.page else None}
- def screenshot(self):
-  with self.lock:return base64.b64encode(self.page.screenshot(type="jpeg",quality=65)).decode() if self.page else None
- def close(self):
-  with self.lock:
-   if self.browser:self.browser.close();self.browser=None;self.page=None
+ def __init__(self):
+  self.commands=queue.Queue();self.thread=threading.Thread(target=self.worker,daemon=True);self.thread.start()
+ def call(self,method,*args,timeout=60):
+  event=threading.Event();box={};self.commands.put((method,args,event,box))
+  if not event.wait(timeout):raise TimeoutError("Браузер не ответил вовремя.")
+  if "error" in box:raise RuntimeError(box["error"])
+  return box.get("result")
+ def worker(self):
+  pw=browser=page=None
+  while True:
+   method,args,event,box=self.commands.get()
+   try:
+    if method=="navigate":
+     url=args[0]
+     if not re.match(r"^https?://",url,re.I):raise ValueError("Разрешены только http:// и https://")
+     if not browser:
+      from playwright.sync_api import sync_playwright
+      pw=sync_playwright().start();browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={"width":1440,"height":900})
+     page.goto(url,wait_until="domcontentloaded",timeout=45000);box["result"]={"running":True,"url":page.url,"title":page.title()}
+    elif method=="status":box["result"]={"running":bool(page),"url":page.url if page else None,"title":page.title() if page else None}
+    elif method=="screenshot":box["result"]=base64.b64encode(page.screenshot(type="jpeg",quality=65)).decode() if page else None
+    elif method=="close":
+     if browser:browser.close()
+     if pw:pw.stop()
+     browser=page=pw=None;box["result"]={"ok":True}
+    elif method=="stop": 
+     if browser:browser.close()
+     if pw:pw.stop()
+     box["result"]={"ok":True};event.set();break
+   except Exception as exc:box["error"]=str(exc)
+   finally:event.set()
+ def navigate(self,url):return self.call("navigate",url,timeout=60)
+ def status(self):return self.call("status")
+ def screenshot(self):return self.call("screenshot",timeout=30)
+ def close(self):return self.call("close",timeout=30)
 BROWSER=Browser()
 class Handler(BaseHTTPRequestHandler):
  server_version="OneCoreAI/1.1"
