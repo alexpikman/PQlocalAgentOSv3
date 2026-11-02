@@ -109,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
    d=self.body()
    if path in ("/api/config","/api/settings"):
     c=config()
-    for k in ("provider","base_url","model","temperature","system_prompt","behavior","appearance","workspace","tools","remote","runtime"):
+    for k in ("provider","base_url","model","temperature","system_prompt","model_parameters","behavior","appearance","workspace","tools","remote","runtime"):
      if k in d:c[k]=d[k]
     c["base_url"]=str(c["base_url"]).rstrip("/")
     if d.get("api_key"):c["api_key"]=d["api_key"]
