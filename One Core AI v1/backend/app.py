@@ -244,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
   def run(emit):
    system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
    if c["tools"].get("files") and c.get("workspace",{}).get("include_files",True):system+="\n\nКОНТЕКСТ ВЫБРАННОГО ПРОЕКТА:\n"+project_context(Path(c["workspace"]["path"]))
-   full=[{"role":"system","content":system}]+messages
+   pending_tasks=[{"id":x.get("id"),"title":x.get("title"),"description":x.get("description")} for x in read(TASKS,[]) if x.get("status","open") in ("open","failed")]\n   if pending_tasks:system+="\\n\\nОТКРЫТЫЕ ЗАДАЧИ ЖУРНАЛА (используй ID при завершении): "+json.dumps(pending_tasks,ensure_ascii=False)+"\\nОтмечай задачу выполненной через task_mark_done только после фактического выполнения и проверки результата."\n   full=[{"role":"system","content":system}]+messages
    if c["provider"]=="ollama":
     available=[]
     if c["tools"].get("browser"):
