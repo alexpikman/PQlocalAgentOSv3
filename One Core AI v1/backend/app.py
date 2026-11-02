@@ -169,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
     TEMP.mkdir(parents=True,exist_ok=True)
     item={"id":str(uuid.uuid4()),"title":title,"description":description,"created_at":datetime.now(timezone.utc).isoformat()}
     items=read(TASKS,[]);items.append(item);write(TASKS,items)
-    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps(item,ensure_ascii=False)+"\\n")
+    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps(item,ensure_ascii=False)+"\n")
     audit("task.created",details={"id":item["id"],"title":title})
     return self.json({"ok":True,"task":item},201)
    if path=="/api/models/pull":return self.pull(d)
