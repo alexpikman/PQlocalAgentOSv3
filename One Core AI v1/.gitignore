@@ -1,7 +1,0 @@
-.venv/
-__pycache__/
-*.py[cod]
-data/*.json
-config/settings.json
-logs/
-data/temp/

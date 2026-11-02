@@ -1,3 +1,0 @@
-# Optional virtual browser dependencies
-playwright>=1.50
-# Then run: python -m playwright install chromium
