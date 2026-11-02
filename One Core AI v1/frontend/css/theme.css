@@ -1,0 +1,19 @@
+/* One Core AI — shared Arctic theme layer. Load after app.css on every page. */
+:root{
+ --oc-bg:#f1f6fc;
+ --oc-surface:#ffffff;
+ --oc-surface-soft:#f7faff;
+ --oc-blue:#568fdc;
+ --oc-blue-soft:#eaf3ff;
+ --oc-text:#30435e;
+ --oc-muted:#92a2b7;
+ --oc-line:#e8eef6;
+ --oc-radius:14px;
+ --oc-shadow:0 10px 32px #45689412;
+ color-scheme:light;
+}
+html{font-family:Manrope,'Segoe UI',Arial,sans-serif}
+body{font-family:Manrope,'Segoe UI',Arial,sans-serif;color:var(--text-color,var(--oc-text));background-color:var(--oc-bg)}
+button,input,textarea,select{font-family:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #8bb8ed;outline-offset:2px}
+::selection{background:#d9eaff;color:#345b8c}
