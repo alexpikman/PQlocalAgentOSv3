@@ -1,0 +1,2 @@
+@echo off
+powershell -NoProfile -Command "try { Invoke-RestMethod -Uri 'http://127.0.0.1:9001/api/shutdown' -Method Post -TimeoutSec 3 | Out-Null; Write-Host 'One Core AI stopped.' } catch { Write-Host 'Server is not running.' }
