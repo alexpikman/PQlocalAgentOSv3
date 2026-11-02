@@ -244,6 +244,7 @@ class Handler(BaseHTTPRequestHandler):
      available.append({"type":"function","function":{"name":"browser_open","description":"Открыть публичную веб-страницу в виртуальном браузере. Пользователь видит текущую страницу в Live Monitor.","parameters":{"type":"object","properties":{"url":{"type":"string","description":"Полный URL с http:// или https://"}},"required":["url"]}}})
     if c["tools"].get("web_search"):
      available.append({"type":"function","function":{"name":"browser_search","description":"Найти информацию в интернете через поисковую систему. Открой результаты в виртуальном браузере и прочитай видимый текст страницы.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Поисковый запрос"}},"required":["query"]}}})
+    available.append({"type":"function","function":{"name":"task_mark_done","description":"Отметить задачу из интерактивного журнала как выполненную после фактического выполнения и проверки результата.","parameters":{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}}})
     max_steps=max(1,min(30,int(c["behavior"].get("max_steps",20))))
     for step in range(max_steps):
      payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"]),**c.get("model_parameters",{})}}
