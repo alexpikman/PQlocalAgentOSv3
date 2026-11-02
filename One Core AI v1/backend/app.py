@@ -2,7 +2,7 @@ from __future__ import annotations
 import json, mimetypes, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 ROOT=Path(__file__).resolve().parent.parent
 WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"
@@ -65,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
             try: self.json({"error":str(exc)},500)
             except (BrokenPipeError,ConnectionResetError): pass
     def models(self):
-        c=config(); base=c["base_url"].rstrip("/")
+        c=config(); query=parse_qs(urlparse(self.path).query); c["provider"]=query.get("provider",[c["provider"]])[0]; c["base_url"]=query.get("base_url",[c["base_url"]])[0]; base=c["base_url"].rstrip("/")
         try:
             if c["provider"]=="ollama":
                 with request(base+"/api/tags") as r: items=json.loads(r.read()).get("models",[])
