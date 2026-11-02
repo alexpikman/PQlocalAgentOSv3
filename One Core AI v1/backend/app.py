@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs,quote_plus
-ROOT=Path(__file__).resolve().parent.parent; WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"; AUDIT=DATA/"operations.jsonl"; PLUGINS=ROOT/"plugins"
+ROOT=Path(__file__).resolve().parent.parent; WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"; AUDIT=DATA/"operations.jsonl"; PLUGINS=ROOT/"plugins"; TEMP=DATA/"temp"; TASKS=TEMP/"tasks.json"; TASK_HISTORY=TEMP/"creation_history.jsonl"
 DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"model_parameters":{"top_p":0.9,"num_ctx":8192,"num_predict":2048,"repeat_penalty":1.1,"top_k":40,"min_p":0.05,"repeat_last_n":64,"num_thread":0,"num_gpu":-1,"seed":-1,"mirostat":0},"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя.","behavior":{"role":"Универсальный AI-ассистент","verbosity":"balanced","language":"auto","reasoning":"deep","memory":True,"auto_plan":True,"ask_before_tools":True,"verify_changes":True,"max_steps":20},"appearance":{"font_family":"Manrope","font_size":14,"font_color":"#30435e"},"workspace":{"path":str(Path.home())},"tools":{"files":True,"terminal":False,"github":False,"ssh":False,"browser":True,"web_search":True,"git":True,"plugins":True},"remote":{"ssh_profiles":[]},"runtime":{"ollama_executable":""}}
 CATALOG=[{"id":"files","name":"Файловая система","description":"Чтение и контекст рабочей папки, вложения.","risk":"read_write"},{"id":"terminal","name":"PowerShell","description":"Команды Windows и системная диагностика.","risk":"critical"},{"id":"git","name":"Git","description":"Статус, diff и операции с репозиторием.","risk":"write"},{"id":"github","name":"GitHub CLI","description":"Репозитории, issues, pull requests и workflows через gh.","risk":"remote"},{"id":"ssh","name":"SSH","description":"Удалённые серверы через OpenSSH и ключи.","risk":"critical"},{"id":"browser","name":"Виртуальный браузер","description":"Просмотр сайтов и браузерная автоматизация через Playwright.","risk":"network"},{"id":"web_search","name":"Поиск в интернете","description":"Поиск через поисковые сайты в браузере.","risk":"network"},{"id":"plugins","name":"Плагины","description":"Локальные расширения и декларативные разрешения.","risk":"write"}]
 def read(p,f):
@@ -50,6 +50,14 @@ def project_context(root):
    if len(lines)>=25:break
   return "Корень: "+str(root)+"\nФайловый контекст ограничен 25 текстовыми файлами / 70k символов.\n"+"".join(lines) if lines else "В выбранной папке нет подходящих текстовых файлов."
  except Exception as e:return "Не удалось прочитать контекст проекта: "+str(e)
+def task_data():
+ tasks=read(TASKS,[])
+ history=[]
+ if TASK_HISTORY.exists():
+  for line in TASK_HISTORY.read_text(encoding="utf-8").splitlines()[-1000:]:
+   try:history.append(json.loads(line))
+   except json.JSONDecodeError:pass
+ return {"tasks":list(reversed(tasks)),"history":list(reversed(history))}
 def logs():
  out=[]
  if AUDIT.exists():
@@ -121,6 +129,7 @@ class Handler(BaseHTTPRequestHandler):
    if path in ("/api/config","/api/settings"):
     c=config();c.pop("api_key",None);return self.json(c)
    if path=="/api/history":return self.json(read(HISTORY,[]))
+   if path=="/api/tasks":return self.json(task_data())
    if path=="/api/models":return self.models()
    if path=="/api/tools":return self.json(CATALOG)
    if path=="/api/plugins":return self.json(plugins())
@@ -154,6 +163,15 @@ class Handler(BaseHTTPRequestHandler):
     if not isinstance(item,dict) or not item.get("id"):return self.json({"error":"Некорректный диалог"},400)
     items=[x for x in read(HISTORY,[]) if x.get("id")!=item["id"]];items.insert(0,item);write(HISTORY,items[:200]);return self.json({"ok":True})
    if path=="/api/chat":return self.chat(d)
+   if path=="/api/tasks":
+    title=str(d.get("title","")).strip()[:160];description=str(d.get("description","")).strip()[:12000]
+    if not title:return self.json({"error":"Укажи название задачи."},400)
+    TEMP.mkdir(parents=True,exist_ok=True)
+    item={"id":str(uuid.uuid4()),"title":title,"description":description,"created_at":datetime.now(timezone.utc).isoformat()}
+    items=read(TASKS,[]);items.append(item);write(TASKS,items)
+    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps(item,ensure_ascii=False)+"\\n")
+    audit("task.created",details={"id":item["id"],"title":title})
+    return self.json({"ok":True,"task":item},201)
    if path=="/api/models/pull":return self.pull(d)
    if path=="/api/models/delete":return self.delete_model(d)
    if path=="/api/models/load":return self.load_model(d)
