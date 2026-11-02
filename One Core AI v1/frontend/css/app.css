@@ -5,3 +5,21 @@
 @media(max-width:900px){.monitor{display:none}.settings-grid,.capability-grid,.security-grid{grid-template-columns:1fr}.setting-card.wide{grid-column:auto}.settings-sidebar{width:190px;flex-basis:190px}}@media(max-width:600px){.shell,.settings-shell{padding:0}.sidebar,.settings-sidebar{display:none}.settings-main{padding:18px 12px}.settings-top{align-items:flex-start;flex-direction:column;gap:10px}.settings-top h1{font-size:1.6429rem}.section-number{display:none}.workspace-view{padding:18px 12px}.view-heading{align-items:flex-start;flex-direction:column}.browser-toolbar{flex-wrap:wrap}.browser-toolbar input{flex-basis:100%}.plugin-grid{grid-template-columns:1fr}.settings-footer{gap:10px}.composer-bottom>div{gap:7px}.settings-button{font-size:0.5714rem}}
 
 .browser-live-card img{width:100%;height:115px;object-fit:cover;border-radius:8px;margin:10px 0}.browser-live-card a{display:block;color:#6c9bd3;font-size:0.65rem}
+
+
+/* One Core shared theme: temporary task inbox */
+.task-count{align-self:center;padding:8px 12px;border:1px solid #e5eef8;border-radius:20px;background:#f6faff;color:#7295bf;font-size:.75rem}
+.task-composer{display:grid;gap:10px;padding:18px;background:#ffffffd9;border:1px solid #e6eef7;border-radius:15px;box-shadow:0 7px 22px #557da00a;margin:4px 0 22px}
+.task-composer textarea{resize:vertical;min-height:76px}
+.task-composer-footer{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.task-composer-footer small{color:#9aaabd;font-size:.72rem;line-height:1.5}
+.task-columns{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(250px,1fr);gap:18px}
+.task-columns h2{font-size:1rem;color:#60758f;margin:0 0 12px}
+.task-list,.task-history{display:grid;align-content:start;gap:9px}
+.task-item,.task-history-item{background:#fff;border:1px solid #e9eff7;border-radius:12px;padding:13px 15px;box-shadow:0 4px 15px #557da008}
+.task-item h3{margin:0 0 7px;color:#526b89;font-size:.9rem}
+.task-item p{margin:0;color:#8597ad;font-size:.8rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.task-item small,.task-history-item small{display:block;margin-top:9px;color:#a4b1c1;font-size:.68rem}
+.task-history-item b{display:block;color:#7187a2;font-size:.76rem}
+.task-empty{padding:22px;border:1px dashed #dce7f3;border-radius:12px;color:#a0aec0;text-align:center;font-size:.8rem;background:#fbfdff}
+@media(max-width:850px){.task-columns{grid-template-columns:1fr}.task-composer-footer{align-items:flex-start;flex-direction:column}.task-composer-footer button{width:100%}}
