@@ -1,5 +1,5 @@
 from __future__ import annotations
-import base64,json,mimetypes,os,queue,re,shutil,subprocess,threading,time,urllib.request,uuid
+import base64,ipaddress,json,mimetypes,os,queue,re,shutil,socket,subprocess,threading,time,urllib.request,uuid
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +16,11 @@ def config():
  c=DEFAULT.copy()
  for k,v in read(CFG,{}).items(): c[k]={**c[k],**v} if isinstance(c.get(k),dict) and isinstance(v,dict) else v
  return c
+def redact(value):
+ text=str(value)
+ text=re.sub(r"(?i)(token|password|secret|api[_-]?key)(\\s*[:=]\\s*)([^\\s,;]+)",r"\\1\\2[REDACTED]",text)
+ text=re.sub(r"(?i)(--token|--password|--api-key)\\s+\\S+",r"\\1 [REDACTED]",text)
+ return text[:30000]
 def audit(action,status="ok",details=None):
  DATA.mkdir(parents=True,exist_ok=True)
  with AUDIT.open("a",encoding="utf-8") as f:f.write(json.dumps({"id":str(uuid.uuid4()),"time":datetime.now(timezone.utc).isoformat(),"action":action,"status":status,"details":details or {}},ensure_ascii=False)+"\n")
@@ -68,6 +73,11 @@ class Browser:
     if method=="navigate":
      url=args[0]
      if not re.match(r"^https?://",url,re.I):raise ValueError("Разрешены только http:// и https://")
+     host=urlparse(url).hostname
+     if not host:raise ValueError("Некорректный адрес.")
+     try: addresses=[ipaddress.ip_address(host)]
+     except ValueError: addresses=[ipaddress.ip_address(x[4][0]) for x in socket.getaddrinfo(host,None)]
+     if any(not ip.is_global for ip in addresses):raise PermissionError("Виртуальный браузер может открывать только публичные адреса.")
      if not browser:
       from playwright.sync_api import sync_playwright
       pw=sync_playwright().start();browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={"width":1440,"height":900})
@@ -137,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
     for k in ("provider","base_url","model","temperature","system_prompt","model_parameters","behavior","appearance","workspace","tools","remote","runtime"):
      if k in d:c[k]=d[k]
     c["base_url"]=str(c["base_url"]).rstrip("/")
-    if d.get("api_key"):c["api_key"]=d["api_key"]
+    
     write(CFG,c);audit("settings.save",details={"sections":list(d)});return self.json({"ok":True})
    if path=="/api/history":
     item=d.get("conversation")
@@ -305,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
   if not command or len(command)>12000:return self.json({"error":"Пустая или слишком длинная команда."},400)
   if not shell:return self.json({"error":"PowerShell не найден."},404)
   p=subprocess.run([shell,"-NoLogo","-NoProfile","-NonInteractive","-Command",command],cwd=str(cwd),capture_output=True,text=True,timeout=120,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-  output=(p.stdout+"\n"+p.stderr)[-30000:];audit("terminal.powershell",details={"command":command,"cwd":str(cwd),"exit_code":p.returncode,"output_tail":output[-3000:]})
+  output=(p.stdout+"\n"+p.stderr)[-30000:];audit("terminal.powershell",details={"command":redact(command),"cwd":str(cwd),"exit_code":p.returncode,"output_tail":output[-3000:]})
   return self.json({"exit_code":p.returncode,"output":output,"cwd":str(cwd)})
  def ssh_profile(self,d):
   if not d.get("confirmed"):return self.json({"error":"Подтверди сохранение SSH-профиля."},403)
@@ -323,7 +333,7 @@ class Handler(BaseHTTPRequestHandler):
   if prof.get("key_path"):args+=["-i",prof["key_path"]]
   args += [prof["user"]+"@"+prof["host"],str(d.get("command",""))]
   p=subprocess.run(args,capture_output=True,text=True,timeout=90,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));out=(p.stdout+"\n"+p.stderr)[-20000:]
-  audit("ssh.execute",details={"profile":prof["name"],"command":d.get("command"),"exit_code":p.returncode,"output_tail":out[-3000:]});return self.json({"exit_code":p.returncode,"output":out})
+  audit("ssh.execute",details={"profile":prof["name"],"command":redact(d.get("command","")),"exit_code":p.returncode,"output_tail":out[-3000:]});return self.json({"exit_code":p.returncode,"output":out})
  def github_status(self):
   gh=shutil.which("gh")
   if not gh:return self.json({"available":False,"authenticated":False,"message":"GitHub CLI (gh) не установлен."})
