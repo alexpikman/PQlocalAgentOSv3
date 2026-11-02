@@ -53,7 +53,7 @@ async function loadTasks(){
    const title=document.createElement("h3");title.textContent=task.title;
    const badge=document.createElement("span");badge.className="journal-status "+(task.status||"open");
    const statusText={open:"В работе / ожидает",done:"Выполнено ИИ",verified:"Проверено",failed:"Не работает"}[task.status||"open"];
-   const icon=document.createElement("i");icon.className="journal-icon "+(task.status||"open");icon.textContent=task.status==="verified"?"✓":task.status==="failed"?"!":task.status==="done"?"✓":"·";
+   const icon=document.createElement("i");icon.className="journal-icon "+(task.status||"open");icon.textContent=task.status==="verified"?"✓":task.status==="failed"?"✓":task.status==="done"?"✓":"·";
    badge.append(icon,document.createTextNode(statusText));head.append(title,badge);
    const description=document.createElement("p");description.textContent=task.description||"Без дополнительного описания.";
    const created=document.createElement("small");created.textContent="Добавлено: "+new Date(task.created_at).toLocaleString();
