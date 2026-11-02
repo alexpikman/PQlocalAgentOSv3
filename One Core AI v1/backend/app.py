@@ -163,11 +163,21 @@ class Handler(BaseHTTPRequestHandler):
     if not isinstance(item,dict) or not item.get("id"):return self.json({"error":"Некорректный диалог"},400)
     items=[x for x in read(HISTORY,[]) if x.get("id")!=item["id"]];items.insert(0,item);write(HISTORY,items[:200]);return self.json({"ok":True})
    if path=="/api/chat":return self.chat(d)
+   if path=="/api/tasks/update":
+    task_id=str(d.get("id",""));status=str(d.get("status",""))
+    if status not in ("open","verified","failed"):return self.json({"error":"Недопустимый статус проверки."},400)
+    items=read(TASKS,[]);item=next((x for x in items if x.get("id")==task_id),None)
+    if not item:return self.json({"error":"Задача не найдена."},404)
+    item["status"]=status;item["updated_at"]=datetime.now(timezone.utc).isoformat();write(TASKS,items)
+    TEMP.mkdir(parents=True,exist_ok=True)
+    with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps({"event":"status","id":task_id,"title":item["title"],"status":status,"created_at":item["updated_at"]},ensure_ascii=False)+"\\n")
+    audit("task.status",details={"id":task_id,"status":status})
+    return self.json({"ok":True,"task":item})
    if path=="/api/tasks":
     title=str(d.get("title","")).strip()[:160];description=str(d.get("description","")).strip()[:12000]
     if not title:return self.json({"error":"Укажи название задачи."},400)
     TEMP.mkdir(parents=True,exist_ok=True)
-    item={"id":str(uuid.uuid4()),"title":title,"description":description,"created_at":datetime.now(timezone.utc).isoformat()}
+    item={"id":str(uuid.uuid4()),"title":title,"description":description,"status":"open","created_at":datetime.now(timezone.utc).isoformat()}
     items=read(TASKS,[]);items.append(item);write(TASKS,items)
     with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps(item,ensure_ascii=False)+"\n")
     audit("task.created",details={"id":item["id"],"title":title})
