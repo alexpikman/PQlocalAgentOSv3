@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control","no-cache"); self.send_header("Connection","keep-alive"); self.end_headers()
         start=time.perf_counter()
         def emit(event):
-            self.wfile.write(("data: "+json.dumps(event,ensure_ascii=False)+"\\n\\n").encode()); self.wfile.flush()
+            self.wfile.write(("data: "+json.dumps(event,ensure_ascii=False)+"\n\n").encode()); self.wfile.flush()
         try:
             full=[{"role":"system","content":c["system_prompt"]}]+messages
             if c["provider"]=="ollama":
