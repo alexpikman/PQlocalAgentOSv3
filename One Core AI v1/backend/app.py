@@ -244,7 +244,9 @@ class Handler(BaseHTTPRequestHandler):
   def run(emit):
    system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
    if c["tools"].get("files") and c.get("workspace",{}).get("include_files",True):system+="\n\nКОНТЕКСТ ВЫБРАННОГО ПРОЕКТА:\n"+project_context(Path(c["workspace"]["path"]))
-   pending_tasks=[{"id":x.get("id"),"title":x.get("title"),"description":x.get("description")} for x in read(TASKS,[]) if x.get("status","open") in ("open","failed")]\n   if pending_tasks:system+="\\n\\nОТКРЫТЫЕ ЗАДАЧИ ЖУРНАЛА (используй ID при завершении): "+json.dumps(pending_tasks,ensure_ascii=False)+"\\nОтмечай задачу выполненной через task_mark_done только после фактического выполнения и проверки результата."\n   full=[{"role":"system","content":system}]+messages
+   pending_tasks=[{"id":x.get("id"),"title":x.get("title"),"description":x.get("description")} for x in read(TASKS,[]) if x.get("status","open") in ("open","failed")]
+   if pending_tasks:system+="\n\nОТКРЫТЫЕ ЗАДАЧИ ЖУРНАЛА (используй ID при завершении): "+json.dumps(pending_tasks,ensure_ascii=False)+"\nОтмечай задачу выполненной через task_mark_done только после фактического выполнения и проверки результата."
+   full=[{"role":"system","content":system}]+messages
    if c["provider"]=="ollama":
     available=[]
     if c["tools"].get("browser"):
@@ -276,7 +278,10 @@ class Handler(BaseHTTPRequestHandler):
        except json.JSONDecodeError:args={}
       emit({"type":"tool_start","tool":name,"args":args})
       try:
-       if name=="task_mark_done":\n        result=complete_task(str(args.get("task_id","")))\n        emit({"type":"tool_result","tool":name,"title":"Задача отмечена выполненной"})\n       elif name=="browser_open":url=str(args.get("url",""))
+       if name=="task_mark_done":
+        result=complete_task(str(args.get("task_id","")))
+        emit({"type":"tool_result","tool":name,"title":"Задача отмечена выполненной"})
+       elif name=="browser_open":url=str(args.get("url",""))
        elif name=="browser_search":url="https://html.duckduckgo.com/html/?q="+quote_plus(str(args.get("query","")))
        else:raise ValueError("Инструмент не разрешён.")
        if not c["tools"].get("browser"):raise PermissionError("Виртуальный браузер выключен.")
