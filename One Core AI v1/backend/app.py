@@ -21,9 +21,28 @@ def audit(action,status="ok",details=None):
  with AUDIT.open("a",encoding="utf-8") as f:f.write(json.dumps({"id":str(uuid.uuid4()),"time":datetime.now(timezone.utc).isoformat(),"action":action,"status":status,"details":details or {}},ensure_ascii=False)+"\n")
 def http(url,payload=None,headers=None,timeout=30):
  data=None if payload is None else json.dumps(payload,ensure_ascii=False).encode()
- return urllib.request.urlopen(urllib.request.Request(url,data=data,headers=headers or {},method="GET" if data is None else "POST"),timeout=timeout)
+ h={"Content-Type":"application/json"} if data is not None else {};h.update(headers or {});return urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method="GET" if data is None else "POST"),timeout=timeout)
 def plugins():
  PLUGINS.mkdir(parents=True,exist_ok=True); return [read(p,{}) for p in sorted(PLUGINS.glob("*.json"))]
+def project_context(root):
+ try:
+  root=root.expanduser().resolve(); excluded={".git","node_modules",".venv","venv","__pycache__",".idea",".vscode","dist","build","logs","cache"}; blocked=(".env","secret","token","credential","password","id_rsa","id_ed25519",".pem",".key"); allowed={".py",".js",".mjs",".cjs",".html",".css",".json",".md",".txt",".yml",".yaml",".toml",".ini",".bat",".ps1",".sh",".sql"}; lines=[]; total=0
+  if not root.is_dir():return "Рабочая папка недоступна."
+  for p in root.rglob("*"):
+   rel=p.relative_to(root)
+   if any(part in excluded or part.startswith(".") for part in rel.parts):continue
+   if p.is_dir():continue
+   if p.suffix.lower() not in allowed or any(x in p.name.lower() for x in blocked):continue
+   try:
+    if p.stat().st_size>30000:continue
+    content=p.read_text(encoding="utf-8")
+   except (OSError,UnicodeDecodeError):continue
+   chunk="\n--- FILE: "+str(rel)+" ---\n"+content[:12000]
+   if total+len(chunk)>70000:break
+   lines.append(chunk);total+=len(chunk)
+   if len(lines)>=25:break
+  return "Корень: "+str(root)+"\nФайловый контекст ограничен 25 текстовыми файлами / 70k символов.\n"+"".join(lines) if lines else "В выбранной папке нет подходящих текстовых файлов."
+ except Exception as e:return "Не удалось прочитать контекст проекта: "+str(e)
 def logs():
  out=[]
  if AUDIT.exists():
@@ -110,7 +129,9 @@ class Handler(BaseHTTPRequestHandler):
    if path=="/api/ssh/profile":return self.ssh_profile(d)
    if path=="/api/ssh/run":return self.ssh_run(d)
    if path=="/api/github/run":return self.github_run(d)
-   if path=="/api/browser/navigate":return self.json(BROWSER.navigate(str(d.get("url",""))))
+   if path=="/api/browser/navigate":
+    if not config()["tools"].get("browser"):return self.json({"error":"Браузер отключён в библиотеке возможностей."},403)
+    return self.json(BROWSER.navigate(str(d.get("url",""))))
    if path=="/api/browser/close":BROWSER.close();audit("browser.close");return self.json({"ok":True})
    if path=="/api/plugins":return self.plugin_create(d)
    if path=="/api/plugins/toggle":return self.plugin_toggle(d)
@@ -151,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
   started=time.perf_counter()
   def run(emit):
    system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
+   if c["tools"].get("files") and c.get("workspace",{}).get("include_files",True):
+    system += "\n\nКОНТЕКСТ ВЫБРАННОГО ПРОЕКТА:\n"+project_context(Path(c["workspace"]["path"]))
    full=[{"role":"system","content":system}]+messages
    if c["provider"]=="ollama":
     payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"]),**c.get("model_parameters",{})}}
