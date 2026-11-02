@@ -58,6 +58,13 @@ def task_data():
    try:history.append(json.loads(line))
    except json.JSONDecodeError:pass
  return {"tasks":list(reversed(tasks)),"history":list(reversed(history))}
+def complete_task(task_id):
+ items=read(TASKS,[]);task=next((x for x in items if x.get("id")==task_id),None)
+ if task is None:raise ValueError("Задача не найдена в журнале.")
+ task["status"]="done";task["updated_at"]=datetime.now(timezone.utc).isoformat();write(TASKS,items)
+ with TASK_HISTORY.open("a",encoding="utf-8") as stream:stream.write(json.dumps({"event":"status","id":task_id,"title":task["title"],"status":"done","created_at":task["updated_at"]},ensure_ascii=False)+"\n")
+ audit("task.status",details={"id":task_id,"status":"done","source":"assistant"})
+ return {"ok":True,"status":"done","task_id":task_id}
 def logs():
  out=[]
  if AUDIT.exists():
