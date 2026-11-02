@@ -18,8 +18,8 @@ def config():
  return c
 def redact(value):
  text=str(value)
- text=re.sub(r"(?i)(token|password|secret|api[_-]?key)(\\s*[:=]\\s*)([^\\s,;]+)",r"\\1\\2[REDACTED]",text)
- text=re.sub(r"(?i)(--token|--password|--api-key)\\s+\\S+",r"\\1 [REDACTED]",text)
+ text=re.sub(r"(?i)(token|password|secret|api[_-]?key)(\s*[:=]\s*)([^\s,;]+)",r"\1\2[REDACTED]",text)
+ text=re.sub(r"(?i)(--token|--password|--api-key)\s+\S+",r"\1 [REDACTED]",text)
  return text[:30000]
 def audit(action,status="ok",details=None):
  DATA.mkdir(parents=True,exist_ok=True)
