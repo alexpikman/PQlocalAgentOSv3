@@ -3,7 +3,7 @@ import base64,json,mimetypes,os,queue,re,shutil,subprocess,threading,time,urllib
 from datetime import datetime,timezone
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse,parse_qs
+from urllib.parse import urlparse,parse_qs,quote_plus
 ROOT=Path(__file__).resolve().parent.parent; WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"; AUDIT=DATA/"operations.jsonl"; PLUGINS=ROOT/"plugins"
 DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"model_parameters":{"top_p":0.9,"num_ctx":8192,"num_predict":2048,"repeat_penalty":1.1,"top_k":40,"min_p":0.05,"repeat_last_n":64,"num_thread":0,"num_gpu":-1,"seed":-1,"mirostat":0},"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя.","behavior":{"role":"Универсальный AI-ассистент","verbosity":"balanced","language":"auto","reasoning":"deep","memory":True,"auto_plan":True,"ask_before_tools":True,"verify_changes":True,"max_steps":20},"appearance":{"font_family":"Manrope","font_size":14,"font_color":"#30435e"},"workspace":{"path":str(Path.home())},"tools":{"files":True,"terminal":False,"github":False,"ssh":False,"browser":True,"web_search":True,"git":True,"plugins":True},"remote":{"ssh_profiles":[]},"runtime":{"ollama_executable":""}}
 CATALOG=[{"id":"files","name":"Файловая система","description":"Чтение и контекст рабочей папки, вложения.","risk":"read_write"},{"id":"terminal","name":"PowerShell","description":"Команды Windows и системная диагностика.","risk":"critical"},{"id":"git","name":"Git","description":"Статус, diff и операции с репозиторием.","risk":"write"},{"id":"github","name":"GitHub CLI","description":"Репозитории, issues, pull requests и workflows через gh.","risk":"remote"},{"id":"ssh","name":"SSH","description":"Удалённые серверы через OpenSSH и ключи.","risk":"critical"},{"id":"browser","name":"Виртуальный браузер","description":"Просмотр сайтов и браузерная автоматизация через Playwright.","risk":"network"},{"id":"web_search","name":"Поиск в интернете","description":"Поиск через поисковые сайты в браузере.","risk":"network"},{"id":"plugins","name":"Плагины","description":"Локальные расширения и декларативные разрешения.","risk":"write"}]
@@ -74,6 +74,7 @@ class Browser:
      page.goto(url,wait_until="domcontentloaded",timeout=45000);box["result"]={"running":True,"url":page.url,"title":page.title()}
     elif method=="status":box["result"]={"running":bool(page),"url":page.url if page else None,"title":page.title() if page else None}
     elif method=="screenshot":box["result"]=base64.b64encode(page.screenshot(type="jpeg",quality=65)).decode() if page else None
+    elif method=="text":box["result"]=(page.locator("body").inner_text(timeout=10000)[:12000] if page else "")
     elif method=="close":
      if browser:browser.close()
      if pw:pw.stop()
@@ -87,6 +88,7 @@ class Browser:
  def navigate(self,url):return self.call("navigate",url,timeout=60)
  def status(self):return self.call("status")
  def screenshot(self):return self.call("screenshot",timeout=30)
+ def text(self):return self.call("text",timeout=30)
  def close(self):return self.call("close",timeout=30)
 BROWSER=Browser()
 class Handler(BaseHTTPRequestHandler):
@@ -195,20 +197,48 @@ class Handler(BaseHTTPRequestHandler):
   started=time.perf_counter()
   def run(emit):
    system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
-   if c["tools"].get("files") and c.get("workspace",{}).get("include_files",True):
-    system += "\n\nКОНТЕКСТ ВЫБРАННОГО ПРОЕКТА:\n"+project_context(Path(c["workspace"]["path"]))
+   if c["tools"].get("files") and c.get("workspace",{}).get("include_files",True):system+="\n\nКОНТЕКСТ ВЫБРАННОГО ПРОЕКТА:\n"+project_context(Path(c["workspace"]["path"]))
    full=[{"role":"system","content":system}]+messages
    if c["provider"]=="ollama":
-    payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"]),**c.get("model_parameters",{})}}
-    req=urllib.request.Request(c["base_url"]+"/api/chat",data=json.dumps(payload,ensure_ascii=False).encode(),headers={"Content-Type":"application/json"})
-    with urllib.request.urlopen(req,timeout=600) as r:
-     for line in r:
-      if not line.strip():continue
-      x=json.loads(line);token=x.get("message",{}).get("content","")
-      if token:emit({"type":"token","text":token})
-      if x.get("done"):
-       n=x.get("eval_count");dur=x.get("eval_duration")
-       emit({"type":"metrics","model":model,"prompt_tokens":x.get("prompt_eval_count"),"completion_tokens":n,"tokens_per_second":round(n/(dur/1e9),2) if n and dur else None,"latency_ms":round((time.perf_counter()-started)*1000)})
+    available=[]
+    if c["tools"].get("browser"):
+     available.append({"type":"function","function":{"name":"browser_open","description":"Открыть публичную веб-страницу в виртуальном браузере. Пользователь видит текущую страницу в Live Monitor.","parameters":{"type":"object","properties":{"url":{"type":"string","description":"Полный URL с http:// или https://"}},"required":["url"]}}})
+    if c["tools"].get("web_search"):
+     available.append({"type":"function","function":{"name":"browser_search","description":"Найти информацию в интернете через поисковую систему. Открой результаты в виртуальном браузере и прочитай видимый текст страницы.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Поисковый запрос"}},"required":["query"]}}})
+    max_steps=max(1,min(30,int(c["behavior"].get("max_steps",20))))
+    for step in range(max_steps):
+     payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"]),**c.get("model_parameters",{})}}
+     if available:payload["tools"]=available
+     req=urllib.request.Request(c["base_url"]+"/api/chat",data=json.dumps(payload,ensure_ascii=False).encode(),headers={"Content-Type":"application/json"})
+     tool_calls=[];assistant_text=""
+     with urllib.request.urlopen(req,timeout=600) as r:
+      for line in r:
+       if not line.strip():continue
+       x=json.loads(line);msg=x.get("message",{});token=msg.get("content","")
+       if token:assistant_text+=token;emit({"type":"token","text":token})
+       if msg.get("tool_calls"):tool_calls.extend(msg["tool_calls"])
+       if x.get("done"):
+        n=x.get("eval_count");dur=x.get("eval_duration")
+        emit({"type":"metrics","model":model,"prompt_tokens":x.get("prompt_eval_count"),"completion_tokens":n,"tokens_per_second":round(n/(dur/1e9),2) if n and dur else None,"latency_ms":round((time.perf_counter()-started)*1000)})
+     if not tool_calls:break
+     full.append({"role":"assistant","content":assistant_text,"tool_calls":tool_calls})
+     for call in tool_calls:
+      fn=call.get("function",{});name=fn.get("name","");args=fn.get("arguments",{})
+      if isinstance(args,str):
+       try:args=json.loads(args)
+       except json.JSONDecodeError:args={}
+      emit({"type":"tool_start","tool":name,"args":args})
+      try:
+       if name=="browser_open":url=str(args.get("url",""))
+       elif name=="browser_search":url="https://html.duckduckgo.com/html/?q="+quote_plus(str(args.get("query","")))
+       else:raise ValueError("Инструмент не разрешён.")
+       if not c["tools"].get("browser"):raise PermissionError("Виртуальный браузер выключен.")
+       BROWSER.navigate(url);page_text=BROWSER.text()
+       result={"url":BROWSER.status()["url"],"title":BROWSER.status()["title"],"page_text":page_text[:10000]}
+       emit({"type":"tool_result","tool":name,"url":result["url"],"title":result["title"]})
+      except Exception as exc:result={"error":str(exc)}
+      full.append({"role":"tool","content":json.dumps(result,ensure_ascii=False),"tool_name":name})
+    audit("ai.chat",details={"provider":c["provider"],"model":model,"browser_tools_enabled":bool(available)})
    else:
     payload={"model":model,"messages":full,"temperature":float(c["temperature"]),"top_p":float(c.get("model_parameters",{}).get("top_p",0.9)),"max_tokens":int(c.get("model_parameters",{}).get("num_predict",2048)),"frequency_penalty":max(0,min(2,float(c.get("model_parameters",{}).get("repeat_penalty",1.1))-1)),"stream":True,"stream_options":{"include_usage":True}}
     req=urllib.request.Request(c["base_url"]+"/chat/completions",data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Authorization":"Bearer "+c.get("api_key","lm-studio")})
@@ -223,7 +253,7 @@ class Handler(BaseHTTPRequestHandler):
        token=choices[0].get("delta",{}).get("content","")
        if token:emit({"type":"token","text":token})
       if x.get("usage"):emit({"type":"metrics","model":model,"prompt_tokens":x["usage"].get("prompt_tokens"),"completion_tokens":x["usage"].get("completion_tokens"),"tokens_per_second":None,"latency_ms":round((time.perf_counter()-started)*1000)})
-   audit("ai.chat",details={"provider":c["provider"],"model":model})
+    audit("ai.chat",details={"provider":c["provider"],"model":model,"browser_tools_enabled":False})
   return self.events(run)
  def pull(self,d):
   c=config();name=str(d.get("name","")).strip()
