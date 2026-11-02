@@ -21,7 +21,8 @@ def audit(action,status="ok",details=None):
  with AUDIT.open("a",encoding="utf-8") as f:f.write(json.dumps({"id":str(uuid.uuid4()),"time":datetime.now(timezone.utc).isoformat(),"action":action,"status":status,"details":details or {}},ensure_ascii=False)+"\n")
 def http(url,payload=None,headers=None,timeout=30):
  data=None if payload is None else json.dumps(payload,ensure_ascii=False).encode()
- h={"Content-Type":"application/json"} if data is not None else {};h.update(headers or {});return urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method="GET" if data is None else "POST"),timeout=timeout)
+ h={"Content-Type":"application/json"} if data is not None else {};h.update(headers or {})
+ return urllib.request.urlopen(urllib.request.Request(url,data=data,headers=h,method="GET" if data is None else "POST"),timeout=timeout)
 def plugins():
  PLUGINS.mkdir(parents=True,exist_ok=True); return [read(p,{}) for p in sorted(PLUGINS.glob("*.json"))]
 def project_context(root):
