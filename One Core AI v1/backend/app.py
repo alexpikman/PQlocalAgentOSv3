@@ -276,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
        except json.JSONDecodeError:args={}
       emit({"type":"tool_start","tool":name,"args":args})
       try:
-       if name=="browser_open":url=str(args.get("url",""))
+       if name=="task_mark_done":\n        result=complete_task(str(args.get("task_id","")))\n        emit({"type":"tool_result","tool":name,"title":"Задача отмечена выполненной"})\n       elif name=="browser_open":url=str(args.get("url",""))
        elif name=="browser_search":url="https://html.duckduckgo.com/html/?q="+quote_plus(str(args.get("query","")))
        else:raise ValueError("Инструмент не разрешён.")
        if not c["tools"].get("browser"):raise PermissionError("Виртуальный браузер выключен.")
