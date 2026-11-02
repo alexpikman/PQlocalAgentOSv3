@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
    if path=="/api/chat":return self.chat(d)
    if path=="/api/tasks/update":
     task_id=str(d.get("id",""));status=str(d.get("status",""))
-    if status not in ("open","verified","failed"):return self.json({"error":"Недопустимый статус проверки."},400)
+    if status not in ("open","done","verified","failed"):return self.json({"error":"Недопустимый статус проверки."},400)
     items=read(TASKS,[]);item=next((x for x in items if x.get("id")==task_id),None)
     if not item:return self.json({"error":"Задача не найдена."},404)
     item["status"]=status;item["updated_at"]=datetime.now(timezone.utc).isoformat();write(TASKS,items)
