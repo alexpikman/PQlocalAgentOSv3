@@ -164,6 +164,7 @@ class Handler(BaseHTTPRequestHandler):
    if path=="/api/ssh/profile":return self.ssh_profile(d)
    if path=="/api/ssh/run":return self.ssh_run(d)
    if path=="/api/github/run":return self.github_run(d)
+   if path=="/api/git/run":return self.git_run(d)
    if path=="/api/browser/navigate":
     if not config()["tools"].get("browser"):return self.json({"error":"Браузер отключён в библиотеке возможностей."},403)
     return self.json(BROWSER.navigate(str(d.get("url",""))))
@@ -347,8 +348,20 @@ class Handler(BaseHTTPRequestHandler):
   if action not in groups:return self.json({"error":"Неизвестная команда."},400)
   if not gh:return self.json({"error":"GitHub CLI не установлен."},404)
   args=[gh]+groups[action]+[str(x)[:200] for x in d.get("args",[])[:8]]
-  p=subprocess.run(args,capture_output=True,text=True,timeout=60,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));out=(p.stdout+"\n"+p.stderr)[:20000]
+  p=subprocess.run(args,cwd=config()["workspace"]["path"],capture_output=True,text=True,timeout=60,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));out=(p.stdout+"\n"+p.stderr)[:20000]
   audit("github.cli",details={"action":action,"exit_code":p.returncode});return self.json({"exit_code":p.returncode,"output":out})
+ def git_run(self,d):
+  if not d.get("confirmed"):return self.json({"error":"Git-команда требует подтверждения."},403)
+  if not config()["tools"].get("git"):return self.json({"error":"Git отключён в библиотеке возможностей."},403)
+  actions={"status":["status","--short"],"diff":["diff","--stat"],"log":["log","-8","--oneline"],"branches":["branch","--all","--no-color"],"pull":["pull","--ff-only"]}
+  action=str(d.get("action",""))
+  if action not in actions:return self.json({"error":"Команда Git не разрешена."},400)
+  git=shutil.which("git")
+  if not git:return self.json({"error":"Git не найден."},404)
+  cwd=config()["workspace"]["path"]
+  p=subprocess.run([git]+actions[action],cwd=cwd,capture_output=True,text=True,timeout=90,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+  output=(p.stdout+"\n"+p.stderr)[:20000];audit("git."+action,details={"cwd":cwd,"exit_code":p.returncode,"output":output[:3000]})
+  return self.json({"exit_code":p.returncode,"output":output})
  def plugin_create(self,d):
   if not config()["tools"].get("plugins"):return self.json({"error":"Плагины отключены."},403)
   ident=re.sub(r"[^a-zA-Z0-9_-]","-",str(d.get("id","")).lower())[:48]
