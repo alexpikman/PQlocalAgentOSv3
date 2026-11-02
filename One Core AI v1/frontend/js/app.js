@@ -38,18 +38,28 @@ async function loadTasks(){
   $("#taskCount").textContent=data.tasks.length+" задач";
   if(!data.tasks.length){const empty=document.createElement("div");empty.className="task-empty";empty.textContent="Пока здесь пусто. Добавь задачу, чтобы не потерять её.";list.append(empty)}
   data.tasks.forEach(task=>{
-   const card=document.createElement("article");card.className="task-item";
+   const card=document.createElement("article");card.className="task-item journal-task";
+   const head=document.createElement("div");head.className="journal-task-head";
    const title=document.createElement("h3");title.textContent=task.title;
+   const badge=document.createElement("span");badge.className="journal-status "+(task.status||"open");
+   const statusText={open:"В работе / ожидает",done:"Выполнено ИИ",verified:"Проверено",failed:"Не работает"}[task.status||"open"];
+   const icon=document.createElement("i");icon.className="journal-icon "+(task.status||"open");icon.textContent=task.status==="verified"?"✓":task.status==="failed"?"!":task.status==="done"?"✓":"·";
+   badge.append(icon,document.createTextNode(statusText));head.append(title,badge);
    const description=document.createElement("p");description.textContent=task.description||"Без дополнительного описания.";
-   const created=document.createElement("small");created.textContent="Создано: "+new Date(task.created_at).toLocaleString();
-   card.append(title,description,created);list.append(card);
+   const created=document.createElement("small");created.textContent="Добавлено: "+new Date(task.created_at).toLocaleString();
+   const actions=document.createElement("div");actions.className="journal-actions";
+   const ok=document.createElement("button");ok.className="journal-action success";ok.textContent="✓ Всё работает";ok.onclick=()=>updateTaskStatus(task.id,"verified");
+   const fail=document.createElement("button");fail.className="journal-action warning";fail.textContent="! Не работает";fail.onclick=()=>updateTaskStatus(task.id,"failed");
+   const reset=document.createElement("button");reset.className="journal-action neutral";reset.textContent="Сбросить проверку";reset.onclick=()=>updateTaskStatus(task.id,"open");
+   actions.append(ok,fail,reset);card.append(head,description,created,actions);list.append(card);
   });
   if(!data.history.length){const empty=document.createElement("div");empty.className="task-empty";empty.textContent="История создания появится после добавления первой задачи.";history.append(empty)}
   data.history.forEach(item=>{
    const row=document.createElement("article");row.className="task-history-item";
    const title=document.createElement("b");title.textContent=item.title;
    const date=document.createElement("small");date.textContent=new Date(item.created_at).toLocaleString();
-   row.append(title,date);history.append(row);
+   const event=document.createElement("small");event.className="journal-event";event.textContent=item.event==="status"?"Статус: "+({open:"ожидает",done:"выполнено ИИ",verified:"проверено",failed:"не работает"}[item.status]||item.status):"Задача создана";
+   row.append(title,date,event);history.append(row);
   });
  }catch(error){$("#taskList").textContent="Не удалось загрузить задачи: "+error.message}
 }
@@ -64,3 +74,8 @@ $("#taskCreate").onclick=async()=>{
  }catch(error){alert(error.message)}
  finally{button.disabled=false}
 };
+
+async function updateTaskStatus(id,status){
+ try{await api("/api/tasks/update",{method:"POST",body:JSON.stringify({id,status})});await loadTasks()}
+ catch(error){alert("Не удалось обновить журнал: "+error.message)}
+}
