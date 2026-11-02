@@ -1,129 +1,274 @@
 from __future__ import annotations
-import json, mimetypes, threading, time, urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64,json,mimetypes,os,re,shutil,subprocess,threading,time,urllib.request,uuid
+from datetime import datetime,timezone
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
-
-ROOT=Path(__file__).resolve().parent.parent
-WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"
-DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя."}
-def read(path, fallback):
-    try: return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError,json.JSONDecodeError): return fallback
-def write(path,value):
-    path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_suffix(path.suffix+".tmp")
-    tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8"); tmp.replace(path)
+from urllib.parse import urlparse,parse_qs
+ROOT=Path(__file__).resolve().parent.parent; WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"; AUDIT=DATA/"operations.jsonl"; PLUGINS=ROOT/"plugins"
+DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя.","behavior":{"role":"Универсальный AI-ассистент","verbosity":"balanced","language":"auto","reasoning":"deep","memory":True,"auto_plan":True,"ask_before_tools":True,"verify_changes":True,"max_steps":20},"appearance":{"font_family":"Manrope","font_size":14,"font_color":"#30435e"},"workspace":{"path":str(Path.home())},"tools":{"files":True,"terminal":False,"github":False,"ssh":False,"browser":True,"web_search":True,"git":True,"plugins":True},"remote":{"ssh_profiles":[]},"runtime":{"ollama_executable":""}}
+CATALOG=[{"id":"files","name":"Файловая система","description":"Чтение и контекст рабочей папки, вложения.","risk":"read_write"},{"id":"terminal","name":"PowerShell","description":"Команды Windows и системная диагностика.","risk":"critical"},{"id":"git","name":"Git","description":"Статус, diff и операции с репозиторием.","risk":"write"},{"id":"github","name":"GitHub CLI","description":"Репозитории, issues, pull requests и workflows через gh.","risk":"remote"},{"id":"ssh","name":"SSH","description":"Удалённые серверы через OpenSSH и ключи.","risk":"critical"},{"id":"browser","name":"Виртуальный браузер","description":"Просмотр сайтов и браузерная автоматизация через Playwright.","risk":"network"},{"id":"web_search","name":"Поиск в интернете","description":"Поиск через поисковые сайты в браузере.","risk":"network"},{"id":"plugins","name":"Плагины","description":"Локальные расширения и декларативные разрешения.","risk":"write"}]
+def read(p,f):
+ try:return json.loads(p.read_text(encoding="utf-8"))
+ except (OSError,json.JSONDecodeError):return f
+def write(p,v):
+ p.parent.mkdir(parents=True,exist_ok=True); t=p.with_suffix(p.suffix+".tmp"); t.write_text(json.dumps(v,ensure_ascii=False,indent=2),encoding="utf-8"); t.replace(p)
 def config():
-    return {**DEFAULT,**read(CFG,{})}
-def request(url,payload=None,headers=None,timeout=20):
-    data=None if payload is None else json.dumps(payload,ensure_ascii=False).encode()
-    req=urllib.request.Request(url,data=data,headers=headers or {},method="GET" if data is None else "POST")
-    return urllib.request.urlopen(req,timeout=timeout)
-
+ c=DEFAULT.copy()
+ for k,v in read(CFG,{}).items(): c[k]={**c[k],**v} if isinstance(c.get(k),dict) and isinstance(v,dict) else v
+ return c
+def audit(action,status="ok",details=None):
+ DATA.mkdir(parents=True,exist_ok=True)
+ with AUDIT.open("a",encoding="utf-8") as f:f.write(json.dumps({"id":str(uuid.uuid4()),"time":datetime.now(timezone.utc).isoformat(),"action":action,"status":status,"details":details or {}},ensure_ascii=False)+"\n")
+def http(url,payload=None,headers=None,timeout=30):
+ data=None if payload is None else json.dumps(payload,ensure_ascii=False).encode()
+ return urllib.request.urlopen(urllib.request.Request(url,data=data,headers=headers or {},method="GET" if data is None else "POST"),timeout=timeout)
+def plugins():
+ PLUGINS.mkdir(parents=True,exist_ok=True); return [read(p,{}) for p in sorted(PLUGINS.glob("*.json"))]
+def logs():
+ out=[]
+ if AUDIT.exists():
+  for line in AUDIT.read_text(encoding="utf-8").splitlines()[-500:]:
+   try:out.append(json.loads(line))
+   except json.JSONDecodeError:pass
+ return list(reversed(out))
+class Browser:
+ def __init__(self):self.pw=None;self.browser=None;self.page=None;self.lock=threading.RLock()
+ def navigate(self,url):
+  if not re.match(r"^https?://",url,re.I):raise ValueError("Разрешены только http:// и https://")
+  from playwright.sync_api import sync_playwright
+  with self.lock:
+   if not self.browser:self.pw=sync_playwright().start();self.browser=self.pw.chromium.launch(headless=True);self.page=self.browser.new_page(viewport={"width":1440,"height":900})
+   self.page.goto(url,wait_until="domcontentloaded",timeout=45000);return self.status()
+ def status(self):
+  with self.lock:return {"running":bool(self.page),"url":self.page.url if self.page else None,"title":self.page.title() if self.page else None}
+ def screenshot(self):
+  with self.lock:return base64.b64encode(self.page.screenshot(type="jpeg",quality=65)).decode() if self.page else None
+ def close(self):
+  with self.lock:
+   if self.browser:self.browser.close();self.browser=None;self.page=None
+BROWSER=Browser()
 class Handler(BaseHTTPRequestHandler):
-    server_version="OneCoreAI/1.0"
-    def log_message(self,fmt,*args): print("[%s] %s"%(time.strftime("%H:%M:%S"),fmt%args))
-    def json(self,obj,status=200):
-        raw=json.dumps(obj,ensure_ascii=False).encode()
-        self.send_response(status); self.send_header("Content-Type","application/json; charset=utf-8")
-        self.send_header("Content-Length",str(len(raw))); self.send_header("Cache-Control","no-store"); self.end_headers(); self.wfile.write(raw)
-    def body(self):
-        n=min(int(self.headers.get("Content-Length","0")),2000000)
-        return json.loads(self.rfile.read(n).decode()) if n else {}
-    def do_GET(self):
-        path=urlparse(self.path).path
-        if path=="/api/status": return self.json({"ok":True,"version":"0.1.0","port":9001})
-        if path=="/api/config":
-            c=config(); c.pop("api_key",None); return self.json(c)
-        if path=="/api/history": return self.json(read(HISTORY,[]))
-        if path=="/api/models": return self.models()
-        relative="index.html" if path=="/" else path.lstrip("/")
-        target=(WEB/relative).resolve()
-        if WEB.resolve() not in target.parents or not target.is_file(): return self.send_error(404)
-        raw=target.read_bytes(); kind=mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        if kind.startswith("text/") or target.suffix in (".js",".css"): kind+="; charset=utf-8"
-        self.send_response(200); self.send_header("Content-Type",kind); self.send_header("Content-Length",str(len(raw))); self.end_headers(); self.wfile.write(raw)
-    def do_POST(self):
-        path=urlparse(self.path).path
-        try:
-            data=self.body()
-            if path=="/api/config":
-                c=config()
-                for key in ("provider","base_url","model","temperature","system_prompt","api_key"):
-                    if key in data: c[key]=data[key]
-                c["base_url"]=str(c["base_url"]).rstrip("/"); write(CFG,c); return self.json({"ok":True})
-            if path=="/api/history":
-                item=data.get("conversation")
-                if not isinstance(item,dict) or not item.get("id"): return self.json({"error":"Некорректный диалог"},400)
-                items=[x for x in read(HISTORY,[]) if x.get("id")!=item["id"]]; items.insert(0,item); write(HISTORY,items[:100]); return self.json({"ok":True})
-            if path=="/api/shutdown":
-                self.json({"ok":True}); threading.Thread(target=self.server.shutdown,daemon=True).start(); return
-            if path=="/api/chat": return self.chat(data)
-            return self.json({"error":"Маршрут не найден"},404)
-        except (BrokenPipeError,ConnectionResetError): return
-        except Exception as exc:
-            try: self.json({"error":str(exc)},500)
-            except (BrokenPipeError,ConnectionResetError): pass
-    def models(self):
-        c=config(); query=parse_qs(urlparse(self.path).query); c["provider"]=query.get("provider",[c["provider"]])[0]; c["base_url"]=query.get("base_url",[c["base_url"]])[0]; base=c["base_url"].rstrip("/")
-        try:
-            if c["provider"]=="ollama":
-                with request(base+"/api/tags") as r: items=json.loads(r.read()).get("models",[])
-                models=[{"id":x["name"],"name":x["name"]} for x in items]
-            else:
-                with request(base+"/models",headers={"Authorization":"Bearer "+c.get("api_key","lm-studio")}) as r: items=json.loads(r.read()).get("data",[])
-                models=[{"id":x["id"],"name":x["id"]} for x in items]
-            self.json({"ok":True,"models":models,"provider":c["provider"]})
-        except Exception as exc: self.json({"ok":False,"models":[],"error":str(exc)},502)
-    def chat(self,data):
-        c=config(); model=str(data.get("model") or c.get("model") or "").strip(); messages=data.get("messages",[])
-        if not model: return self.json({"error":"Выбери модель в настройках подключения."},400)
-        if not messages: return self.json({"error":"Пустое сообщение."},400)
-        self.send_response(200); self.send_header("Content-Type","text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control","no-cache"); self.send_header("Connection","keep-alive"); self.end_headers()
-        start=time.perf_counter()
-        def emit(event):
-            self.wfile.write(("data: "+json.dumps(event,ensure_ascii=False)+"\n\n").encode()); self.wfile.flush()
-        try:
-            full=[{"role":"system","content":c["system_prompt"]}]+messages
-            if c["provider"]=="ollama":
-                payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"])}}
-                req=urllib.request.Request(c["base_url"].rstrip("/")+"/api/chat",data=json.dumps(payload,ensure_ascii=False).encode(),headers={"Content-Type":"application/json"})
-                with urllib.request.urlopen(req,timeout=300) as response:
-                    for line in response:
-                        if not line.strip(): continue
-                        item=json.loads(line); token=item.get("message",{}).get("content","")
-                        if token: emit({"type":"token","text":token})
-                        if item.get("done"):
-                            count=item.get("eval_count"); duration=item.get("eval_duration")
-                            emit({"type":"metrics","model":model,"prompt_tokens":item.get("prompt_eval_count"),"completion_tokens":count,"tokens_per_second":round(count/(duration/1e9),2) if count and duration else None,"latency_ms":round((time.perf_counter()-start)*1000)})
-            else:
-                payload={"model":model,"messages":full,"temperature":float(c["temperature"]),"stream":True,"stream_options":{"include_usage":True}}
-                headers={"Content-Type":"application/json","Authorization":"Bearer "+c.get("api_key","lm-studio")}
-                req=urllib.request.Request(c["base_url"].rstrip("/")+"/chat/completions",data=json.dumps(payload,ensure_ascii=False).encode(),headers=headers)
-                with urllib.request.urlopen(req,timeout=300) as response:
-                    for raw in response:
-                        line=raw.decode().strip()
-                        if not line.startswith("data:"): continue
-                        value=line[5:].strip()
-                        if value=="[DONE]": break
-                        item=json.loads(value); choices=item.get("choices",[])
-                        if choices:
-                            token=choices[0].get("delta",{}).get("content","")
-                            if token: emit({"type":"token","text":token})
-                        usage=item.get("usage")
-                        if usage: emit({"type":"metrics","model":model,"prompt_tokens":usage.get("prompt_tokens"),"completion_tokens":usage.get("completion_tokens"),"tokens_per_second":None,"latency_ms":round((time.perf_counter()-start)*1000)})
-        except Exception as exc: emit({"type":"error","message":str(exc)})
-        finally:
-            try: emit({"type":"done"})
-            except (BrokenPipeError,ConnectionResetError): pass
-
+ server_version="OneCoreAI/1.1"
+ def log_message(self,fmt,*args):print("[%s] %s"%(time.strftime("%H:%M:%S"),fmt%args))
+ def host_ok(self):
+  if self.headers.get("Host") not in ("127.0.0.1:9001","localhost:9001"):self.send_error(403);return False
+  return True
+ def json(self,obj,status=200):
+  raw=json.dumps(obj,ensure_ascii=False).encode();self.send_response(status);self.send_header("Content-Type","application/json; charset=utf-8");self.send_header("Content-Length",str(len(raw)));self.send_header("Cache-Control","no-store");self.end_headers();self.wfile.write(raw)
+ def body(self):
+  n=int(self.headers.get("Content-Length","0"))
+  if n>8_000_000:raise ValueError("Запрос больше 8 МБ")
+  return json.loads(self.rfile.read(n).decode()) if n else {}
+ def do_GET(self):
+  if not self.host_ok():return
+  path=urlparse(self.path).path
+  try:
+   if path=="/api/status":return self.json({"ok":True,"version":"0.2.0","port":9001})
+   if path in ("/api/config","/api/settings"):
+    c=config();c.pop("api_key",None);return self.json(c)
+   if path=="/api/history":return self.json(read(HISTORY,[]))
+   if path=="/api/models":return self.models()
+   if path=="/api/tools":return self.json(CATALOG)
+   if path=="/api/plugins":return self.json(plugins())
+   if path=="/api/logs":return self.json(logs())
+   if path=="/api/workspace":return self.workspace()
+   if path=="/api/runtime/status":return self.runtime_status()
+   if path=="/api/github/status":return self.github_status()
+   if path=="/api/ssh/profiles":return self.json(config()["remote"].get("ssh_profiles",[]))
+   if path=="/api/browser/status":return self.json(BROWSER.status())
+   if path=="/api/browser/screenshot":return self.json({"image":BROWSER.screenshot(),"status":BROWSER.status()})
+   rel="index.html" if path=="/" else path.lstrip("/"); target=(WEB/rel).resolve()
+   if WEB.resolve() not in target.parents or not target.is_file():return self.send_error(404)
+   raw=target.read_bytes();typ=mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+   if typ.startswith("text/") or target.suffix in (".js",".css"):typ+="; charset=utf-8"
+   self.send_response(200);self.send_header("Content-Type",typ);self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
+  except Exception as e:self.json({"error":str(e)},500)
+ def do_POST(self):
+  if not self.host_ok():return
+  path=urlparse(self.path).path
+  try:
+   d=self.body()
+   if path in ("/api/config","/api/settings"):
+    c=config()
+    for k in ("provider","base_url","model","temperature","system_prompt","behavior","appearance","workspace","tools","remote","runtime"):
+     if k in d:c[k]=d[k]
+    c["base_url"]=str(c["base_url"]).rstrip("/")
+    if d.get("api_key"):c["api_key"]=d["api_key"]
+    write(CFG,c);audit("settings.save",details={"sections":list(d)});return self.json({"ok":True})
+   if path=="/api/history":
+    item=d.get("conversation")
+    if not isinstance(item,dict) or not item.get("id"):return self.json({"error":"Некорректный диалог"},400)
+    items=[x for x in read(HISTORY,[]) if x.get("id")!=item["id"]];items.insert(0,item);write(HISTORY,items[:200]);return self.json({"ok":True})
+   if path=="/api/chat":return self.chat(d)
+   if path=="/api/models/pull":return self.pull(d)
+   if path=="/api/models/delete":return self.delete_model(d)
+   if path=="/api/runtime/start":return self.start_runtime()
+   if path=="/api/workspace":return self.set_workspace(d)
+   if path=="/api/terminal/run":return self.terminal(d)
+   if path=="/api/ssh/profile":return self.ssh_profile(d)
+   if path=="/api/ssh/run":return self.ssh_run(d)
+   if path=="/api/github/run":return self.github_run(d)
+   if path=="/api/browser/navigate":return self.json(BROWSER.navigate(str(d.get("url",""))))
+   if path=="/api/browser/close":BROWSER.close();audit("browser.close");return self.json({"ok":True})
+   if path=="/api/plugins":return self.plugin_create(d)
+   if path=="/api/plugins/toggle":return self.plugin_toggle(d)
+   if path=="/api/tools/toggle":return self.tool_toggle(d)
+   if path=="/api/shutdown":self.json({"ok":True});threading.Thread(target=self.server.shutdown,daemon=True).start();return
+   return self.json({"error":"Маршрут не найден"},404)
+  except (BrokenPipeError,ConnectionResetError):return
+  except Exception as e:
+   audit(path,"error",{"error":str(e)})
+   try:self.json({"error":str(e)},500)
+   except (BrokenPipeError,ConnectionResetError):pass
+ def models(self):
+  c=config();q=parse_qs(urlparse(self.path).query);provider=q.get("provider",[c["provider"]])[0];base=q.get("base_url",[c["base_url"]])[0].rstrip("/")
+  try:
+   if provider=="ollama":
+    with http(base+"/api/tags") as r:items=json.loads(r.read()).get("models",[])
+    models=[{"id":x["name"],"name":x["name"],"size":x.get("size")} for x in items]
+   else:
+    with http(base+"/models",headers={"Authorization":"Bearer "+c.get("api_key","lm-studio")}) as r:items=json.loads(r.read()).get("data",[])
+    models=[{"id":x["id"],"name":x["id"]} for x in items]
+   return self.json({"ok":True,"models":models,"provider":provider})
+  except Exception as e:return self.json({"ok":False,"models":[],"error":str(e)},502)
+ def events(self,fn):
+  self.send_response(200);self.send_header("Content-Type","text/event-stream; charset=utf-8");self.send_header("Cache-Control","no-cache");self.send_header("Connection","keep-alive");self.end_headers()
+  def emit(x):self.wfile.write(("data: "+json.dumps(x,ensure_ascii=False)+"\n\n").encode());self.wfile.flush()
+  try:fn(emit)
+  except Exception as e:
+   audit("stream","error",{"error":str(e)})
+   try:emit({"type":"error","message":str(e)})
+   except (BrokenPipeError,ConnectionResetError):pass
+  finally:
+   try:emit({"type":"done"})
+   except (BrokenPipeError,ConnectionResetError):pass
+ def chat(self,d):
+  c=config();model=str(d.get("model") or c["model"]).strip();messages=d.get("messages",[])
+  if not model:return self.json({"error":"Выбери модель в настройках ИИ."},400)
+  if not messages:return self.json({"error":"Пустое сообщение."},400)
+  started=time.perf_counter()
+  def run(emit):
+   system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
+   full=[{"role":"system","content":system}]+messages
+   if c["provider"]=="ollama":
+    payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"])}}
+    req=urllib.request.Request(c["base_url"]+"/api/chat",data=json.dumps(payload,ensure_ascii=False).encode(),headers={"Content-Type":"application/json"})
+    with urllib.request.urlopen(req,timeout=600) as r:
+     for line in r:
+      if not line.strip():continue
+      x=json.loads(line);token=x.get("message",{}).get("content","")
+      if token:emit({"type":"token","text":token})
+      if x.get("done"):
+       n=x.get("eval_count");dur=x.get("eval_duration")
+       emit({"type":"metrics","model":model,"prompt_tokens":x.get("prompt_eval_count"),"completion_tokens":n,"tokens_per_second":round(n/(dur/1e9),2) if n and dur else None,"latency_ms":round((time.perf_counter()-started)*1000)})
+   else:
+    payload={"model":model,"messages":full,"temperature":float(c["temperature"]),"stream":True,"stream_options":{"include_usage":True}}
+    req=urllib.request.Request(c["base_url"]+"/chat/completions",data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Authorization":"Bearer "+c.get("api_key","lm-studio")})
+    with urllib.request.urlopen(req,timeout=600) as r:
+     for raw in r:
+      line=raw.decode().strip()
+      if not line.startswith("data:"):continue
+      value=line[5:].strip()
+      if value=="[DONE]":break
+      x=json.loads(value);choices=x.get("choices",[])
+      if choices:
+       token=choices[0].get("delta",{}).get("content","")
+       if token:emit({"type":"token","text":token})
+      if x.get("usage"):emit({"type":"metrics","model":model,"prompt_tokens":x["usage"].get("prompt_tokens"),"completion_tokens":x["usage"].get("completion_tokens"),"tokens_per_second":None,"latency_ms":round((time.perf_counter()-started)*1000)})
+   audit("ai.chat",details={"provider":c["provider"],"model":model})
+  return self.events(run)
+ def pull(self,d):
+  c=config();name=str(d.get("name","")).strip()
+  if c["provider"]!="ollama" or not re.match(r"^[A-Za-z0-9_.:/-]{2,160}$",name):return self.json({"error":"Неверный провайдер или имя модели."},400)
+  def run(emit):
+   req=urllib.request.Request(c["base_url"]+"/api/pull",data=json.dumps({"name":name,"stream":True}).encode(),headers={"Content-Type":"application/json"})
+   with urllib.request.urlopen(req,timeout=3600) as r:
+    for line in r:
+     x=json.loads(line);emit({"type":"progress","status":x.get("status"),"completed":x.get("completed"),"total":x.get("total")})
+   audit("model.pull",details={"name":name})
+  return self.events(run)
+ def delete_model(self,d):
+  c=config();name=str(d.get("name",""))
+  if c["provider"]!="ollama":return self.json({"error":"Удаление доступно для Ollama."},400)
+  with http(c["base_url"]+"/api/delete",{"name":name}) as r:r.read()
+  audit("model.delete",details={"name":name});return self.json({"ok":True})
+ def runtime_status(self):
+  exe=config()["runtime"].get("ollama_executable") or shutil.which("ollama")
+  if not exe:return self.json({"available":False,"running":False})
+  p=subprocess.run([exe,"ps"],capture_output=True,text=True,timeout=8,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+  return self.json({"available":True,"running":p.returncode==0,"executable":exe,"output":p.stdout[:3000]})
+ def start_runtime(self):
+  exe=config()["runtime"].get("ollama_executable") or shutil.which("ollama")
+  if not exe:return self.json({"error":"Ollama не найдена. Укажи путь к ollama.exe."},404)
+  subprocess.Popen([exe,"serve"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));audit("runtime.ollama.start");return self.json({"ok":True})
+ def workspace(self):
+  root=Path(config()["workspace"]["path"]).expanduser().resolve()
+  items=[{"name":p.name,"directory":p.is_dir(),"size":p.stat().st_size if p.is_file() else None} for p in sorted(root.iterdir(),key=lambda x:(not x.is_dir(),x.name.lower()))[:250]] if root.is_dir() else []
+  return self.json({"path":str(root),"exists":root.is_dir(),"items":items})
+ def set_workspace(self,d):
+  p=Path(str(d.get("path",""))).expanduser()
+  if not p.is_dir():return self.json({"error":"Папка не существует."},400)
+  c=config();c["workspace"]["path"]=str(p.resolve());write(CFG,c);audit("workspace.set",details={"path":str(p.resolve())});return self.workspace()
+ def terminal(self,d):
+  if not d.get("confirmed"):return self.json({"error":"Требуется явное подтверждение команды."},403)
+  if not config()["tools"].get("terminal"):return self.json({"error":"PowerShell отключён в библиотеке возможностей."},403)
+  command=str(d.get("command","")).strip();cwd=Path(config()["workspace"]["path"]).resolve();shell=shutil.which("pwsh") or shutil.which("powershell")
+  if not command or len(command)>12000:return self.json({"error":"Пустая или слишком длинная команда."},400)
+  if not shell:return self.json({"error":"PowerShell не найден."},404)
+  p=subprocess.run([shell,"-NoLogo","-NoProfile","-NonInteractive","-Command",command],cwd=str(cwd),capture_output=True,text=True,timeout=120,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+  output=(p.stdout+"\n"+p.stderr)[-30000:];audit("terminal.powershell",details={"command":command,"cwd":str(cwd),"exit_code":p.returncode,"output_tail":output[-3000:]})
+  return self.json({"exit_code":p.returncode,"output":output,"cwd":str(cwd)})
+ def ssh_profile(self,d):
+  if not d.get("confirmed"):return self.json({"error":"Подтверди сохранение SSH-профиля."},403)
+  name=str(d.get("name","")).strip();host=str(d.get("host","")).strip();user=str(d.get("user","")).strip();key=str(d.get("key_path","")).strip()
+  if not name or not re.match(r"^[A-Za-z0-9.-]+$",host) or not re.match(r"^[A-Za-z0-9._-]+$",user):return self.json({"error":"Проверь имя, host и пользователя."},400)
+  c=config();rows=[x for x in c["remote"].get("ssh_profiles",[]) if x["name"]!=name];rows.append({"name":name,"host":host,"user":user,"key_path":key});c["remote"]["ssh_profiles"]=rows;write(CFG,c);audit("ssh.profile.save",details={"name":name,"host":host});return self.json({"ok":True,"profiles":rows})
+ def ssh_run(self,d):
+  if not d.get("confirmed"):return self.json({"error":"SSH-команда требует подтверждения."},403)
+  if not config()["tools"].get("ssh"):return self.json({"error":"SSH отключён."},403)
+  prof=next((x for x in config()["remote"].get("ssh_profiles",[]) if x["name"]==d.get("profile")),None)
+  if not prof:return self.json({"error":"Профиль не найден."},404)
+  ssh=shutil.which("ssh")
+  if not ssh:return self.json({"error":"OpenSSH Client не найден."},404)
+  args=[ssh,"-o","BatchMode=yes","-o","ConnectTimeout=12"]
+  if prof.get("key_path"):args+=["-i",prof["key_path"]]
+  args += [prof["user"]+"@"+prof["host"],str(d.get("command",""))]
+  p=subprocess.run(args,capture_output=True,text=True,timeout=90,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));out=(p.stdout+"\n"+p.stderr)[-20000:]
+  audit("ssh.execute",details={"profile":prof["name"],"command":d.get("command"),"exit_code":p.returncode,"output_tail":out[-3000:]});return self.json({"exit_code":p.returncode,"output":out})
+ def github_status(self):
+  gh=shutil.which("gh")
+  if not gh:return self.json({"available":False,"authenticated":False,"message":"GitHub CLI (gh) не установлен."})
+  p=subprocess.run([gh,"auth","status"],capture_output=True,text=True,timeout=12,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+  return self.json({"available":True,"authenticated":p.returncode==0,"message":(p.stdout+p.stderr)[:2500]})
+ def github_run(self,d):
+  if not d.get("confirmed"):return self.json({"error":"GitHub CLI требует подтверждения."},403)
+  if not config()["tools"].get("github"):return self.json({"error":"GitHub CLI отключён."},403)
+  groups={"status":["auth","status"],"repos":["repo","list"],"issues":["issue","list"],"prs":["pr","list"],"workflow":["workflow","list"]}
+  action=str(d.get("action",""));gh=shutil.which("gh")
+  if action not in groups:return self.json({"error":"Неизвестная команда."},400)
+  if not gh:return self.json({"error":"GitHub CLI не установлен."},404)
+  args=[gh]+groups[action]+[str(x)[:200] for x in d.get("args",[])[:8]]
+  p=subprocess.run(args,capture_output=True,text=True,timeout=60,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0));out=(p.stdout+"\n"+p.stderr)[:20000]
+  audit("github.cli",details={"action":action,"exit_code":p.returncode});return self.json({"exit_code":p.returncode,"output":out})
+ def plugin_create(self,d):
+  if not config()["tools"].get("plugins"):return self.json({"error":"Плагины отключены."},403)
+  ident=re.sub(r"[^a-zA-Z0-9_-]","-",str(d.get("id","")).lower())[:48]
+  if not ident:return self.json({"error":"Укажи ID."},400)
+  p={"id":ident,"name":str(d.get("name",ident))[:100],"description":str(d.get("description",""))[:1000],"version":"0.1.0","enabled":False,"permissions":d.get("permissions",[]),"entry":"manifest-only","source":"local"}
+  write(PLUGINS/(ident+".json"),p);audit("plugin.create",details={"id":ident});return self.json({"ok":True,"plugin":p})
+ def plugin_toggle(self,d):
+  ident=re.sub(r"[^a-zA-Z0-9_-]","-",str(d.get("id","")).lower());p=PLUGINS/(ident+".json")
+  if not p.exists():return self.json({"error":"Плагин не найден."},404)
+  x=read(p,{});x["enabled"]=bool(d.get("enabled"));write(p,x);audit("plugin.toggle",details={"id":ident,"enabled":x["enabled"]});return self.json({"ok":True})
+ def tool_toggle(self,d):
+  ident=str(d.get("id",""))
+  if ident not in {x["id"] for x in CATALOG}:return self.json({"error":"Неизвестный инструмент."},404)
+  c=config();c["tools"][ident]=bool(d.get("enabled"));write(CFG,c);audit("tool.toggle",details={"id":ident,"enabled":c["tools"][ident]});return self.json({"ok":True})
 def main():
-    for folder in (DATA,CFG.parent,ROOT/"logs"): folder.mkdir(parents=True,exist_ok=True)
-    if not CFG.exists(): write(CFG,DEFAULT)
-    server=ThreadingHTTPServer(("127.0.0.1",9001),Handler); server.daemon_threads=True
-    print("One Core AI v1: http://127.0.0.1:9001")
-    try: server.serve_forever()
-    except KeyboardInterrupt: pass
-    finally: server.server_close()
-if __name__=="__main__": main()
+ for p in (DATA,CFG.parent,ROOT/"logs",PLUGINS):p.mkdir(parents=True,exist_ok=True)
+ if not CFG.exists():write(CFG,DEFAULT)
+ server=ThreadingHTTPServer(("127.0.0.1",9001),Handler);server.daemon_threads=True;print("One Core AI v1: http://127.0.0.1:9001")
+ try:server.serve_forever()
+ except KeyboardInterrupt:pass
+ finally:BROWSER.close();server.server_close()
+if __name__=="__main__":main()

@@ -1,0 +1,1 @@
+Plugin manifests are JSON files. This first extension layer stores metadata and declared permissions only. Arbitrary third-party code is not executed by the core runtime; a future runner must isolate execution and enforce permissions.
