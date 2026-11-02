@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 ROOT=Path(__file__).resolve().parent.parent; WEB=ROOT/"frontend"; DATA=ROOT/"data"; CFG=ROOT/"config"/"settings.json"; HISTORY=DATA/"conversations.json"; AUDIT=DATA/"operations.jsonl"; PLUGINS=ROOT/"plugins"
-DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя.","behavior":{"role":"Универсальный AI-ассистент","verbosity":"balanced","language":"auto","reasoning":"deep","memory":True,"auto_plan":True,"ask_before_tools":True,"verify_changes":True,"max_steps":20},"appearance":{"font_family":"Manrope","font_size":14,"font_color":"#30435e"},"workspace":{"path":str(Path.home())},"tools":{"files":True,"terminal":False,"github":False,"ssh":False,"browser":True,"web_search":True,"git":True,"plugins":True},"remote":{"ssh_profiles":[]},"runtime":{"ollama_executable":""}}
+DEFAULT={"provider":"ollama","base_url":"http://127.0.0.1:11434","model":"","temperature":0.7,"model_parameters":{"top_p":0.9,"num_ctx":8192,"num_predict":2048,"repeat_penalty":1.1},"system_prompt":"Ты — полезный AI-ассистент. Отвечай точно и структурированно на языке пользователя.","behavior":{"role":"Универсальный AI-ассистент","verbosity":"balanced","language":"auto","reasoning":"deep","memory":True,"auto_plan":True,"ask_before_tools":True,"verify_changes":True,"max_steps":20},"appearance":{"font_family":"Manrope","font_size":14,"font_color":"#30435e"},"workspace":{"path":str(Path.home())},"tools":{"files":True,"terminal":False,"github":False,"ssh":False,"browser":True,"web_search":True,"git":True,"plugins":True},"remote":{"ssh_profiles":[]},"runtime":{"ollama_executable":""}}
 CATALOG=[{"id":"files","name":"Файловая система","description":"Чтение и контекст рабочей папки, вложения.","risk":"read_write"},{"id":"terminal","name":"PowerShell","description":"Команды Windows и системная диагностика.","risk":"critical"},{"id":"git","name":"Git","description":"Статус, diff и операции с репозиторием.","risk":"write"},{"id":"github","name":"GitHub CLI","description":"Репозитории, issues, pull requests и workflows через gh.","risk":"remote"},{"id":"ssh","name":"SSH","description":"Удалённые серверы через OpenSSH и ключи.","risk":"critical"},{"id":"browser","name":"Виртуальный браузер","description":"Просмотр сайтов и браузерная автоматизация через Playwright.","risk":"network"},{"id":"web_search","name":"Поиск в интернете","description":"Поиск через поисковые сайты в браузере.","risk":"network"},{"id":"plugins","name":"Плагины","description":"Локальные расширения и декларативные разрешения.","risk":"write"}]
 def read(p,f):
  try:return json.loads(p.read_text(encoding="utf-8"))
@@ -102,6 +102,8 @@ class Handler(BaseHTTPRequestHandler):
    if path=="/api/chat":return self.chat(d)
    if path=="/api/models/pull":return self.pull(d)
    if path=="/api/models/delete":return self.delete_model(d)
+   if path=="/api/models/load":return self.load_model(d)
+   if path=="/api/models/unload":return self.unload_model(d)
    if path=="/api/runtime/start":return self.start_runtime()
    if path=="/api/workspace":return self.set_workspace(d)
    if path=="/api/terminal/run":return self.terminal(d)
@@ -151,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
    system=c["system_prompt"]+"\n\nПараметры поведения агента: "+json.dumps(c["behavior"],ensure_ascii=False)
    full=[{"role":"system","content":system}]+messages
    if c["provider"]=="ollama":
-    payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"])}}
+    payload={"model":model,"messages":full,"stream":True,"options":{"temperature":float(c["temperature"]),**c.get("model_parameters",{})}}
     req=urllib.request.Request(c["base_url"]+"/api/chat",data=json.dumps(payload,ensure_ascii=False).encode(),headers={"Content-Type":"application/json"})
     with urllib.request.urlopen(req,timeout=600) as r:
      for line in r:
@@ -162,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
        n=x.get("eval_count");dur=x.get("eval_duration")
        emit({"type":"metrics","model":model,"prompt_tokens":x.get("prompt_eval_count"),"completion_tokens":n,"tokens_per_second":round(n/(dur/1e9),2) if n and dur else None,"latency_ms":round((time.perf_counter()-started)*1000)})
    else:
-    payload={"model":model,"messages":full,"temperature":float(c["temperature"]),"stream":True,"stream_options":{"include_usage":True}}
+    payload={"model":model,"messages":full,"temperature":float(c["temperature"]),"top_p":float(c.get("model_parameters",{}).get("top_p",0.9)),"max_tokens":int(c.get("model_parameters",{}).get("num_predict",2048)),"stream":True,"stream_options":{"include_usage":True}}
     req=urllib.request.Request(c["base_url"]+"/chat/completions",data=json.dumps(payload).encode(),headers={"Content-Type":"application/json","Authorization":"Bearer "+c.get("api_key","lm-studio")})
     with urllib.request.urlopen(req,timeout=600) as r:
      for raw in r:
@@ -192,6 +194,17 @@ class Handler(BaseHTTPRequestHandler):
   if c["provider"]!="ollama":return self.json({"error":"Удаление доступно для Ollama."},400)
   with http(c["base_url"]+"/api/delete",{"name":name}) as r:r.read()
   audit("model.delete",details={"name":name});return self.json({"ok":True})
+ def load_model(self,d):
+  c=config();name=str(d.get("name") or c.get("model") or "").strip()
+  if c["provider"]!="ollama":return self.json({"error":"Загрузка в память доступна через Ollama."},400)
+  if not name:return self.json({"error":"Сначала выбери модель."},400)
+  with http(c["base_url"]+"/api/generate",{"model":name,"prompt":"","stream":False,"keep_alive":"10m"}):pass
+  audit("model.load",details={"name":name,"keep_alive":"10m"});return self.json({"ok":True,"model":name})
+ def unload_model(self,d):
+  c=config();name=str(d.get("name") or c.get("model") or "").strip()
+  if c["provider"]!="ollama" or not name:return self.json({"error":"Укажи модель Ollama."},400)
+  with http(c["base_url"]+"/api/generate",{"model":name,"prompt":"","stream":False,"keep_alive":0}):pass
+  audit("model.unload",details={"name":name});return self.json({"ok":True,"model":name})
  def runtime_status(self):
   exe=config()["runtime"].get("ollama_executable") or shutil.which("ollama")
   if not exe:return self.json({"available":False,"running":False})
