@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s);const state={provider:"ollama",config:{},me
 async function api(url,options={}){const r=await fetch(url,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});const d=await r.json();if(!r.ok)throw Error(d.error||("HTTP "+r.status));return d}
 function setConnection(ok,t){$("#connection").className="connection "+(ok?"online":"offline");$("#connection span").textContent=t}
 function setModel(m){$("#modelName").textContent=m||"Модель не выбрана";$("#monitorModel").textContent=m||"Не выбрана"}
-function showView(v){["chat","browser","terminal","operations","plugins"].forEach(x=>$("#"+x+"View").hidden=x!==v);document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("selected",x.dataset.view===v));if(v==="operations")loadLogs();if(v==="terminal")loadTerminalHistory();if(v==="plugins")loadPlugins();if(v==="browser")browserStatus()}
+function showView(v){["chat","browser","terminal","operations","plugins","tasks"].forEach(x=>$("#"+x+"View").hidden=x!==v);document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("selected",x.dataset.view===v));if(v==="operations")loadLogs();if(v==="tasks")loadTasks();if(v==="terminal")loadTerminalHistory();if(v==="plugins")loadPlugins();if(v==="browser")browserStatus()}
 async function load(){try{state.config=await api("/api/config");state.provider=state.config.provider;const appearance=state.config.appearance||{};document.documentElement.style.setProperty("--font-scale",(appearance.font_size||14)/14);document.documentElement.style.setProperty("--text-color",appearance.font_color||"#30435e");$("#providerName").textContent=state.provider==="ollama"?"Ollama":"LM Studio";$("#providerLogo").textContent=state.provider==="ollama"?"O":"LM";$("#endpoint").textContent=state.config.base_url.replace(/^https?:\/\//,"");setModel(state.config.model);setConnection(true,"Настройки загружены")}catch(e){setConnection(false,"Сервер модели недоступен")}loadHistory();loadWorkspace()}
 async function loadHistory(){try{const a=await api("/api/history");$("#history").innerHTML="";a.slice(0,12).forEach(x=>{const b=document.createElement("button");b.textContent=x.title||"Диалог";b.onclick=()=>openConversation(x);$("#history").append(b)})}catch(e){}}
 function openConversation(x){state.id=x.id;state.title=x.title;state.messages=x.messages||[];$("#title").textContent=state.title;$("#messages").innerHTML="";state.messages.forEach(m=>addMessage(m.role,m.content))}
@@ -29,3 +29,38 @@ $("#browserClose").onclick=async()=>{await api("/api/browser/close",{method:"POS
 async function loadPlugins(){const rows=await api("/api/plugins");$("#pluginGrid").innerHTML="";rows.forEach(p=>{const c=document.createElement("article");c.className="plugin-card";const h=document.createElement("h3");h.textContent=p.name;const d=document.createElement("p");d.textContent=p.description;const t=document.createElement("label");const ch=document.createElement("input");ch.type="checkbox";ch.checked=p.enabled;ch.onchange=()=>api("/api/plugins/toggle",{method:"POST",body:JSON.stringify({id:p.id,enabled:ch.checked})});t.append(ch,document.createTextNode(" Включён"));c.append(h,d,t);$("#pluginGrid").append(c)})}
 $("#newPlugin").onclick=()=>$("#pluginModal").classList.add("open");$("#pluginClose").onclick=()=>$("#pluginModal").classList.remove("open");$("#pluginCreate").onclick=async()=>{try{await api("/api/plugins",{method:"POST",body:JSON.stringify({id:$("#pluginId").value,name:$("#pluginName").value,description:$("#pluginDescription").value,permissions:$("#pluginPermissions").value.split(",").map(x=>x.trim()).filter(Boolean)})});$("#pluginModal").classList.remove("open");loadPlugins()}catch(e){alert(e.message)}};
 load();
+
+async function loadTasks(){
+ try{
+  const data=await api("/api/tasks");
+  const list=$("#taskList"),history=$("#taskHistory");
+  list.innerHTML="";history.innerHTML="";
+  $("#taskCount").textContent=data.tasks.length+" задач";
+  if(!data.tasks.length){const empty=document.createElement("div");empty.className="task-empty";empty.textContent="Пока здесь пусто. Добавь задачу, чтобы не потерять её.";list.append(empty)}
+  data.tasks.forEach(task=>{
+   const card=document.createElement("article");card.className="task-item";
+   const title=document.createElement("h3");title.textContent=task.title;
+   const description=document.createElement("p");description.textContent=task.description||"Без дополнительного описания.";
+   const created=document.createElement("small");created.textContent="Создано: "+new Date(task.created_at).toLocaleString();
+   card.append(title,description,created);list.append(card);
+  });
+  if(!data.history.length){const empty=document.createElement("div");empty.className="task-empty";empty.textContent="История создания появится после добавления первой задачи.";history.append(empty)}
+  data.history.forEach(item=>{
+   const row=document.createElement("article");row.className="task-history-item";
+   const title=document.createElement("b");title.textContent=item.title;
+   const date=document.createElement("small");date.textContent=new Date(item.created_at).toLocaleString();
+   row.append(title,date);history.append(row);
+  });
+ }catch(error){$("#taskList").textContent="Не удалось загрузить задачи: "+error.message}
+}
+$("#taskCreate").onclick=async()=>{
+ const title=$("#taskTitle").value.trim(),description=$("#taskDescription").value.trim();
+ if(!title){$("#taskTitle").focus();return}
+ const button=$("#taskCreate");button.disabled=true;
+ try{
+  await api("/api/tasks",{method:"POST",body:JSON.stringify({title,description})});
+  $("#taskTitle").value="";$("#taskDescription").value="";
+  await loadTasks();
+ }catch(error){alert(error.message)}
+ finally{button.disabled=false}
+};
